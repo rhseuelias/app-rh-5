@@ -692,51 +692,60 @@ export async function gerarPrevisaoAnoTodos(): Promise<{ criados: number; semVag
     }
 
     const valor = calcularValorFerias(colaborador.salario_base, 15).total;
+    const { periodo1, periodo2 } = previsao;
 
-    await supabase.from("ferias").insert([
+    const registrosFerias = [
       {
         colaborador_id: colaborador.id,
         periodo_aquisitivo_id: periodo.id,
-        data_inicio: previsao.periodo1.inicio.toISOString().slice(0, 10),
-        data_fim: previsao.periodo1.fim.toISOString().slice(0, 10),
+        data_inicio: periodo1.inicio.toISOString().slice(0, 10),
+        data_fim: periodo1.fim.toISOString().slice(0, 10),
         dias: 15,
         status: "planejada",
         origem: "planejamento_auto",
         valor_estimado: valor,
       },
-      {
+    ];
+    if (periodo2) {
+      registrosFerias.push({
         colaborador_id: colaborador.id,
         periodo_aquisitivo_id: periodo.id,
-        data_inicio: previsao.periodo2.inicio.toISOString().slice(0, 10),
-        data_fim: previsao.periodo2.fim.toISOString().slice(0, 10),
+        data_inicio: periodo2.inicio.toISOString().slice(0, 10),
+        data_fim: periodo2.fim.toISOString().slice(0, 10),
         dias: 15,
         status: "planejada",
         origem: "planejamento_auto",
         valor_estimado: valor,
-      },
-    ]);
+      });
+    }
+    await supabase.from("ferias").insert(registrosFerias);
 
-    await supabase.from("eventos_calendario").insert([
+    const eventosCalendario = [
       {
         titulo: `Férias (planejada) — ${colaborador.nome}`,
         categoria: "ferias",
-        data_inicio: previsao.periodo1.inicio.toISOString().slice(0, 10),
-        data_fim: previsao.periodo1.fim.toISOString().slice(0, 10),
+        data_inicio: periodo1.inicio.toISOString().slice(0, 10),
+        data_fim: periodo1.fim.toISOString().slice(0, 10),
         colaborador_id: colaborador.id,
         empresa_id: colaborador.empresa_id,
       },
-      {
+    ];
+    if (periodo2) {
+      eventosCalendario.push({
         titulo: `Férias (planejada) — ${colaborador.nome}`,
         categoria: "ferias",
-        data_inicio: previsao.periodo2.inicio.toISOString().slice(0, 10),
-        data_fim: previsao.periodo2.fim.toISOString().slice(0, 10),
+        data_inicio: periodo2.inicio.toISOString().slice(0, 10),
+        data_fim: periodo2.fim.toISOString().slice(0, 10),
         colaborador_id: colaborador.id,
         empresa_id: colaborador.empresa_id,
-      },
-    ]);
+      });
+    }
+    await supabase.from("eventos_calendario").insert(eventosCalendario);
 
     if (!ocupadasPorUnidade.has(unidadeId)) ocupadasPorUnidade.set(unidadeId, []);
-    ocupadasPorUnidade.get(unidadeId)!.push(previsao.periodo1, previsao.periodo2);
+    const listaOcupadas = ocupadasPorUnidade.get(unidadeId)!;
+    listaOcupadas.push(periodo1);
+    if (periodo2) listaOcupadas.push(periodo2);
     criados++;
   }
 
