@@ -773,6 +773,100 @@ export async function excluirFeriasCancelada(id: string, colaboradorId: string) 
   revalidatePath("/calendario");
 }
 
+export interface ResultadoDarBaixaPeriodo {
+  ok: boolean;
+  mensagem: string;
+}
+
+/**
+ * "Dar baixa" direto na linha de um período aquisitivo específico, na ficha
+ * do colaborador: registra que ele já tirou X dias de férias a partir de
+ * uma data, já como "concluído". Pensado pra um período aquisitivo que às
+ * vezes é gozado em mais de uma vez (ex.: 15 + 15 dias) — por isso pede a
+ * quantidade de dias direto, em vez de calcular pela diferença entre duas
+ * datas, e pode ser chamado várias vezes pro mesmo período aquisitivo.
+ */
+export async function darBaixaPeriodoAquisitivo(formData: FormData): Promise<ResultadoDarBaixaPeriodo> {
+  const supabase = createClient();
+  const periodoId = str(formData, "periodo_aquisitivo_id");
+  const colaboradorId = str(formData, "colaborador_id");
+  const dataInicio = str(formData, "data_inicio");
+  const dias = num(formData, "dias");
+  const vendeuAbono = bool(formData, "vendeu_abono");
+
+  if (!periodoId || !colaboradorId || !dataInicio) {
+    return { ok: false, mensagem: "Preencha a data de início." };
+  }
+  if (dias <= 0) {
+    return { ok: false, mensagem: "Informe uma quantidade de dias válida." };
+  }
+
+  const { data: colaborador } = await supabase
+    .from("colaboradores")
+    .select("nome, salario_base, empresa_id")
+    .eq("id", colaboradorId)
+    .single();
+  if (!colaborador) return { ok: false, mensagem: "Colaborador não encontrado." };
+
+  const { data: usadosData } = await supabase
+    .from("ferias")
+    .select("dias")
+    .eq("periodo_aquisitivo_id", periodoId)
+    .neq("status", "cancelado")
+    .eq("simulacao", false);
+  const usados = ((usadosData ?? []) as { dias: number }[]).reduce((s, f) => s + f.dias, 0);
+  const saldo = calcularSaldo(usados);
+  if (dias > saldo) {
+    return {
+      ok: false,
+      mensagem: `Esse período aquisitivo só tem ${saldo} dia${saldo !== 1 ? "s" : ""} de saldo disponível.`,
+    };
+  }
+
+  const dataFim = addDays(new Date(dataInicio), dias - 1).toISOString().slice(0, 10);
+  const valorEstimado = calcularValorFerias(colaborador.salario_base, dias).total;
+
+  const { error } = await supabase.from("ferias").insert({
+    colaborador_id: colaboradorId,
+    periodo_aquisitivo_id: periodoId,
+    data_inicio: dataInicio,
+    data_fim: dataFim,
+    dias,
+    vendeu_abono: vendeuAbono,
+    status: "concluido" as const,
+    origem: "manual" as const,
+    valor_estimado: valorEstimado,
+  });
+  if (error) return { ok: false, mensagem: error.message };
+
+  await supabase.from("eventos_calendario").insert({
+    titulo: `Férias — ${colaborador.nome}`,
+    categoria: "ferias",
+    data_inicio: dataInicio,
+    data_fim: dataFim,
+    colaborador_id: colaboradorId,
+    empresa_id: colaborador.empresa_id,
+  });
+
+  // fecha o período aquisitivo como "gozado" se não sobrar mais nada
+  // pendente nele (ex.: quando essa era a 2ª metade de um 15+15)
+  const { data: pendentes } = await supabase
+    .from("ferias")
+    .select("id")
+    .eq("periodo_aquisitivo_id", periodoId)
+    .not("status", "in", "(concluido,cancelado)");
+  if (!pendentes || pendentes.length === 0) {
+    await supabase.from("periodos_aquisitivos").update({ status: "gozado" }).eq("id", periodoId);
+  }
+
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+  revalidatePath("/colaboradores");
+  revalidatePath("/ferias");
+  revalidatePath("/calendario");
+  revalidatePath("/dashboard");
+  return { ok: true, mensagem: `Baixa registrada: ${dias} dia${dias !== 1 ? "s" : ""} ✓` };
+}
+
 export interface ResultadoBaixaFerias {
   processadas: number;
   colaboradorNaoEncontrado: string[];
