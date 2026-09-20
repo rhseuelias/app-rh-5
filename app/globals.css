@@ -1,0 +1,71 @@
+@import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #f4f6fb;
+  color: #0f172a;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: "Baloo 2", ui-rounded, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* ------------------------------------------------------------ */
+/* Cards — cantos mais arredondados, sombra suave, leve elevação */
+/* ------------------------------------------------------------ */
+.card {
+  @apply bg-white rounded-2xl border border-slate-200/80 shadow-card p-6 transition-shadow;
+}
+
+.card-hover {
+  @apply hover:shadow-card-hover hover:-translate-y-0.5 transition-all;
+}
+
+/* Card escuro (navy), pra destacar um bloco dentro de uma tela clara */
+.card-dark {
+  @apply bg-ink-800 text-white rounded-2xl border border-ink-600/60 shadow-card p-6;
+}
+
+/* ------------------------------------------------------------ */
+/* Botões                                                        */
+/* ------------------------------------------------------------ */
+.btn-primary {
+  @apply bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-full px-5 py-2.5 transition-colors;
+}
+
+.btn-secondary {
+  @apply bg-white hover:bg-slate-50 text-slate-700 font-medium rounded-full px-5 py-2.5 border border-slate-300 transition-colors;
+}
+
+/* Ação de maior destaque da tela — usar no máximo 1 por página */
+.btn-cta {
+  @apply bg-gold-400 hover:bg-gold-500 text-ink-900 font-bold uppercase tracking-wide text-sm rounded-full px-6 py-3 shadow-card transition-colors;
+}
+
+/* ------------------------------------------------------------ */
+/* Formulário                                                     */
+/* ------------------------------------------------------------ */
+.input {
+  @apply w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition-shadow;
+}
+
+.label {
+  @apply block text-sm font-medium text-slate-600 mb-1;
+}
+
+.badge {
+  @apply inline-flex items-center rounded-full px-3 py-0.5 text-xs font-semibold;
+}
+
+/* Chip de ícone redondo, no estilo dos cartões do site de referência */
+.icon-chip {
+  @apply inline-flex items-center justify-center w-10 h-10 rounded-full bg-brand-50 text-brand-600 text-lg shrink-0;
+}
