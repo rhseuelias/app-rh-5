@@ -122,7 +122,7 @@ export async function salvarColaborador(formData: FormData) {
       .single();
     if (error) throw error;
     colaboradorId = data.id;
-    await sincronizarDependentes(supabase, colaboradorId, str(formData, "dependentes_json"));
+    await sincronizarDependentes(supabase, colaboradorId!, str(formData, "dependentes_json"));
 
     // ao criar, já gera as 5 etapas de onboarding e o primeiro período aquisitivo
     if (dataAdmissao) {
