@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, Unidade } from "@/types/db";
 import Link from "next/link";
+import ImportarColaboradoresCSV from "@/components/ImportarColaboradoresCSV";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,15 @@ export default async function ColaboradoresPage({
           + Novo colaborador
         </Link>
       </div>
+
+      <details className="card">
+        <summary className="cursor-pointer text-sm font-medium text-slate-700">
+          Importar colaboradores de um CSV (planilha)
+        </summary>
+        <div className="mt-4">
+          <ImportarColaboradoresCSV />
+        </div>
+      </details>
 
       <form method="get" className="flex items-center gap-2">
         <input

@@ -22,6 +22,7 @@ import {
   calcularSaldo,
 } from "@/lib/simulacao-ferias";
 import type { Colaborador, PeriodoAquisitivo, Ferias, Feriado, ConfigSimulacao } from "@/types/db";
+import { colaboradoresDoCSV, semAcentos } from "@/lib/csv";
 
 function num(formData: FormData, campo: string): number {
   const v = formData.get(campo);
@@ -151,6 +152,142 @@ export async function salvarColaborador(formData: FormData) {
   revalidatePath("/colaboradores");
   revalidatePath("/dashboard");
   redirect(`/colaboradores/${colaboradorId}`);
+}
+
+export interface ResultadoImportacaoColaboradores {
+  criados: number;
+  duplicados: string[];
+  semEmpresaOuUnidade: string[];
+  erros: string[];
+}
+
+/**
+ * Importa colaboradores em massa a partir de um CSV (ex.: exportado da
+ * "Pasta de salários"). Pula quem já existe (mesmo nome) pra evitar
+ * duplicar se o arquivo for enviado mais de uma vez. Empresa/Unidade são
+ * casadas pelo nome com o que já existe cadastrado — quando não encontra,
+ * cria o colaborador mesmo assim, mas sem empresa/unidade vinculada, e
+ * avisa no resultado. Reproduz os mesmos efeitos automáticos de um
+ * cadastro manual (onboarding, 1º período aquisitivo, evento no
+ * calendário) quando a data de admissão vem preenchida.
+ */
+export async function importarColaboradoresCSV(formData: FormData): Promise<ResultadoImportacaoColaboradores> {
+  const supabase = createClient();
+  const arquivo = formData.get("arquivo") as File | null;
+
+  if (!arquivo || arquivo.size === 0) {
+    throw new Error("Selecione um arquivo CSV.");
+  }
+
+  const texto = await arquivo.text();
+  const linhas = colaboradoresDoCSV(texto);
+
+  if (linhas.length === 0) {
+    throw new Error(
+      "Não encontrei linhas de colaborador no CSV. Confira se a primeira linha é o cabeçalho."
+    );
+  }
+
+  const [{ data: empresasData }, { data: unidadesData }, { data: existentesData }] = await Promise.all([
+    supabase.from("empresas").select("id, nome"),
+    supabase.from("unidades").select("id, nome, empresa_id"),
+    supabase.from("colaboradores").select("nome"),
+  ]);
+
+  const empresas = empresasData ?? [];
+  const unidades = unidadesData ?? [];
+  const nomesExistentes = new Set((existentesData ?? []).map((c) => semAcentos(c.nome ?? "")));
+  const empresaPorNome = new Map(empresas.map((e) => [semAcentos(e.nome), e]));
+  const unidadePorNome = new Map(unidades.map((u) => [semAcentos(u.nome), u]));
+
+  const resultado: ResultadoImportacaoColaboradores = {
+    criados: 0,
+    duplicados: [],
+    semEmpresaOuUnidade: [],
+    erros: [],
+  };
+
+  for (const linha of linhas) {
+    const chaveNome = semAcentos(linha.nome);
+    if (nomesExistentes.has(chaveNome)) {
+      resultado.duplicados.push(linha.nome);
+      continue;
+    }
+
+    const unidade = linha.unidade ? unidadePorNome.get(semAcentos(linha.unidade)) : undefined;
+    const empresa = unidade
+      ? empresas.find((e) => e.id === unidade.empresa_id)
+      : linha.empresa
+        ? empresaPorNome.get(semAcentos(linha.empresa))
+        : undefined;
+
+    if (!empresa && !unidade) {
+      resultado.semEmpresaOuUnidade.push(linha.nome);
+    }
+
+    const dataAdmissao = linha.data_admissao;
+    const notas = [
+      linha.nivel ? `Nível: ${linha.nivel}` : null,
+      linha.carga_horaria
+        ? `Carga horária mensal (da planilha importada): ${linha.carga_horaria}h — defina o horário exato dia a dia em "Horário de trabalho".`
+        : null,
+    ].filter((v): v is string => Boolean(v));
+
+    const payload = {
+      tipo: (linha.regime === "PJ" ? "PJ" : "CLT") as "CLT" | "PJ",
+      nome: linha.nome,
+      cargo: linha.cargo,
+      departamento: linha.departamento,
+      empresa_id: empresa?.id ?? null,
+      unidade_id: unidade?.id ?? null,
+      data_admissao: dataAdmissao,
+      data_fim_experiencia: dataAdmissao
+        ? calcularFimExperiencia(dataAdmissao).toISOString().slice(0, 10)
+        : null,
+      status: "ativo" as const,
+      salario_base: linha.salario,
+      comissao_media: linha.comissao ?? 0,
+      auxilio_outros: linha.adicional_auxilio ?? 0,
+      quebra_caixa: !!linha.quebra_caixa,
+      observacoes: notas.length > 0 ? notas.join("\n") : null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from("colaboradores").insert(payload).select("id").single();
+    if (error || !data) {
+      resultado.erros.push(`${linha.nome}: ${error?.message ?? "falha ao salvar"}`);
+      continue;
+    }
+
+    resultado.criados++;
+    nomesExistentes.add(chaveNome);
+
+    if (dataAdmissao) {
+      const etapas = ["pre_admissao", "primeiro_dia", "checkin_30", "avaliacao_45", "avaliacao_90"];
+      await supabase.from("onboarding_etapas").insert(
+        etapas.map((etapa) => ({ colaborador_id: data.id, etapa }))
+      );
+
+      const { inicio, fim, limite_concessao } = calcularPeriodoAquisitivo(dataAdmissao);
+      await supabase.from("periodos_aquisitivos").insert({
+        colaborador_id: data.id,
+        inicio: inicio.toISOString().slice(0, 10),
+        fim: fim.toISOString().slice(0, 10),
+        limite_concessao: limite_concessao.toISOString().slice(0, 10),
+      });
+
+      await supabase.from("eventos_calendario").insert({
+        titulo: `Admissão — ${linha.nome}`,
+        categoria: "admissao",
+        data_inicio: dataAdmissao,
+        colaborador_id: data.id,
+      });
+    }
+  }
+
+  revalidatePath("/colaboradores");
+  revalidatePath("/dashboard");
+  return resultado;
 }
 
 export interface ResultadoPeriodoAquisitivo {

@@ -53,7 +53,7 @@ export function parseCSV(texto: string): string[][] {
   return linhas.filter((l) => l.some((c) => c.trim() !== ""));
 }
 
-function semAcentos(texto: string): string {
+export function semAcentos(texto: string): string {
   return texto
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -111,4 +111,90 @@ export function candidatosDoCSV(texto: string): Array<{
       observacoes_extra: extras || null,
     };
   });
+}
+
+const MAPA_CAMPOS_COLABORADOR: Record<string, string[]> = {
+  nome: ["mome", "nome", "nome completo"],
+  data_admissao: ["admissao", "data admissao", "data de admissao"],
+  cargo: ["cargo"],
+  departamento: ["departamento"],
+  nivel: ["nivel"],
+  regime: ["regime", "tipo"],
+  empresa: ["empresa"],
+  unidade: ["unidade"],
+  carga_horaria: ["carga horaria"],
+  salario: ["salario", "remuneracao"],
+  quebra_caixa: ["quebra caixa"],
+  adicional_auxilio: ["adicional auxilio"],
+  comissao: ["comissao"],
+};
+
+/**
+ * Aceita tanto número "brasileiro" (1.627,42 — ponto de milhar, vírgula
+ * decimal) quanto número já em formato simples (1627.42 ou 1627,42).
+ */
+function numeroOuNulo(v: string | undefined): number | null {
+  if (!v) return null;
+  let limpo = v.trim();
+  if (limpo.includes(".") && limpo.includes(",")) {
+    limpo = limpo.replace(/\./g, "").replace(",", ".");
+  } else if (limpo.includes(",")) {
+    limpo = limpo.replace(",", ".");
+  }
+  const n = Number(limpo);
+  return limpo !== "" && !Number.isNaN(n) ? n : null;
+}
+
+/**
+ * Recebe o CSV com os dados da "Pasta de salários" (exportado da planilha
+ * do RH) e devolve uma lista de colaboradores mapeados pros campos
+ * conhecidos. Datas devem vir no formato AAAA-MM-DD.
+ */
+export function colaboradoresDoCSV(texto: string): Array<{
+  nome: string;
+  data_admissao: string | null;
+  cargo: string | null;
+  departamento: string | null;
+  nivel: string | null;
+  regime: string | null;
+  empresa: string | null;
+  unidade: string | null;
+  carga_horaria: number | null;
+  salario: number;
+  quebra_caixa: number | null;
+  adicional_auxilio: number | null;
+  comissao: number | null;
+}> {
+  const linhas = parseCSV(texto);
+  if (linhas.length < 2) return [];
+
+  const cabecalho = linhas[0].map(semAcentos);
+  const indices: Record<string, number> = {};
+
+  for (const [campo, variantes] of Object.entries(MAPA_CAMPOS_COLABORADOR)) {
+    const idx = cabecalho.findIndex((h) => variantes.includes(h));
+    if (idx >= 0) indices[campo] = idx;
+  }
+
+  const pega = (linha: string[], campo: string) =>
+    indices[campo] !== undefined ? linha[indices[campo]]?.trim() || "" : "";
+
+  return linhas
+    .slice(1)
+    .filter((linha) => pega(linha, "nome") !== "")
+    .map((linha) => ({
+      nome: pega(linha, "nome"),
+      data_admissao: pega(linha, "data_admissao") || null,
+      cargo: pega(linha, "cargo") || null,
+      departamento: pega(linha, "departamento") || null,
+      nivel: pega(linha, "nivel") || null,
+      regime: pega(linha, "regime") || null,
+      empresa: pega(linha, "empresa") || null,
+      unidade: pega(linha, "unidade") || null,
+      carga_horaria: numeroOuNulo(pega(linha, "carga_horaria")),
+      salario: numeroOuNulo(pega(linha, "salario")) ?? 0,
+      quebra_caixa: numeroOuNulo(pega(linha, "quebra_caixa")),
+      adicional_auxilio: numeroOuNulo(pega(linha, "adicional_auxilio")),
+      comissao: numeroOuNulo(pega(linha, "comissao")),
+    }));
 }

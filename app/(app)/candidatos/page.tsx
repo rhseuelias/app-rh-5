@@ -80,7 +80,7 @@ export default async function CandidatosPage() {
                       <span className={`badge ${STATUS_COR[c.status]}`}>{STATUS_LABEL[c.status]}</span>
                     </td>
                     <td className="py-2 pr-4">
-                      <CandidatoLinkAcoes id={c.id} token={c.token} />
+                      <CandidatoLinkAcoes id={c.id} token={c.token} nome={c.nome} />
                     </td>
                   </tr>
                 ))}

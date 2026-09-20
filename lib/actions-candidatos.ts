@@ -34,6 +34,36 @@ export async function criarCandidato(formData: FormData) {
   revalidatePath("/candidatos");
 }
 
+/**
+ * Exclui em definitivo o registro de um pré-cadastro (e o link enviado ao
+ * candidato deixa de funcionar). Os documentos anexados são removidos do
+ * Storage e o registro em "documentos_candidato" some junto (cascade).
+ * Se o candidato já foi convertido em colaborador, a ficha do colaborador
+ * não é afetada — só o registro de pré-cadastro é apagado.
+ */
+export async function excluirCandidato(formData: FormData) {
+  const supabase = createClient();
+  const candidatoId = str(formData, "candidato_id");
+  if (!candidatoId) throw new Error("Candidato inválido.");
+
+  const { data: documentos } = await supabase
+    .from("documentos_candidato")
+    .select("storage_path")
+    .eq("candidato_id", candidatoId);
+
+  if (documentos && documentos.length > 0) {
+    const caminhos = documentos.map((d) => d.storage_path).filter(Boolean) as string[];
+    if (caminhos.length > 0) {
+      await supabase.storage.from("documentos").remove(caminhos);
+    }
+  }
+
+  const { error } = await supabase.from("candidatos").delete().eq("id", candidatoId);
+  if (error) throw error;
+
+  revalidatePath("/candidatos");
+}
+
 /** Importa candidatos em massa a partir de um CSV (ex.: export do Google Forms). */
 export async function importarCandidatosCSV(formData: FormData) {
   const supabase = createClient();
@@ -53,6 +83,10 @@ export async function importarCandidatosCSV(formData: FormData) {
     );
   }
 
+  // Vem de um formulário que o candidato já respondeu (ex.: Google Forms),
+  // então entra como "preenchido" — não "link_gerado" — pra não travar o
+  // botão "Converter em colaborador" nem mostrar o aviso de "ainda não
+  // preencheu" na ficha do candidato.
   const registros = candidatos.map((c) => ({
     nome: c.nome,
     email: c.email,
@@ -61,8 +95,8 @@ export async function importarCandidatosCSV(formData: FormData) {
     cpf: c.cpf,
     empresa_id,
     observacoes: c.observacoes_extra,
-    status: "link_gerado" as const,
-    enviado_em: new Date().toISOString(),
+    status: "preenchido" as const,
+    preenchido_em: new Date().toISOString(),
   }));
 
   const { error } = await supabase.from("candidatos").insert(registros);
