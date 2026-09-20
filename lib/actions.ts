@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { calcularFimExperiencia, calcularPeriodoAquisitivo } from "@/lib/calculos";
-import { addDays } from "date-fns";
+import { addDays, differenceInCalendarDays } from "date-fns";
 import {
   calcularValorFerias,
   paraSetDeDatas,
@@ -22,7 +22,7 @@ import {
   calcularSaldo,
 } from "@/lib/simulacao-ferias";
 import type { Colaborador, PeriodoAquisitivo, Ferias, Feriado, ConfigSimulacao } from "@/types/db";
-import { colaboradoresDoCSV, semAcentos } from "@/lib/csv";
+import { colaboradoresDoCSV, feriasParaBaixaDoCSV, semAcentos } from "@/lib/csv";
 
 function num(formData: FormData, campo: string): number {
   const v = formData.get(campo);
@@ -771,6 +771,276 @@ export async function excluirFeriasCancelada(id: string, colaboradorId: string) 
   revalidatePath(`/colaboradores/${colaboradorId}`);
   revalidatePath("/ferias");
   revalidatePath("/calendario");
+}
+
+export interface ResultadoBaixaFerias {
+  processadas: number;
+  colaboradorNaoEncontrado: string[];
+  semPeriodoAberto: string[];
+  semSaldo: string[];
+  erros: string[];
+}
+
+/**
+ * "Dar baixa" em férias que o colaborador já tirou fora do sistema: recebe
+ * um CSV (nome, data início, data fim e, opcionalmente, se vendeu o abono)
+ * e, pra cada linha, já cria o registro de férias direto como "concluído"
+ * — sem passar pelos status intermediários — descontando do período
+ * aquisitivo em aberto do colaborador (o mais próximo de vencer, se houver
+ * mais de um) e fechando esse período como "gozado" quando não sobrar mais
+ * nada pendente nele. Pensado pra registrar de uma vez só um lote grande de
+ * gente que já tirou férias, em vez de lançar um por um pela tela.
+ */
+export async function darBaixaFeriasCSV(formData: FormData): Promise<ResultadoBaixaFerias> {
+  const supabase = createClient();
+  const arquivo = formData.get("arquivo") as File | null;
+  if (!arquivo || arquivo.size === 0) throw new Error("Selecione um arquivo CSV.");
+
+  const texto = await arquivo.text();
+  const linhas = feriasParaBaixaDoCSV(texto);
+  if (linhas.length === 0) {
+    throw new Error(
+      "Não encontrei linhas de férias no CSV. Confira se a primeira linha é o cabeçalho (Nome, Data Início, Data Fim)."
+    );
+  }
+
+  const [{ data: colaboradoresData }, { data: aquisitivosData }, { data: feriasData }] = await Promise.all([
+    supabase.from("colaboradores").select("id, nome, salario_base, empresa_id"),
+    supabase.from("periodos_aquisitivos").select("*").eq("status", "aberto"),
+    supabase.from("ferias").select("periodo_aquisitivo_id, dias").neq("status", "cancelado").eq("simulacao", false),
+  ]);
+
+  const colaboradores = (colaboradoresData ?? []) as Array<
+    Pick<Colaborador, "id" | "nome" | "salario_base" | "empresa_id">
+  >;
+  const colaboradorPorNome = new Map(colaboradores.map((c) => [semAcentos(c.nome), c]));
+
+  // período aquisitivo aberto de cada colaborador — o mais próximo de
+  // vencer, se houver mais de um (mesma regra usada na tela de Férias)
+  const abertoPorColaborador = new Map<string, PeriodoAquisitivo>();
+  for (const p of (aquisitivosData ?? []) as PeriodoAquisitivo[]) {
+    const atual = abertoPorColaborador.get(p.colaborador_id);
+    if (!atual || new Date(p.limite_concessao) < new Date(atual.limite_concessao)) {
+      abertoPorColaborador.set(p.colaborador_id, p);
+    }
+  }
+
+  const usadosPorPeriodo = new Map<string, number>();
+  for (const f of (feriasData ?? []) as Array<{ periodo_aquisitivo_id: string | null; dias: number }>) {
+    if (!f.periodo_aquisitivo_id) continue;
+    usadosPorPeriodo.set(f.periodo_aquisitivo_id, (usadosPorPeriodo.get(f.periodo_aquisitivo_id) ?? 0) + f.dias);
+  }
+
+  const resultado: ResultadoBaixaFerias = {
+    processadas: 0,
+    colaboradorNaoEncontrado: [],
+    semPeriodoAberto: [],
+    semSaldo: [],
+    erros: [],
+  };
+
+  for (const linha of linhas) {
+    const colaborador = colaboradorPorNome.get(semAcentos(linha.nome));
+    if (!colaborador) {
+      resultado.colaboradorNaoEncontrado.push(linha.nome);
+      continue;
+    }
+
+    if (!linha.data_inicio || !linha.data_fim) {
+      resultado.erros.push(`${linha.nome}: data inválida (use dd/mm/aaaa).`);
+      continue;
+    }
+    if (linha.data_fim < linha.data_inicio) {
+      resultado.erros.push(`${linha.nome}: data fim é antes da data início.`);
+      continue;
+    }
+
+    const periodo = abertoPorColaborador.get(colaborador.id);
+    if (!periodo) {
+      resultado.semPeriodoAberto.push(linha.nome);
+      continue;
+    }
+
+    const dias = differenceInCalendarDays(new Date(linha.data_fim), new Date(linha.data_inicio)) + 1;
+    const usados = usadosPorPeriodo.get(periodo.id) ?? 0;
+    const saldo = calcularSaldo(usados);
+    if (dias > saldo) {
+      resultado.semSaldo.push(`${linha.nome} (precisa de ${dias} dias, saldo é ${saldo})`);
+      continue;
+    }
+
+    const valorEstimado = calcularValorFerias(colaborador.salario_base, dias).total;
+
+    const { error } = await supabase.from("ferias").insert({
+      colaborador_id: colaborador.id,
+      periodo_aquisitivo_id: periodo.id,
+      data_inicio: linha.data_inicio,
+      data_fim: linha.data_fim,
+      dias,
+      vendeu_abono: linha.vendeu_abono,
+      status: "concluido" as const,
+      origem: "manual" as const,
+      valor_estimado: valorEstimado,
+    });
+    if (error) {
+      resultado.erros.push(`${linha.nome}: ${error.message}`);
+      continue;
+    }
+
+    usadosPorPeriodo.set(periodo.id, usados + dias);
+
+    await supabase.from("eventos_calendario").insert({
+      titulo: `Férias — ${colaborador.nome}`,
+      categoria: "ferias",
+      data_inicio: linha.data_inicio,
+      data_fim: linha.data_fim,
+      colaborador_id: colaborador.id,
+      empresa_id: colaborador.empresa_id,
+    });
+
+    const { data: pendentes } = await supabase
+      .from("ferias")
+      .select("id")
+      .eq("periodo_aquisitivo_id", periodo.id)
+      .not("status", "in", "(concluido,cancelado)");
+    if (!pendentes || pendentes.length === 0) {
+      await supabase.from("periodos_aquisitivos").update({ status: "gozado" }).eq("id", periodo.id);
+    }
+
+    resultado.processadas++;
+  }
+
+  revalidatePath("/ferias");
+  revalidatePath("/calendario");
+  revalidatePath("/dashboard");
+  return resultado;
+}
+
+export interface LinhaDarBaixaFerias {
+  colaboradorId: string;
+  dataInicio: string;
+  dataFim: string;
+  vendeuAbono: boolean;
+}
+
+/**
+ * Mesma ideia da versão por CSV acima, só que alimentada direto pela tela
+ * (uma linha por colaborador, escolhido num seletor, com as datas num
+ * calendário) — pra quem prefere preencher no próprio app em vez de montar
+ * uma planilha. Cada linha já entra como férias concluída, descontando do
+ * período aquisitivo em aberto do colaborador e fechando esse período
+ * quando não sobrar mais nada pendente nele.
+ */
+export async function darBaixaFerias(linhas: LinhaDarBaixaFerias[]): Promise<ResultadoBaixaFerias> {
+  const supabase = createClient();
+  const validas = (linhas ?? []).filter((l) => l.colaboradorId && l.dataInicio && l.dataFim);
+  if (validas.length === 0) {
+    throw new Error("Selecione pelo menos um colaborador e preencha as duas datas.");
+  }
+
+  const [{ data: colaboradoresData }, { data: aquisitivosData }, { data: feriasData }] = await Promise.all([
+    supabase.from("colaboradores").select("id, nome, salario_base, empresa_id"),
+    supabase.from("periodos_aquisitivos").select("*").eq("status", "aberto"),
+    supabase.from("ferias").select("periodo_aquisitivo_id, dias").neq("status", "cancelado").eq("simulacao", false),
+  ]);
+
+  const colaboradores = (colaboradoresData ?? []) as Array<
+    Pick<Colaborador, "id" | "nome" | "salario_base" | "empresa_id">
+  >;
+  const colaboradorPorId = new Map(colaboradores.map((c) => [c.id, c]));
+
+  const abertoPorColaborador = new Map<string, PeriodoAquisitivo>();
+  for (const p of (aquisitivosData ?? []) as PeriodoAquisitivo[]) {
+    const atual = abertoPorColaborador.get(p.colaborador_id);
+    if (!atual || new Date(p.limite_concessao) < new Date(atual.limite_concessao)) {
+      abertoPorColaborador.set(p.colaborador_id, p);
+    }
+  }
+
+  const usadosPorPeriodo = new Map<string, number>();
+  for (const f of (feriasData ?? []) as Array<{ periodo_aquisitivo_id: string | null; dias: number }>) {
+    if (!f.periodo_aquisitivo_id) continue;
+    usadosPorPeriodo.set(f.periodo_aquisitivo_id, (usadosPorPeriodo.get(f.periodo_aquisitivo_id) ?? 0) + f.dias);
+  }
+
+  const resultado: ResultadoBaixaFerias = {
+    processadas: 0,
+    colaboradorNaoEncontrado: [],
+    semPeriodoAberto: [],
+    semSaldo: [],
+    erros: [],
+  };
+
+  for (const linha of validas) {
+    const colaborador = colaboradorPorId.get(linha.colaboradorId);
+    if (!colaborador) {
+      resultado.erros.push("Colaborador não encontrado.");
+      continue;
+    }
+    if (linha.dataFim < linha.dataInicio) {
+      resultado.erros.push(`${colaborador.nome}: data fim é antes da data início.`);
+      continue;
+    }
+
+    const periodo = abertoPorColaborador.get(colaborador.id);
+    if (!periodo) {
+      resultado.semPeriodoAberto.push(colaborador.nome);
+      continue;
+    }
+
+    const dias = differenceInCalendarDays(new Date(linha.dataFim), new Date(linha.dataInicio)) + 1;
+    const usados = usadosPorPeriodo.get(periodo.id) ?? 0;
+    const saldo = calcularSaldo(usados);
+    if (dias > saldo) {
+      resultado.semSaldo.push(`${colaborador.nome} (precisa de ${dias} dias, saldo é ${saldo})`);
+      continue;
+    }
+
+    const valorEstimado = calcularValorFerias(colaborador.salario_base, dias).total;
+
+    const { error } = await supabase.from("ferias").insert({
+      colaborador_id: colaborador.id,
+      periodo_aquisitivo_id: periodo.id,
+      data_inicio: linha.dataInicio,
+      data_fim: linha.dataFim,
+      dias,
+      vendeu_abono: linha.vendeuAbono,
+      status: "concluido" as const,
+      origem: "manual" as const,
+      valor_estimado: valorEstimado,
+    });
+    if (error) {
+      resultado.erros.push(`${colaborador.nome}: ${error.message}`);
+      continue;
+    }
+
+    usadosPorPeriodo.set(periodo.id, usados + dias);
+
+    await supabase.from("eventos_calendario").insert({
+      titulo: `Férias — ${colaborador.nome}`,
+      categoria: "ferias",
+      data_inicio: linha.dataInicio,
+      data_fim: linha.dataFim,
+      colaborador_id: colaborador.id,
+      empresa_id: colaborador.empresa_id,
+    });
+
+    const { data: pendentes } = await supabase
+      .from("ferias")
+      .select("id")
+      .eq("periodo_aquisitivo_id", periodo.id)
+      .not("status", "in", "(concluido,cancelado)");
+    if (!pendentes || pendentes.length === 0) {
+      await supabase.from("periodos_aquisitivos").update({ status: "gozado" }).eq("id", periodo.id);
+    }
+
+    resultado.processadas++;
+  }
+
+  revalidatePath("/ferias");
+  revalidatePath("/calendario");
+  revalidatePath("/dashboard");
+  return resultado;
 }
 
 /**

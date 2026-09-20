@@ -150,6 +150,76 @@ function numeroOuNulo(v: string | undefined): number | null {
  * do RH) e devolve uma lista de colaboradores mapeados pros campos
  * conhecidos. Datas devem vir no formato AAAA-MM-DD.
  */
+/**
+ * Converte uma data em "aaaa-mm-dd" (formato do banco) a partir de vários
+ * jeitos que a planilha pode trazer: aaaa-mm-dd, dd/mm/aaaa ou dd-mm-aaaa.
+ * Devolve null se não reconhecer o formato.
+ */
+export function dataISOOuNula(v: string | undefined): string | null {
+  if (!v) return null;
+  const s = v.trim();
+
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return s;
+
+  m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if (m) {
+    const [, d, mes, ano] = m;
+    return `${ano}-${mes.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  return null;
+}
+
+function simOuNao(v: string | undefined): boolean {
+  const s = (v ?? "").trim().toLowerCase();
+  return s === "sim" || s === "s" || s === "true" || s === "1" || s === "yes";
+}
+
+const MAPA_CAMPOS_BAIXA_FERIAS: Record<string, string[]> = {
+  nome: ["nome", "colaborador", "nome do colaborador"],
+  data_inicio: ["data inicio", "inicio", "data de inicio", "data inicio das ferias"],
+  data_fim: ["data fim", "fim", "data de fim", "data fim das ferias", "ultimo dia de ferias"],
+  vendeu_abono: ["vendeu abono", "abono", "vendeu 1/3", "vendeu 1/3 (abono)"],
+};
+
+/**
+ * Recebe o CSV de "férias já tiradas" (nome, data início, data fim e,
+ * opcionalmente, se vendeu o abono) e devolve as linhas já mapeadas. Quem
+ * não tem nome preenchido é ignorado. As datas ficam como veio no arquivo
+ * (validação/format de fato acontece em `dataISOOuNula`, chamada por quem
+ * for gravar no banco) — aqui só padroniza pra aaaa-mm-dd quando possível.
+ */
+export function feriasParaBaixaDoCSV(texto: string): Array<{
+  nome: string;
+  data_inicio: string | null;
+  data_fim: string | null;
+  vendeu_abono: boolean;
+}> {
+  const linhas = parseCSV(texto);
+  if (linhas.length < 2) return [];
+
+  const cabecalho = linhas[0].map(semAcentos);
+  const indices: Record<string, number> = {};
+  for (const [campo, variantes] of Object.entries(MAPA_CAMPOS_BAIXA_FERIAS)) {
+    const idx = cabecalho.findIndex((h) => variantes.includes(h));
+    if (idx >= 0) indices[campo] = idx;
+  }
+
+  const pega = (linha: string[], campo: string) =>
+    indices[campo] !== undefined ? linha[indices[campo]]?.trim() || "" : "";
+
+  return linhas
+    .slice(1)
+    .filter((linha) => pega(linha, "nome") !== "")
+    .map((linha) => ({
+      nome: pega(linha, "nome"),
+      data_inicio: dataISOOuNula(pega(linha, "data_inicio")),
+      data_fim: dataISOOuNula(pega(linha, "data_fim")),
+      vendeu_abono: simOuNao(pega(linha, "vendeu_abono")),
+    }));
+}
+
 export function colaboradoresDoCSV(texto: string): Array<{
   nome: string;
   data_admissao: string | null;

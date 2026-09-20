@@ -11,6 +11,7 @@ import {
 import { formatarReais } from "@/lib/formatadores";
 import { detectarConflitos } from "@/lib/ferias-calculos";
 import NovaSolicitacaoFerias from "@/components/NovaSolicitacaoFerias";
+import DarBaixaFerias from "@/components/DarBaixaFerias";
 import FeriasAcoes from "@/components/FeriasAcoes";
 import GerarPrevisaoBotao from "@/components/ferias/GerarPrevisaoBotao";
 import GraficoFeriasPorMes from "@/components/ferias/GraficoFeriasPorMes";
@@ -295,6 +296,15 @@ export default async function FeriasPage({
         <h2 className="font-medium text-slate-900 mb-3">Nova solicitação</h2>
         <NovaSolicitacaoFerias colaboradores={todosColaboradores} periodosAquisitivos={aquisitivosParaForm} />
       </div>
+
+      <details className="card">
+        <summary className="cursor-pointer text-sm font-medium text-slate-700">
+          Dar baixa em férias já tiradas
+        </summary>
+        <div className="mt-4">
+          <DarBaixaFerias colaboradores={todosColaboradores} />
+        </div>
+      </details>
 
       <div className="card !p-0 overflow-hidden">
         <div className="flex items-center justify-between flex-wrap gap-2 px-4 pt-4">
