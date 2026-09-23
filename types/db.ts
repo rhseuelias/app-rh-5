@@ -1,4 +1,4 @@
-export type TipoColaborador = "CLT" | "PJ";
+export type TipoColaborador = "CLT" | "PJ" | "Estagio";
 export type StatusColaborador = "experiencia" | "ativo" | "afastado" | "desligado";
 
 export interface Empresa {
@@ -64,6 +64,26 @@ export interface DependenteColaborador {
   dependente_ir: boolean;
 }
 
+/** Um período de contrato PJ que já foi encerrado por uma renovação —
+ * guardado pra manter o histórico anual de cada colaborador PJ. */
+export interface HistoricoContratoPJ {
+  id: string;
+  colaborador_id: string;
+  contrato_inicio: string | null;
+  contrato_fim: string | null;
+  valor_nota_fiscal: number | null;
+  criado_em: string;
+}
+
+/** As 3 assinaturas fixas que entram em TODO contrato PJ emitido — Salão
+ * Parceiro e as 2 testemunhas. Linha única, cadastrada em Configurações. */
+export interface ConfigAssinaturasPJ {
+  id: string;
+  assinatura_salao_path: string | null;
+  assinatura_testemunha1_path: string | null;
+  assinatura_testemunha2_path: string | null;
+}
+
 export interface Colaborador {
   id: string;
   empresa_id: string | null;
@@ -94,6 +114,18 @@ export interface Colaborador {
   contrato_fim: string | null;
   contrato_renovacao_automatica: boolean;
   valor_nota_fiscal: number | null;
+  comissao_corte_pct: number | null;
+  comissao_quimica_pct: number | null;
+  /** Caminho no Storage (bucket "documentos") da assinatura do próprio
+   * profissional PJ — usada no contrato emitido. Só essa muda por
+   * colaborador; as outras 3 (salão + 2 testemunhas) ficam em
+   * ConfigAssinaturasPJ e são as mesmas pra todo mundo. */
+  assinatura_pj_path: string | null;
+  /** Link de assinatura digital do contrato PJ — token do link, quando foi
+   * gerado, e quando o profissional efetivamente assinou (null = pendente). */
+  assinatura_pj_link_token: string | null;
+  assinatura_pj_link_criado_em: string | null;
+  assinatura_pj_assinado_em: string | null;
   observacoes: string | null;
 
   // dados pessoais extras (Ficha de Admissão)
@@ -395,4 +427,61 @@ export interface ConfigIntegracao {
   prazo_experiencia_dias: number;
   antecedencia_alerta_avaliacao_dias: number;
   prazo_saida_painel_dias: number;
+}
+
+// ------------------------------------------------------------
+// CONTROLE DE BENEFÍCIOS (Departamento Pessoal) — Transporte,
+// Alimentação, Prêmio e Outros. Só colaboradores CLT e Estagiário
+// participam.
+// ------------------------------------------------------------
+
+/** Tipo de transporte cadastrado numa empresa (CAJU, SEMPARAR, BHBUS,
+ * OTIMO ou qualquer nome cadastrado por ela) — não muda por mês. */
+export interface BeneficioTipoTransporte {
+  id: string;
+  empresa_id: string;
+  nome: string;
+  taxa_adm: number;
+  created_at: string;
+}
+
+/** Um mês do Controle de Benefícios. "fechado" = vira histórico (trava edição). */
+export interface BeneficioCompetencia {
+  id: string;
+  competencia: string; // 'AAAA-MM', ex.: '2026-09'
+  fechado: boolean;
+  created_at: string;
+}
+
+export type ModoTransporteBeneficio = "km" | "viagens";
+
+/** Um lançamento de transporte de 1 colaborador em 1 mês. Colaborador pode
+ * ter várias linhas (tipos diferentes, ou o mesmo tipo com valores diferentes). */
+export interface BeneficioTransporte {
+  id: string;
+  competencia_id: string;
+  colaborador_id: string;
+  tipo: string;
+  modo: ModoTransporteBeneficio;
+  km: number;
+  valor_km: number;
+  viagens_dia: number;
+  valor_viagem: number;
+  dias_uteis: number;
+  numero_cartao: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Alimentação, Prêmio e Outros de 1 colaborador em 1 mês (pagos pelo CAJU) —
+ * um registro só por colaborador por mês. */
+export interface BeneficioExtra {
+  id: string;
+  competencia_id: string;
+  colaborador_id: string;
+  alimentacao: number;
+  premio: number;
+  outros_descricao: string | null;
+  outros_valor: number;
+  updated_at: string;
 }
