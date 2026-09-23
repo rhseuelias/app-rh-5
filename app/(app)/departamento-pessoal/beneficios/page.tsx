@@ -21,10 +21,8 @@ import {
 } from "@/lib/beneficios-calculos";
 import TiposTransporteCadastro from "@/components/beneficios/TiposTransporteCadastro";
 import CompetenciaAcoes from "@/components/beneficios/CompetenciaAcoes";
-import LinhaTransporteForm from "@/components/beneficios/LinhaTransporteForm";
-import LinhaTransporteCajuForm from "@/components/beneficios/LinhaTransporteCajuForm";
-import AdicionarTransporte from "@/components/beneficios/AdicionarTransporte";
-import ExtrasForm from "@/components/beneficios/ExtrasForm";
+import PainelTipoCaju, { type LinhaCaju } from "@/components/beneficios/PainelTipoCaju";
+import PainelTipoOutro, { type LinhaOutro } from "@/components/beneficios/PainelTipoOutro";
 
 export const dynamic = "force-dynamic";
 
@@ -36,10 +34,18 @@ const CLASSE_COR: Record<string, string> = {
   extra: "bg-pink-50 text-pink-700",
 };
 
+const BADGE_COR: Record<string, string> = {
+  caju: "bg-blue-100 text-blue-700",
+  semparar: "bg-amber-100 text-amber-700",
+  bhbus: "bg-violet-100 text-violet-700",
+  otimo: "bg-emerald-100 text-emerald-700",
+  extra: "bg-pink-100 text-pink-700",
+};
+
 export default async function BeneficiosPage({
   searchParams,
 }: {
-  searchParams: { empresa?: string; unidade?: string; competencia?: string };
+  searchParams: { empresa?: string; unidade?: string; competencia?: string; tab?: string };
 }) {
   const supabase = createClient();
 
@@ -145,156 +151,13 @@ export default async function BeneficiosPage({
     return sub;
   }
 
-  // ------------------------------------------------------------
-  // Blocos de transporte
-  // ------------------------------------------------------------
-  function BlocoCaju({ tipoObj }: { tipoObj: BeneficioTipoTransporte }) {
-    const tipo = tipoObj.nome;
-    let subtotalTransporte = 0;
-    let subtotalExtras = 0;
-    linhas.forEach((c) => {
-      subtotalTransporte += totalTransportePorTipo(transportePorColaborador[c.id] ?? [], tipo);
-      subtotalExtras += totalExtras(extraPorColaborador[c.id]);
-    });
-    const subtotal = subtotalTransporte + subtotalExtras;
-    const valorTaxa = tipoObj.taxa_adm;
-    const cor = CLASSE_COR[classeTipoTransporte(tipo)] ?? CLASSE_COR.caju;
-
-    return (
-      <div className="card !p-0 overflow-hidden mb-4">
-        <div className={`flex items-center justify-between flex-wrap gap-2 px-4 py-3 ${cor}`}>
-          <span className="font-bold">{tipo}</span>
-          <div className="flex gap-3 text-xs font-semibold flex-wrap">
-            <span>Taxa adm.: {formatarReais(valorTaxa)}</span>
-            <span>Subtotal: {formatarReais(subtotal)}</span>
-            <span>Total c/ taxa: {formatarReais(subtotal + valorTaxa)}</span>
-          </div>
-        </div>
-        <p className="text-xs text-slate-400 px-4 pt-2">
-          Alimentação, Prêmio e Outros de todos os colaboradores ficam aqui, porque são pagos pelo cartão CAJU —
-          mesmo quem usa outro cartão só pro transporte continua recebendo normalmente.
-        </p>
-        {linhas.length === 0 ? (
-          <p className="text-sm text-slate-400 p-4">Nenhum colaborador aqui neste mês.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-400 text-xs uppercase">
-                  <th className="py-2 px-4">Colaborador</th>
-                  <th className="py-2 px-4">Transporte (CAJU)</th>
-                  <th className="py-2 px-4">Alimentação / Prêmio / Outros</th>
-                  <th className="py-2 px-4">Total no CAJU</th>
-                </tr>
-              </thead>
-              <tbody>
-                {linhas.map((c) => {
-                  const entradasCaju = (transportePorColaborador[c.id] ?? []).filter((tr) => tr.tipo === tipo);
-                  const totalCaju =
-                    totalTransportePorTipo(transportePorColaborador[c.id] ?? [], tipo) + totalExtras(extraPorColaborador[c.id]);
-                  return (
-                    <tr key={c.id} className="border-b border-slate-100 last:border-0 align-top">
-                      <td className="py-3 px-4 font-medium text-slate-800 whitespace-nowrap">{c.nome}</td>
-                      <td className="py-3 px-4 min-w-[280px]">
-                        {entradasCaju.length === 0 && (
-                          <p className="text-xs text-slate-400 mb-1.5">Sem CAJU no transporte</p>
-                        )}
-                        {entradasCaju.map((tr) => (
-                          <LinhaTransporteCajuForm
-                            key={tr.id}
-                            competencia={competencia}
-                            colaboradorId={c.id}
-                            tipo={tipo}
-                            mesFechado={mesFechado}
-                            lancamento={tr}
-                          />
-                        ))}
-                        {!mesFechado && (
-                          <AdicionarTransporte competencia={competencia} tipo={tipo} colaboradores={[{ id: c.id, nome: c.nome }]} />
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <ExtrasForm competencia={competencia} colaboradorId={c.id} mesFechado={mesFechado} extra={extraPorColaborador[c.id]} />
-                      </td>
-                      <td className="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">{formatarReais(totalCaju)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  function BlocoTipo({ tipoObj }: { tipoObj: BeneficioTipoTransporte }) {
-    const tipo = tipoObj.nome;
-    const comCartao = TIPOS_COM_CARTAO.includes(tipo);
-    const entradas: { c: Colaborador; tr: BeneficioTransporte }[] = [];
-    linhas.forEach((c) => {
-      (transportePorColaborador[c.id] ?? []).forEach((tr) => {
-        if (tr.tipo === tipo) entradas.push({ c, tr });
-      });
-    });
-    const subtotal = entradas.reduce((s, e) => s + totalTransportePorTipo([e.tr], tipo), 0);
-    const valorTaxa = tipoObj.taxa_adm;
-    const cor = CLASSE_COR[classeTipoTransporte(tipo)] ?? CLASSE_COR.extra;
-
-    return (
-      <div className="card !p-0 overflow-hidden mb-4">
-        <div className={`flex items-center justify-between flex-wrap gap-2 px-4 py-3 ${cor}`}>
-          <span className="font-bold">{tipo}</span>
-          <div className="flex gap-3 text-xs font-semibold flex-wrap">
-            <span>Taxa adm.: {formatarReais(valorTaxa)}</span>
-            <span>Subtotal: {formatarReais(subtotal)}</span>
-            <span>Total c/ taxa: {formatarReais(subtotal + valorTaxa)}</span>
-          </div>
-        </div>
-        {entradas.length === 0 ? (
-          <p className="text-sm text-slate-400 p-4">Nenhum colaborador com {tipo} aqui neste mês.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-400 text-xs uppercase">
-                  <th className="py-2 px-4">Colaborador</th>
-                  <th className="py-2 px-4">Modo</th>
-                  <th className="py-2 px-4">Cálculo</th>
-                  {comCartao && <th className="py-2 px-4">N° do Cartão</th>}
-                  <th className="py-2 px-4">Total</th>
-                  <th className="py-2 px-4"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {entradas.map(({ c, tr }) => (
-                  <LinhaTransporteForm
-                    key={tr.id}
-                    competencia={competencia}
-                    colaboradorId={c.id}
-                    tipo={tipo}
-                    comCartao={comCartao}
-                    mesFechado={mesFechado}
-                    lancamento={tr}
-                    mostrarNome
-                    nomeColaborador={c.nome}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {!mesFechado && linhas.length > 0 && (
-          <div className="border-t border-slate-100">
-            <AdicionarTransporte competencia={competencia} tipo={tipo} colaboradores={linhas.map((c) => ({ id: c.id, nome: c.nome }))} />
-          </div>
-        )}
-      </div>
-    );
+  function contarComTipo(tipo: string): number {
+    return linhas.filter((c) => (transportePorColaborador[c.id] ?? []).some((tr) => tr.tipo === tipo)).length;
   }
 
   // ------------------------------------------------------------
-  // Resumo por colaborador + totais
+  // Resumo por colaborador + totais (usado no card de estatísticas, na barra
+  // lateral e na tabela de resumo lá embaixo)
   // ------------------------------------------------------------
   let somaTransporte = 0, somaAlimentacao = 0, somaPremio = 0, somaOutros = 0, somaGeral = 0;
   const linhasResumo = linhas.map((c) => {
@@ -312,6 +175,43 @@ export default async function BeneficiosPage({
     somaGeral += totalGeralColab;
     return { c, totalTransporteColab, alimentacao, premio, outros, totalGeralColab };
   });
+
+  const somaTaxas = tiposDaEmpresa.reduce((s, t) => s + t.taxa_adm, 0);
+  const qtdPendencias = linhasResumo.filter((l) => l.totalGeralColab === 0).length;
+  const qtdConfirmados = linhas.length - qtdPendencias;
+
+  // ------------------------------------------------------------
+  // Aba de tipo selecionada
+  // ------------------------------------------------------------
+  const tabSelecionada = searchParams.tab && tiposDaEmpresa.some((t) => t.nome === searchParams.tab)
+    ? searchParams.tab
+    : tiposDaEmpresa[0]?.nome;
+  const tipoObjSelecionado = tiposDaEmpresa.find((t) => t.nome === tabSelecionada);
+
+  let linhasCaju: LinhaCaju[] = [];
+  let linhasOutro: LinhaOutro[] = [];
+  let subtotalSelecionado = 0;
+  if (tipoObjSelecionado) {
+    if (tipoObjSelecionado.nome === "CAJU") {
+      linhasCaju = linhas.map((c) => {
+        const entradasCaju = (transportePorColaborador[c.id] ?? []).filter((tr) => tr.tipo === "CAJU");
+        const extra = extraPorColaborador[c.id];
+        const alimentacao = extra?.alimentacao ?? 0;
+        const premio = extra?.premio ?? 0;
+        const outros = extra?.outros_valor ?? 0;
+        const totalCaju = totalTransportePorTipo(transportePorColaborador[c.id] ?? [], "CAJU") + totalExtras(extra);
+        return { colaboradorId: c.id, nome: c.nome, entradasCaju, extra, alimentacao, premio, outros, totalCaju };
+      });
+      subtotalSelecionado = subtotalTipo(tipoObjSelecionado, linhas);
+    } else {
+      linhas.forEach((c) => {
+        (transportePorColaborador[c.id] ?? []).forEach((tr) => {
+          if (tr.tipo === tipoObjSelecionado.nome) linhasOutro.push({ colaboradorId: c.id, nome: c.nome, tr });
+        });
+      });
+      subtotalSelecionado = subtotalTipo(tipoObjSelecionado, linhas);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -336,7 +236,13 @@ export default async function BeneficiosPage({
             </Link>
           ))}
         </div>
-        <CompetenciaAcoes competencia={competencia} fechado={mesFechado} />
+        <div className="flex items-center gap-2">
+          <a href="#config-tipos" className="btn-secondary !text-sm !py-1.5">⚙️ Configurar benefícios</a>
+          <button type="button" disabled className="btn-secondary !text-sm !py-1.5 opacity-50 cursor-not-allowed" title="Em breve">
+            ⬆️ Importar relatório <span className="text-[10px] font-normal">(em breve)</span>
+          </button>
+          <CompetenciaAcoes competencia={competencia} fechado={mesFechado} />
+        </div>
       </div>
 
       <form method="get" className="flex flex-wrap items-center gap-2">
@@ -364,21 +270,158 @@ export default async function BeneficiosPage({
         </div>
       )}
 
-      <TiposTransporteCadastro empresaId={empresaId} tipos={tiposDaEmpresa} />
+      {/* ---------------- Cards de resumo ---------------- */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="card !py-3 !px-4">
+          <p className="text-xs text-slate-400">Colaboradores</p>
+          <p className="text-xl font-bold text-slate-900 mt-0.5">{linhas.length}</p>
+          <p className="text-[11px] text-slate-400">com benefício</p>
+        </div>
+        <div className="card !py-3 !px-4">
+          <p className="text-xs text-slate-400">Custo total dos benefícios</p>
+          <p className="text-xl font-bold text-slate-900 mt-0.5">{formatarReais(somaGeral)}</p>
+          <p className="text-[11px] text-slate-400">+ Taxas: {formatarReais(somaTaxas)}</p>
+        </div>
+        <div className="card !py-3 !px-4">
+          <p className="text-xs text-slate-400">Pendências</p>
+          <p className="text-xl font-bold text-amber-600 mt-0.5">{qtdPendencias}</p>
+          <p className="text-[11px] text-slate-400">sem nada lançado ainda</p>
+        </div>
+        <div className="card !py-3 !px-4">
+          <p className="text-xs text-slate-400">Lançamentos confirmados</p>
+          <p className="text-xl font-bold text-emerald-600 mt-0.5">{qtdConfirmados}</p>
+          <p className="text-[11px] text-slate-400">de {linhas.length} colaboradores</p>
+        </div>
+      </div>
 
+      <div id="config-tipos">
+        <TiposTransporteCadastro empresaId={empresaId} tipos={tiposDaEmpresa} />
+      </div>
+
+      {/* ---------------- Abas por tipo + resumo lateral ---------------- */}
       <div>
         <h2 className="text-sm font-semibold text-slate-700 mb-2">🚌 Transporte — separado por tipo de cartão</h2>
-        {tiposDaEmpresa.length === 0 && (
+        {tiposDaEmpresa.length === 0 ? (
           <div className="card">
             <p className="text-sm text-slate-400">Nenhum tipo de transporte cadastrado pra {empresaAtual.nome} ainda. Cadastre um ali em cima.</p>
           </div>
-        )}
-        {tiposDaEmpresa.map((tipoObj) =>
-          tipoObj.nome === "CAJU" ? <BlocoCaju key={tipoObj.id} tipoObj={tipoObj} /> : <BlocoTipo key={tipoObj.id} tipoObj={tipoObj} />
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 items-start">
+            <div className="card !p-0 overflow-hidden">
+              <div className="flex flex-wrap gap-1.5 px-4 pt-3">
+                {tiposDaEmpresa.map((t) => {
+                  const ativo = t.nome === tabSelecionada;
+                  const cor = BADGE_COR[classeTipoTransporte(t.nome)] ?? BADGE_COR.extra;
+                  return (
+                    <Link
+                      key={t.id}
+                      href={`?empresa=${empresaId}${unidadeId ? `&unidade=${unidadeId}` : ""}&competencia=${competencia}&tab=${encodeURIComponent(t.nome)}#tabela-tipo`}
+                      className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg ${
+                        ativo ? "bg-ink-900 text-white" : "text-slate-500 hover:bg-slate-100"
+                      }`}
+                    >
+                      {t.nome}
+                      <span className={`text-[10px] font-bold rounded-full px-1.5 ${ativo ? "bg-white/20" : cor}`}>
+                        {contarComTipo(t.nome)}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+
+              {tipoObjSelecionado && (
+                <div id="tabela-tipo">
+                  <div
+                    className={`flex items-center justify-between flex-wrap gap-2 px-4 py-3 mt-3 ${
+                      CLASSE_COR[classeTipoTransporte(tipoObjSelecionado.nome)] ?? CLASSE_COR.extra
+                    }`}
+                  >
+                    <span className="font-bold">{tipoObjSelecionado.nome}</span>
+                    <div className="flex gap-3 text-xs font-semibold flex-wrap">
+                      <span>Taxa adm.: {formatarReais(tipoObjSelecionado.taxa_adm)}</span>
+                      <span>Subtotal: {formatarReais(subtotalSelecionado)}</span>
+                      <span>Total c/ taxa: {formatarReais(subtotalSelecionado + tipoObjSelecionado.taxa_adm)}</span>
+                    </div>
+                  </div>
+                  {tipoObjSelecionado.nome === "CAJU" ? (
+                    <>
+                      <p className="text-xs text-slate-400 px-4 pt-2">
+                        Alimentação, Prêmio e Outros de todos os colaboradores ficam aqui, porque são pagos pelo cartão CAJU —
+                        mesmo quem usa outro cartão só pro transporte continua recebendo normalmente.
+                      </p>
+                      <PainelTipoCaju competencia={competencia} tipo="CAJU" mesFechado={mesFechado} linhas={linhasCaju} />
+                    </>
+                  ) : (
+                    <PainelTipoOutro
+                      competencia={competencia}
+                      tipo={tipoObjSelecionado.nome}
+                      comCartao={TIPOS_COM_CARTAO.includes(tipoObjSelecionado.nome)}
+                      mesFechado={mesFechado}
+                      linhas={linhasOutro}
+                      colaboradoresParaAdicionar={linhas.map((c) => ({ id: c.id, nome: c.nome }))}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ---------------- Barra lateral: resumo + ações ---------------- */}
+            <div className="space-y-3">
+              <div className="card-dark !py-4 !px-4">
+                <h3 className="text-[11px] uppercase tracking-wide text-slate-300 mb-3">
+                  Resumo — {rotuloCompetencia(competencia)}
+                </h3>
+                <div className="space-y-1.5">
+                  {tiposDaEmpresa.map((t) => (
+                    <div key={t.id} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-300">{t.nome}</span>
+                      <span className="font-semibold">{formatarReais(subtotalTipo(t, linhas))}</span>
+                    </div>
+                  ))}
+                  <div className="h-px bg-white/10 my-2" />
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-300">Total dos benefícios</span>
+                    <span className="font-semibold">{formatarReais(somaGeral)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-300">Taxas administrativas</span>
+                    <span className="font-semibold">{formatarReais(somaTaxas)}</span>
+                  </div>
+                  <div className="h-px bg-white/10 my-2" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-300 text-sm">Custo total</span>
+                    <span className="font-bold text-emerald-300 text-lg">{formatarReais(somaGeral + somaTaxas)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="card !py-3 !px-4">
+                <h3 className="text-[11px] uppercase tracking-wide text-slate-400 font-bold mb-2">Ações rápidas</h3>
+                <div className="space-y-1">
+                  <a href="#resumo-colaborador" className="block text-sm text-slate-600 hover:text-brand-600 py-1">
+                    📄 Ver resumo completo
+                  </a>
+                  <span className="flex items-center gap-1.5 text-sm text-slate-300 py-1 cursor-not-allowed">
+                    📊 Exportar para Excel <span className="text-[10px]">(em breve)</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-sm text-slate-300 py-1 cursor-not-allowed">
+                    🕓 Histórico de importações <span className="text-[10px]">(em breve)</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="card !py-3 !px-4 bg-blue-50/60 border-blue-100">
+                <p className="text-xs text-blue-800">
+                  💡 No CAJU, cada colaborador pode receber por <strong>Km rodado</strong> ou por <strong>Viagens por dia</strong> —
+                  é só trocar no menu ao lado do nome, na visão Detalhado.
+                </p>
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
-      <div>
+      <div id="resumo-colaborador">
         <h2 className="text-sm font-semibold text-slate-700 mb-2">📊 Resumo por colaborador</h2>
         <div className="card !p-0 overflow-hidden">
           {linhas.length === 0 ? (
