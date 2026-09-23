@@ -73,7 +73,7 @@ export default function LinhaTransporteForm({
 
   return (
     <tr className="border-b border-slate-100 last:border-0 align-top">
-      {mostrarNome && <td className="py-2 pr-3 font-bold text-slate-900 text-base whitespace-nowrap">{nomeColaborador}</td>}
+      {mostrarNome && <td className="py-2 pr-3 font-medium text-slate-800 whitespace-nowrap">{nomeColaborador}</td>}
       <td className="py-2 pr-3">
         <select
           value={modo}
