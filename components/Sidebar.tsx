@@ -11,7 +11,7 @@ const ITENS = [
   { href: "/onboarding", label: "Painel de Integração", icon: "✅" },
   { href: "/calendario", label: "Calendário Geral", icon: "🗓️" },
   { href: "/ferias", label: "Férias", icon: "🏖️" },
-  { href: "/departamento-pessoal/beneficios", label: "Departamento Pessoal", icon: "🎁" },
+  { href: "/departamento-pessoal", label: "Departamento Pessoal", icon: "🎁" },
   { href: "/aniversarios", label: "Aniversários", icon: "🎂" },
   { href: "/projecao-custo", label: "Projeção de Custo", icon: "💰" },
 ];
