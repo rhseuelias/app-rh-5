@@ -1,29 +1,49 @@
 import type { Colaborador, Empresa, FolhaLancamento, Unidade } from "@/types/db";
 
-/** Colaboradores que entram no Controle de Folha: qualquer tipo (CLT, PJ,
- * Estágio) — diferente do Controle de Benefícios, que só pega CLT e
- * Estagiário — desde que ativo ou em experiência (desligados/afastados
- * não entram). */
 export function colaboradorAtivoFolha(c: Colaborador): boolean {
   return c.status === "ativo" || c.status === "experiencia";
 }
 
-/** Nome do "bloco" da grade a que um colaborador pertence — a mesma
- * lógica da sua planilha: se ele tem unidade cadastrada, o bloco é a
- * unidade (ex.: Savassi, Belvedere); senão, o bloco é a própria empresa
- * (ex.: BABOON, Barber Day - SP), que não tem unidades separadas. */
+const ORDEM_GRUPOS = [
+  "ALPHAVILLE",
+  "BELVEDERE",
+  "CONFINS",
+  "LAGOA SANTA",
+  "OURO MINAS",
+  "PAMPULHA",
+  "SAVASSI",
+];
+
+export const GRUPO_ESTAGIO = "ESTÁGIO";
+
 export function rotuloGrupoColaborador(
   c: Colaborador,
   empresasPorId: Record<string, Empresa>,
   unidadesPorId: Record<string, Unidade>
 ): string {
+  if (c.tipo === "Estagio") return GRUPO_ESTAGIO;
   if (c.unidade_id && unidadesPorId[c.unidade_id]) return unidadesPorId[c.unidade_id].nome;
   if (c.empresa_id && empresasPorId[c.empresa_id]) return empresasPorId[c.empresa_id].nome;
   return "Sem empresa";
 }
 
-/** Soma os valores em R$ de uma lista de lançamentos (colunas de formato
- * "texto" não entram na soma — o valor delas fica em valor_texto). */
+export function compararGrupos(a: string, b: string): number {
+  if (a === GRUPO_ESTAGIO) return b === GRUPO_ESTAGIO ? 0 : 1;
+  if (b === GRUPO_ESTAGIO) return -1;
+  const ia = ORDEM_GRUPOS.indexOf(a.toUpperCase());
+  const ib = ORDEM_GRUPOS.indexOf(b.toUpperCase());
+  if (ia !== -1 && ib !== -1) return ia - ib;
+  if (ia !== -1) return -1;
+  if (ib !== -1) return 1;
+  return a.localeCompare(b, "pt-BR");
+}
+
 export function somarLancamentos(lancamentos: Pick<FolhaLancamento, "valor">[]): number {
   return lancamentos.reduce((soma, l) => soma + (l.valor || 0), 0);
+}
+
+export function calcularQuebraCaixa(colaborador: Pick<Colaborador, "cargo" | "salario_base">): number {
+  const cargo = (colaborador.cargo ?? "").toLowerCase();
+  if (!cargo.includes("caixa")) return 0;
+  return Math.round((colaborador.salario_base || 0) * 0.1 * 100) / 100;
 }
