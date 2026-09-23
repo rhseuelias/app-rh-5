@@ -413,7 +413,7 @@ export interface AvaliacaoExperiencia {
   cultura: number | null;
   assiduidade: number | null;
   pontualidade: number | null;
-  desempenho: number | null;
+  desempenhn: number | null;
   observacoes: string | null;
   recomendacao: string | null;
   resultado: "efetivado" | "nao_efetivado";
@@ -483,5 +483,58 @@ export interface BeneficioExtra {
   premio: number;
   outros_descricao: string | null;
   outros_valor: number;
+  updated_at: string;
+}
+
+// ------------------------------------------------------------
+// CONTROLE DE FOLHA (Departamento Pessoal) — grade de Proventos,
+// Descontos e Espelhamento, uma linha por colaborador, mês a mês.
+// Fase 1: lançamento manual (a leitura automática de documentos vem
+// numa 2ª etapa). Todos os colaboradores ativos/experiência entram
+// aqui (CLT, PJ e Estágio — diferente do Controle de Benefícios).
+// ------------------------------------------------------------
+
+export type CategoriaFolha = "provento" | "desconto" | "espelhamento";
+export type FormatoFolha = "moeda" | "texto";
+
+/** Uma coluna da grade de Folha (ex.: "Comissão", "Unimed Titular",
+ * "Vale Transporte Recarga"). Cadastro global — não muda por empresa. */
+export interface FolhaTipo {
+  id: string;
+  categoria: CategoriaFolha;
+  nome: string;
+  codigo: string | null;
+  /** "moeda" = campo em R$ com máscara; "texto" = campo livre (ex.: "SIM", "4%"). */
+  formato: FormatoFolha;
+  ordem: number;
+  ativo: boolean;
+  created_at: string;
+}
+
+/** Um mês da Folha. "fechado" = vira histórico (trava edição). */
+export interface FolhaCompetencia {
+  id: string;
+  competencia: string; // 'AAAA-MM', ex.: '2026-09'
+  fechado: boolean;
+  created_at: string;
+}
+
+/** O valor de 1 colaborador em 1 coluna (tipo) em 1 mês. */
+export interface FolhaLancamento {
+  id: string;
+  competencia_id: string;
+  colaborador_id: string;
+  tipo_id: string;
+  valor: number;
+  valor_texto: string | null;
+  updated_at: string;
+}
+
+/** Anotação livre de 1 colaborador em 1 mês (coluna "PONTO" da planilha). */
+export interface FolhaNota {
+  id: string;
+  competencia_id: string;
+  colaborador_id: string;
+  nota: string | null;
   updated_at: string;
 }
