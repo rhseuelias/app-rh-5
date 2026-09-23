@@ -142,7 +142,7 @@ export default function PainelTipoCaju({
                 const status = l.totalCaju > 0 ? "ok" : "conferir";
                 return (
                   <tr key={l.colaboradorId} className="border-b border-slate-100 even:bg-slate-50/60">
-                    <td className="py-2 px-4 font-bold text-slate-900 text-sm">{l.nome}</td>
+                    <td className="py-2 px-4 font-medium text-slate-800">{l.nome}</td>
                     <td className="py-2 px-4 text-slate-500">
                       {l.entradasCaju.length === 0 ? (
                         <span className="text-slate-300">—</span>
@@ -192,7 +192,7 @@ export default function PainelTipoCaju({
               <tbody>
                 {filtradas.map((l) => (
                   <tr key={l.colaboradorId} className="border-b border-slate-100 last:border-0 align-top">
-                    <td className="py-3 px-4 font-bold text-slate-900 text-base whitespace-nowrap">{l.nome}</td>
+                    <td className="py-3 px-4 font-medium text-slate-800 whitespace-nowrap">{l.nome}</td>
                     <td className="py-3 px-4 min-w-[280px]">
                       {l.entradasCaju.length === 0 && <p className="text-xs text-slate-400 mb-1.5">Sem CAJU no transporte</p>}
                       {l.entradasCaju.map((tr) => (
