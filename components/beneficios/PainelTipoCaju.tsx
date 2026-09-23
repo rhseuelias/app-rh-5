@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import type { BeneficioExtra, BeneficioTransporte } from "@/types/db";
 import { formatarReais } from "@/lib/formatadores";
+import { salvarExtras, salvarTransporte } from "@/lib/actions-beneficios";
 import LinhaTransporteCajuForm from "./LinhaTransporteCajuForm";
 import AdicionarTransporte from "./AdicionarTransporte";
 import ExtrasForm from "./ExtrasForm";
@@ -33,6 +34,41 @@ export default function PainelTipoCaju({
   const [modoFiltro, setModoFiltro] = useState<"todos" | "km" | "viagens" | "sem">("todos");
   const [statusFiltro, setStatusFiltro] = useState<"todos" | "ok" | "conferir">("todos");
   const [visao, setVisao] = useState<"compacto" | "detalhado">("compacto");
+  const [isSaving, startSaving] = useTransition();
+  const [salvo, setSalvo] = useState(false);
+
+  // Guarda o valor atual de cada linha (transporte e extras), atualizado a
+  // cada digitação pelos filhos. O botão "Salvar" do final lê tudo daqui e
+  // manda salvar de uma vez, em vez de cada linha ter seu próprio botão.
+  const draftsTransporte = useRef(new Map<string, Record<string, string>>()).current;
+  const draftsExtras = useRef(new Map<string, Record<string, string>>()).current;
+
+  function registrarTransporte(id: string, campos: Record<string, string>) {
+    draftsTransporte.set(id, campos);
+  }
+
+  function registrarExtras(colaboradorId: string, campos: Record<string, string>) {
+    draftsExtras.set(colaboradorId, campos);
+  }
+
+  function salvarTudo() {
+    setSalvo(false);
+    startSaving(async () => {
+      const chamadas: Promise<unknown>[] = [];
+      draftsTransporte.forEach((campos) => {
+        const fd = new FormData();
+        Object.entries(campos).forEach(([k, v]) => fd.set(k, v));
+        chamadas.push(salvarTransporte(fd));
+      });
+      draftsExtras.forEach((campos) => {
+        const fd = new FormData();
+        Object.entries(campos).forEach(([k, v]) => fd.set(k, v));
+        chamadas.push(salvarExtras(fd));
+      });
+      await Promise.all(chamadas);
+      setSalvo(true);
+    });
+  }
 
   const filtradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -106,7 +142,7 @@ export default function PainelTipoCaju({
                 const status = l.totalCaju > 0 ? "ok" : "conferir";
                 return (
                   <tr key={l.colaboradorId} className="border-b border-slate-100 even:bg-slate-50/60">
-                    <td className="py-2 px-4 font-medium text-slate-800">{l.nome}</td>
+                    <td className="py-2 px-4 font-bold text-slate-900 text-sm">{l.nome}</td>
                     <td className="py-2 px-4 text-slate-500">
                       {l.entradasCaju.length === 0 ? (
                         <span className="text-slate-300">—</span>
@@ -142,44 +178,66 @@ export default function PainelTipoCaju({
           </table>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-400 text-xs uppercase">
-                <th className="py-2 px-4">Colaborador</th>
-                <th className="py-2 px-4">Transporte (CAJU)</th>
-                <th className="py-2 px-4">Alimentação / Prêmio / Outros</th>
-                <th className="py-2 px-4">Total no CAJU</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtradas.map((l) => (
-                <tr key={l.colaboradorId} className="border-b border-slate-100 last:border-0 align-top">
-                  <td className="py-3 px-4 font-medium text-slate-800 whitespace-nowrap">{l.nome}</td>
-                  <td className="py-3 px-4 min-w-[280px]">
-                    {l.entradasCaju.length === 0 && <p className="text-xs text-slate-400 mb-1.5">Sem CAJU no transporte</p>}
-                    {l.entradasCaju.map((tr) => (
-                      <LinhaTransporteCajuForm
-                        key={tr.id}
+        <div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-400 text-xs uppercase">
+                  <th className="py-2 px-4">Colaborador</th>
+                  <th className="py-2 px-4">Transporte (CAJU)</th>
+                  <th className="py-2 px-4">Alimentação / Prêmio / Outros</th>
+                  <th className="py-2 px-4">Total no CAJU</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtradas.map((l) => (
+                  <tr key={l.colaboradorId} className="border-b border-slate-100 last:border-0 align-top">
+                    <td className="py-3 px-4 font-bold text-slate-900 text-base whitespace-nowrap">{l.nome}</td>
+                    <td className="py-3 px-4 min-w-[280px]">
+                      {l.entradasCaju.length === 0 && <p className="text-xs text-slate-400 mb-1.5">Sem CAJU no transporte</p>}
+                      {l.entradasCaju.map((tr) => (
+                        <LinhaTransporteCajuForm
+                          key={tr.id}
+                          competencia={competencia}
+                          colaboradorId={l.colaboradorId}
+                          tipo={tipo}
+                          mesFechado={mesFechado}
+                          lancamento={tr}
+                          onChange={registrarTransporte}
+                        />
+                      ))}
+                      {!mesFechado && (
+                        <AdicionarTransporte competencia={competencia} tipo={tipo} colaboradores={[{ id: l.colaboradorId, nome: l.nome }]} />
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      <ExtrasForm
                         competencia={competencia}
                         colaboradorId={l.colaboradorId}
-                        tipo={tipo}
                         mesFechado={mesFechado}
-                        lancamento={tr}
+                        extra={l.extra}
+                        onChange={registrarExtras}
                       />
-                    ))}
-                    {!mesFechado && (
-                      <AdicionarTransporte competencia={competencia} tipo={tipo} colaboradores={[{ id: l.colaboradorId, nome: l.nome }]} />
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    <ExtrasForm competencia={competencia} colaboradorId={l.colaboradorId} mesFechado={mesFechado} extra={l.extra} />
-                  </td>
-                  <td className="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">{formatarReais(l.totalCaju)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </td>
+                    <td className="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">{formatarReais(l.totalCaju)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!mesFechado && (
+            <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-slate-100 bg-slate-50/60">
+              {salvo && !isSaving && <span className="text-xs text-emerald-600 font-semibold">✓ Salvo</span>}
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={salvarTudo}
+                className="text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-full px-5 py-2 disabled:opacity-50"
+              >
+                {isSaving ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
