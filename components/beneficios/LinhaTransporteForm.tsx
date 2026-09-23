@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { BeneficioTransporte } from "@/types/db";
-import { salvarTransporte, removerTransporte } from "@/lib/actions-beneficios";
+import { removerTransporte } from "@/lib/actions-beneficios";
 import { centavosParaReais, formatarReais, reaisParaDigitos } from "@/lib/formatadores";
 import InputMoeda from "./InputMoeda";
 
 /** Uma linha editável de lançamento de transporte de 1 colaborador — usada
  * tanto dentro do bloco do CAJU quanto nos blocos dos outros tipos
  * (SEMPARAR, BHBUS, OTIMO, ou qualquer tipo cadastrado). Sempre existe como
- * uma <tr>: quem chama já está dentro de uma <table><tbody>. */
+ * uma <tr>: quem chama já está dentro de uma <table><tbody>.
+ * Não salva sozinha: a cada mudança avisa o painel (via onChange), que
+ * salva tudo de uma vez quando o usuário clica no botão "Salvar" no final. */
 export default function LinhaTransporteForm({
   competencia,
   colaboradorId,
@@ -19,6 +21,7 @@ export default function LinhaTransporteForm({
   lancamento,
   mostrarNome,
   nomeColaborador,
+  onChange,
 }: {
   competencia: string;
   colaboradorId: string;
@@ -29,6 +32,7 @@ export default function LinhaTransporteForm({
   /** true nos blocos que não são o CAJU, onde cada linha já mostra o nome do colaborador */
   mostrarNome?: boolean;
   nomeColaborador?: string;
+  onChange: (id: string, campos: Record<string, string>) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [modo, setModo] = useState<"km" | "viagens">(lancamento.modo);
@@ -44,23 +48,22 @@ export default function LinhaTransporteForm({
       ? Number(km || 0) * centavosParaReais(valorKmDigitos)
       : Number(viagensDia || 0) * centavosParaReais(valorViagemDigitos) * Number(diasUteis || 0);
 
-  function salvar() {
-    const formData = new FormData();
-    formData.set("id", lancamento.id);
-    formData.set("competencia", competencia);
-    formData.set("colaborador_id", colaboradorId);
-    formData.set("tipo", tipo);
-    formData.set("modo", modo);
-    formData.set("km", km || "0");
-    formData.set("valor_km", String(centavosParaReais(valorKmDigitos)));
-    formData.set("viagens_dia", viagensDia || "0");
-    formData.set("valor_viagem", String(centavosParaReais(valorViagemDigitos)));
-    formData.set("dias_uteis", diasUteis || "0");
-    formData.set("numero_cartao", numeroCartao);
-    startTransition(async () => {
-      await salvarTransporte(formData);
+  useEffect(() => {
+    onChange(lancamento.id, {
+      id: lancamento.id,
+      competencia,
+      colaborador_id: colaboradorId,
+      tipo,
+      modo,
+      km: km || "0",
+      valor_km: String(centavosParaReais(valorKmDigitos)),
+      viagens_dia: viagensDia || "0",
+      valor_viagem: String(centavosParaReais(valorViagemDigitos)),
+      dias_uteis: diasUteis || "0",
+      numero_cartao: numeroCartao,
     });
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modo, km, valorKmDigitos, viagensDia, valorViagemDigitos, diasUteis, numeroCartao]);
 
   function remover() {
     startTransition(() => {
@@ -70,7 +73,7 @@ export default function LinhaTransporteForm({
 
   return (
     <tr className="border-b border-slate-100 last:border-0 align-top">
-      {mostrarNome && <td className="py-2 pr-3 font-medium text-slate-800 whitespace-nowrap">{nomeColaborador}</td>}
+      {mostrarNome && <td className="py-2 pr-3 font-bold text-slate-900 text-base whitespace-nowrap">{nomeColaborador}</td>}
       <td className="py-2 pr-3">
         <select
           value={modo}
@@ -140,25 +143,15 @@ export default function LinhaTransporteForm({
       <td className="py-2 pr-3 font-semibold text-slate-800 whitespace-nowrap">{formatarReais(total)}</td>
       <td className="py-2 pr-1 whitespace-nowrap">
         {!mesFechado && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={salvar}
-              className="text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-full px-2.5 py-1 disabled:opacity-50"
-            >
-              Salvar
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={remover}
-              className="text-slate-400 hover:text-red-500 text-sm disabled:opacity-50"
-              title="Remover"
-            >
-              🗑️
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={remover}
+            className="text-slate-400 hover:text-red-500 text-sm disabled:opacity-50"
+            title="Remover"
+          >
+            🗑️
+          </button>
         )}
       </td>
     </tr>
