@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import type { BeneficioTransporte } from "@/types/db";
 import { formatarReais } from "@/lib/formatadores";
 import { calcularEntradaTransporte } from "@/lib/beneficios-calculos";
+import { salvarTransporte } from "@/lib/actions-beneficios";
 import LinhaTransporteForm from "./LinhaTransporteForm";
 import AdicionarTransporte from "./AdicionarTransporte";
 
@@ -31,6 +32,31 @@ export default function PainelTipoOutro({
   const [busca, setBusca] = useState("");
   const [modoFiltro, setModoFiltro] = useState<"todos" | "km" | "viagens">("todos");
   const [visao, setVisao] = useState<"compacto" | "detalhado">("compacto");
+  const [isSaving, startSaving] = useTransition();
+  const [salvo, setSalvo] = useState(false);
+
+  // Guarda o valor atual de cada linha, atualizado a cada digitação pelos
+  // filhos. O botão "Salvar" do final lê tudo daqui e manda salvar de uma
+  // vez, em vez de cada linha ter seu próprio botão.
+  const draftsTransporte = useRef(new Map<string, Record<string, string>>()).current;
+
+  function registrarTransporte(id: string, campos: Record<string, string>) {
+    draftsTransporte.set(id, campos);
+  }
+
+  function salvarTudo() {
+    setSalvo(false);
+    startSaving(async () => {
+      const chamadas: Promise<unknown>[] = [];
+      draftsTransporte.forEach((campos) => {
+        const fd = new FormData();
+        Object.entries(campos).forEach(([k, v]) => fd.set(k, v));
+        chamadas.push(salvarTransporte(fd));
+      });
+      await Promise.all(chamadas);
+      setSalvo(true);
+    });
+  }
 
   const filtradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -90,7 +116,7 @@ export default function PainelTipoOutro({
             <tbody>
               {filtradas.map((l) => (
                 <tr key={l.tr.id} className="border-b border-slate-100 even:bg-slate-50/60">
-                  <td className="py-2 px-4 font-medium text-slate-800">{l.nome}</td>
+                  <td className="py-2 px-4 font-bold text-slate-900 text-sm">{l.nome}</td>
                   <td className="py-2 px-4">
                     <span className="text-[10px] font-semibold uppercase text-violet-600 bg-violet-50 rounded px-1.5 py-0.5">
                       {l.tr.modo === "km" ? "Km rodado" : "Viagens/dia"}
@@ -104,34 +130,50 @@ export default function PainelTipoOutro({
           </table>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-400 text-xs uppercase">
-                <th className="py-2 px-4">Colaborador</th>
-                <th className="py-2 px-4">Modo</th>
-                <th className="py-2 px-4">Cálculo</th>
-                {comCartao && <th className="py-2 px-4">N° do Cartão</th>}
-                <th className="py-2 px-4">Total</th>
-                <th className="py-2 px-4"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtradas.map((l) => (
-                <LinhaTransporteForm
-                  key={l.tr.id}
-                  competencia={competencia}
-                  colaboradorId={l.colaboradorId}
-                  tipo={tipo}
-                  comCartao={comCartao}
-                  mesFechado={mesFechado}
-                  lancamento={l.tr}
-                  mostrarNome
-                  nomeColaborador={l.nome}
-                />
-              ))}
-            </tbody>
-          </table>
+        <div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-400 text-xs uppercase">
+                  <th className="py-2 px-4">Colaborador</th>
+                  <th className="py-2 px-4">Modo</th>
+                  <th className="py-2 px-4">Cálculo</th>
+                  {comCartao && <th className="py-2 px-4">N° do Cartão</th>}
+                  <th className="py-2 px-4">Total</th>
+                  <th className="py-2 px-4"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtradas.map((l) => (
+                  <LinhaTransporteForm
+                    key={l.tr.id}
+                    competencia={competencia}
+                    colaboradorId={l.colaboradorId}
+                    tipo={tipo}
+                    comCartao={comCartao}
+                    mesFechado={mesFechado}
+                    lancamento={l.tr}
+                    mostrarNome
+                    nomeColaborador={l.nome}
+                    onChange={registrarTransporte}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!mesFechado && (
+            <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-slate-100 bg-slate-50/60">
+              {salvo && !isSaving && <span className="text-xs text-emerald-600 font-semibold">✓ Salvo</span>}
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={salvarTudo}
+                className="text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-full px-5 py-2 disabled:opacity-50"
+              >
+                {isSaving ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {!mesFechado && colaboradoresParaAdicionar.length > 0 && (
