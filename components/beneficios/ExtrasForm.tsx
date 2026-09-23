@@ -1,43 +1,41 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import type { BeneficioExtra } from "@/types/db";
-import { salvarExtras } from "@/lib/actions-beneficios";
 import { centavosParaReais, reaisParaDigitos } from "@/lib/formatadores";
 import InputMoeda from "./InputMoeda";
 
-/** Alimentação, Prêmio e Outros de 1 colaborador em 1 mês — pagos pelo
- * cartão CAJU, por isso ficam dentro do bloco do CAJU (junto com o
- * transporte de quem usa CAJU também pra isso). Um valor só por mês. */
+/** Não salva sozinho: a cada mudança avisa o painel (via onChange), que
+ * salva tudo de uma vez quando o usuário clica no botão "Salvar" no final. */
 export default function ExtrasForm({
   competencia,
   colaboradorId,
   mesFechado,
   extra,
+  onChange,
 }: {
   competencia: string;
   colaboradorId: string;
   mesFechado: boolean;
   extra?: BeneficioExtra;
+  onChange: (colaboradorId: string, campos: Record<string, string>) => void;
 }) {
-  const [isPending, startTransition] = useTransition();
   const [alimentacaoDigitos, setAlimentacaoDigitos] = useState(reaisParaDigitos(extra?.alimentacao));
   const [premioDigitos, setPremioDigitos] = useState(reaisParaDigitos(extra?.premio));
   const [outrosDescricao, setOutrosDescricao] = useState(extra?.outros_descricao ?? "");
   const [outrosValorDigitos, setOutrosValorDigitos] = useState(reaisParaDigitos(extra?.outros_valor));
 
-  function salvar() {
-    const formData = new FormData();
-    formData.set("competencia", competencia);
-    formData.set("colaborador_id", colaboradorId);
-    formData.set("alimentacao", String(centavosParaReais(alimentacaoDigitos)));
-    formData.set("premio", String(centavosParaReais(premioDigitos)));
-    formData.set("outros_descricao", outrosDescricao);
-    formData.set("outros_valor", String(centavosParaReais(outrosValorDigitos)));
-    startTransition(async () => {
-      await salvarExtras(formData);
+  useEffect(() => {
+    onChange(colaboradorId, {
+      competencia,
+      colaborador_id: colaboradorId,
+      alimentacao: String(centavosParaReais(alimentacaoDigitos)),
+      premio: String(centavosParaReais(premioDigitos)),
+      outros_descricao: outrosDescricao,
+      outros_valor: String(centavosParaReais(outrosValorDigitos)),
     });
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alimentacaoDigitos, premioDigitos, outrosDescricao, outrosValorDigitos]);
 
   return (
     <div className="flex items-center gap-3 flex-wrap">
@@ -63,16 +61,6 @@ export default function ExtrasForm({
           <InputMoeda digitos={outrosValorDigitos} onChange={setOutrosValorDigitos} disabled={mesFechado} />
         </div>
       </div>
-      {!mesFechado && (
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={salvar}
-          className="text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-full px-2.5 py-1 disabled:opacity-50 self-end mb-0.5"
-        >
-          Salvar
-        </button>
-      )}
     </div>
   );
 }
