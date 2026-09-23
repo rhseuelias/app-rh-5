@@ -4,16 +4,17 @@ import type {
   Colaborador,
   Empresa,
   FolhaCompetencia,
+  FolhaEventoConcluido,
   FolhaLancamento,
   FolhaNota,
   FolhaTipo,
   Unidade,
 } from "@/types/db";
-import { colaboradorAtivoFolha, rotuloGrupoColaborador } from "@/lib/folha-calculos";
+import { colaboradorAtivoFolha, compararGrupos, rotuloGrupoColaborador } from "@/lib/folha-calculos";
 import { competenciaAtual, rotuloCompetencia } from "@/lib/beneficios-calculos";
 import TiposFolhaCadastro from "@/components/folha/TiposFolhaCadastro";
 import CompetenciaAcoesFolha from "@/components/folha/CompetenciaAcoesFolha";
-import FolhaGrid, { type GrupoFolha, type ValorCelula } from "@/components/folha/FolhaGrid";
+import FolhaWizard, { type ColaboradorFolha, type GrupoFolha, type ValorCelula } from "@/components/folha/FolhaWizard";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export default async function FolhaPage({
     supabase.from("unidades").select("*"),
     supabase.from("colaboradores").select("*"),
     supabase.from("folha_competencias").select("*").order("competencia", { ascending: false }),
-    supabase.from("folha_tipos").select("*").eq("ativo", true).order("ordem"),
+    supabase.from("folha_tipos").select("*").eq("ativo", true).neq("categoria", "espelhamento").order("ordem"),
   ]);
 
   const empresas = (empresasData ?? []) as Empresa[];
@@ -71,39 +72,72 @@ export default async function FolhaPage({
     new Set([competenciaAtual(), competencia, ...competencias.map((c) => c.competencia)])
   ).sort((a, b) => (a < b ? 1 : -1));
 
+  // mês anterior com dados — usado pra "manter a base do mês anterior"
+  const competenciaAnteriorRow = competencias
+    .filter((c) => c.competencia < competencia)
+    .sort((a, b) => (a.competencia < b.competencia ? 1 : -1))[0];
+
   let lancamentosRows: FolhaLancamento[] = [];
   let notasRows: FolhaNota[] = [];
-  if (competenciaRow && todosColaboradores.length > 0) {
+  let eventosConcluidosRows: FolhaEventoConcluido[] = [];
+  let lancamentosAnteriorRows: FolhaLancamento[] = [];
+
+  if (todosColaboradores.length > 0) {
     const ids = todosColaboradores.map((c) => c.id);
-    const [{ data: lancData }, { data: notasData }] = await Promise.all([
-      supabase.from("folha_lancamentos").select("*").eq("competencia_id", competenciaRow.id).in("colaborador_id", ids),
-      supabase.from("folha_notas").select("*").eq("competencia_id", competenciaRow.id).in("colaborador_id", ids),
-    ]);
-    lancamentosRows = (lancData ?? []) as FolhaLancamento[];
-    notasRows = (notasData ?? []) as FolhaNota[];
+
+    if (competenciaRow) {
+      const [{ data: lancData }, { data: notasData }, { data: eventosData }] = await Promise.all([
+        supabase.from("folha_lancamentos").select("*").eq("competencia_id", competenciaRow.id).in("colaborador_id", ids),
+        supabase.from("folha_notas").select("*").eq("competencia_id", competenciaRow.id).in("colaborador_id", ids),
+        supabase.from("folha_eventos_concluidos").select("*").eq("competencia_id", competenciaRow.id),
+      ]);
+      lancamentosRows = (lancData ?? []) as FolhaLancamento[];
+      notasRows = (notasData ?? []) as FolhaNota[];
+      eventosConcluidosRows = (eventosData ?? []) as FolhaEventoConcluido[];
+    }
+
+    if (competenciaAnteriorRow) {
+      const { data: lancAnteriorData } = await supabase
+        .from("folha_lancamentos")
+        .select("*")
+        .eq("competencia_id", competenciaAnteriorRow.id)
+        .in("colaborador_id", ids);
+      lancamentosAnteriorRows = (lancAnteriorData ?? []) as FolhaLancamento[];
+    }
   }
 
   const valoresIniciais: Record<string, Record<string, ValorCelula>> = {};
   for (const l of lancamentosRows) {
     (valoresIniciais[l.colaborador_id] ??= {})[l.tipo_id] = { valor: l.valor, valor_texto: l.valor_texto };
   }
+
+  const valoresBase: Record<string, Record<string, ValorCelula>> = {};
+  for (const l of lancamentosAnteriorRows) {
+    (valoresBase[l.colaborador_id] ??= {})[l.tipo_id] = { valor: l.valor, valor_texto: l.valor_texto };
+  }
+
   const notasIniciais: Record<string, string> = {};
   for (const n of notasRows) notasIniciais[n.colaborador_id] = n.nota ?? "";
 
-  // agrupa por unidade (quando tem) ou empresa (quando não tem unidades
-  // separadas), igual à sua planilha
-  const gruposMap = new Map<string, { id: string; nome: string }[]>();
+  const eventosConcluidosIniciais: Record<string, string[]> = {};
+  for (const ev of eventosConcluidosRows) {
+    (eventosConcluidosIniciais[ev.grupo] ??= []).push(ev.tipo_id);
+  }
+
+  // agrupa por unidade (ou empresa, quando não tem unidades separadas) —
+  // estagiários sempre caem no grupo "ESTÁGIO", à parte da unidade deles
+  const gruposMap = new Map<string, ColaboradorFolha[]>();
   for (const c of todosColaboradores) {
     const rotulo = rotuloGrupoColaborador(c, empresasPorId, unidadesPorId);
     if (!gruposMap.has(rotulo)) gruposMap.set(rotulo, []);
-    gruposMap.get(rotulo)!.push({ id: c.id, nome: c.nome });
+    gruposMap.get(rotulo)!.push({ id: c.id, nome: c.nome, cargo: c.cargo, salario_base: c.salario_base });
   }
   const grupos: GrupoFolha[] = Array.from(gruposMap.entries())
     .map(([rotulo, colaboradores]) => ({
       rotulo,
       colaboradores: colaboradores.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
     }))
-    .sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR"));
+    .sort((a, b) => compararGrupos(a.rotulo, b.rotulo));
 
   return (
     <div className="space-y-6">
@@ -111,7 +145,7 @@ export default async function FolhaPage({
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Departamento Pessoal · Controle de Folha</h1>
           <p className="text-slate-500 text-sm">
-            Proventos, Descontos e Espelhamento — todos os colaboradores ativos, agrupados por unidade/empresa, igual à planilha que vai pra contabilidade.
+            Um evento (coluna) por vez, por unidade — igual à planilha que vai pra contabilidade.
           </p>
         </div>
         <CompetenciaAcoesFolha competencia={competencia} fechado={mesFechado} />
@@ -145,13 +179,15 @@ export default async function FolhaPage({
           <p className="text-sm text-slate-400">Nenhum colaborador ativo encontrado.</p>
         </div>
       ) : (
-        <FolhaGrid
+        <FolhaWizard
           competencia={competencia}
           mesFechado={mesFechado}
           tipos={tipos}
           grupos={grupos}
           valoresIniciais={valoresIniciais}
+          valoresBase={valoresBase}
           notasIniciais={notasIniciais}
+          eventosConcluidosIniciais={eventosConcluidosIniciais}
         />
       )}
     </div>
