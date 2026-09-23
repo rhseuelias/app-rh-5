@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase-server";
+import { calcularQuebraCaixa } from "@/lib/folha-calculos";
 
 const ROTA = "/departamento-pessoal/folha";
 
@@ -68,9 +69,11 @@ export async function cadastrarTipoFolha(formData: FormData) {
   const supabase = createClient();
   const nome = str(formData, "nome")?.trim();
   const categoria = str(formData, "categoria");
-  const formato = str(formData, "formato") === "texto" ? "texto" : "moeda";
+  const formatoBruto = str(formData, "formato");
+  const formato = formatoBruto === "texto" || formatoBruto === "sim_nao" ? formatoBruto : "moeda";
   if (!nome) return;
-  if (categoria !== "provento" && categoria !== "desconto" && categoria !== "espelhamento") return;
+  // Espelhamento saiu de uso — colunas novas só entram como provento ou desconto.
+  if (categoria !== "provento" && categoria !== "desconto") return;
 
   const { data: maxOrdemData } = await supabase
     .from("folha_tipos")
@@ -154,4 +157,66 @@ export async function salvarFolhaLote(
 
   revalidatePath(ROTA);
   return { ok: true as const };
+}
+
+export interface LancamentoEventoInput {
+  colaborador_id: string;
+  valor: number;
+  valor_texto: string | null;
+}
+
+export async function salvarEventoFolha(
+  competencia: string,
+  grupo: string,
+  tipoId: string,
+  lancamentos: LancamentoEventoInput[]
+) {
+  const supabase = createClient();
+  const comp = await garantirCompetencia(supabase, competencia);
+  if (comp.fechado) return { ok: false as const, motivo: "mes_fechado" as const };
+
+  const { data: tipoRow } = await supabase
+    .from("folha_tipos")
+    .select("calculo_automatico")
+    .eq("id", tipoId)
+    .single();
+
+  let linhas = lancamentos;
+
+  if (tipoRow?.calculo_automatico) {
+    const ids = lancamentos.map((l) => l.colaborador_id);
+    const { data: colaboradoresData } = await supabase
+      .from("colaboradores")
+      .select("id, cargo, salario_base")
+      .in("id", ids);
+    const porId = new Map((colaboradoresData ?? []).map((c) => [c.id, c]));
+    linhas = lancamentos.map((l) => {
+      const c = porId.get(l.colaborador_id);
+      return { ...l, valor: c ? calcularQuebraCaixa(c) : 0, valor_texto: null };
+    });
+  }
+
+  const agora = new Date().toISOString();
+
+  if (linhas.length > 0) {
+    const rows = linhas.map((l) => ({
+      competencia_id: comp.id,
+      colaborador_id: l.colaborador_id,
+      tipo_id: tipoId,
+      valor: l.valor,
+      valor_texto: l.valor_texto,
+      updated_at: agora,
+    }));
+    await supabase
+      .from("folha_lancamentos")
+      .upsert(rows, { onConflict: "competencia_id,colaborador_id,tipo_id" });
+  }
+
+  await supabase.from("folha_eventos_concluidos").upsert(
+    { competencia_id: comp.id, grupo, tipo_id: tipoId, concluido_em: agora },
+    { onConflict: "competencia_id,grupo,tipo_id" }
+  );
+
+  revalidatePath(ROTA);
+  return { ok: true as const, linhas };
 }
