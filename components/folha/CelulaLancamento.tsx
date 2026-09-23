@@ -20,7 +20,7 @@ export default function CelulaLancamento({
 }: {
   formato: "moeda" | "texto";
   valorInicial: number;
-  valorTextoInitial: string | null;
+  valorTextoInicial: string | null;
   disabled?: boolean;
   onChange: (payload: { valor: number; valor_texto: string | null }) => void;
 }) {
