@@ -1,27 +1,31 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { BeneficioTransporte } from "@/types/db";
-import { salvarTransporte, removerTransporte } from "@/lib/actions-beneficios";
+import { removerTransporte } from "@/lib/actions-beneficios";
 import { centavosParaReais, formatarReais, reaisParaDigitos } from "@/lib/formatadores";
 import InputMoeda from "./InputMoeda";
 
 /** Igual à LinhaTransporteForm, mas em formato de linha compacta (não uma
  * <tr>) — usada dentro da célula "Transporte (CAJU)" do bloco do CAJU, onde
  * cada colaborador já é 1 linha da tabela por fora, e pode ter várias
- * dessas linhas de transporte empilhadas dentro da mesma célula. */
+ * dessas linhas de transporte empilhadas dentro da mesma célula.
+ * Não salva sozinha: a cada mudança avisa o painel (via onChange), que
+ * salva tudo de uma vez quando o usuário clica no botão "Salvar" no final. */
 export default function LinhaTransporteCajuForm({
   competencia,
   colaboradorId,
   tipo,
   mesFechado,
   lancamento,
+  onChange,
 }: {
   competencia: string;
   colaboradorId: string;
   tipo: string;
   mesFechado: boolean;
   lancamento: BeneficioTransporte;
+  onChange: (id: string, campos: Record<string, string>) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [modo, setModo] = useState<"km" | "viagens">(lancamento.modo);
@@ -36,22 +40,21 @@ export default function LinhaTransporteCajuForm({
       ? Number(km || 0) * centavosParaReais(valorKmDigitos)
       : Number(viagensDia || 0) * centavosParaReais(valorViagemDigitos) * Number(diasUteis || 0);
 
-  function salvar() {
-    const formData = new FormData();
-    formData.set("id", lancamento.id);
-    formData.set("competencia", competencia);
-    formData.set("colaborador_id", colaboradorId);
-    formData.set("tipo", tipo);
-    formData.set("modo", modo);
-    formData.set("km", km || "0");
-    formData.set("valor_km", String(centavosParaReais(valorKmDigitos)));
-    formData.set("viagens_dia", viagensDia || "0");
-    formData.set("valor_viagem", String(centavosParaReais(valorViagemDigitos)));
-    formData.set("dias_uteis", diasUteis || "0");
-    startTransition(async () => {
-      await salvarTransporte(formData);
+  useEffect(() => {
+    onChange(lancamento.id, {
+      id: lancamento.id,
+      competencia,
+      colaborador_id: colaboradorId,
+      tipo,
+      modo,
+      km: km || "0",
+      valor_km: String(centavosParaReais(valorKmDigitos)),
+      viagens_dia: viagensDia || "0",
+      valor_viagem: String(centavosParaReais(valorViagemDigitos)),
+      dias_uteis: diasUteis || "0",
     });
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modo, km, valorKmDigitos, viagensDia, valorViagemDigitos, diasUteis]);
 
   function remover() {
     startTransition(() => {
@@ -113,25 +116,15 @@ export default function LinhaTransporteCajuForm({
       )}
       <span className="text-xs font-semibold text-slate-700">{formatarReais(total)}</span>
       {!mesFechado && (
-        <>
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={salvar}
-            className="text-[11px] font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-full px-2 py-0.5 disabled:opacity-50"
-          >
-            Salvar
-          </button>
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={remover}
-            className="text-slate-400 hover:text-red-500 text-xs disabled:opacity-50"
-            title="Remover"
-          >
-            🗑️
-          </button>
-        </>
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={remover}
+          className="text-slate-400 hover:text-red-500 text-xs disabled:opacity-50"
+          title="Remover"
+        >
+          🗑️
+        </button>
       )}
     </div>
   );
