@@ -6,7 +6,10 @@ import { salvarTransporte } from "@/lib/actions-beneficios";
 /** Cria uma linha nova (zerada) de transporte de um tipo, pra um colaborador
  * escolhido — depois ela aparece na tabela como uma LinhaTransporteForm,
  * já pronta pra preencher os valores. Permite o mesmo colaborador ganhar
- * uma 2ª linha do mesmo tipo (valor diferente) ou de outro tipo. */
+ * uma 2ª linha do mesmo tipo (valor diferente) ou de outro tipo.
+ * Quando só existe 1 colaborador possível (caso do CAJU, onde cada linha já
+ * é de 1 colaborador só), não faz sentido mostrar o seletor de nome — nesse
+ * caso aparece só o botão. */
 export default function AdicionarTransporte({
   competencia,
   tipo,
@@ -35,17 +38,19 @@ export default function AdicionarTransporte({
 
   return (
     <div className="flex items-center gap-2 p-3 flex-wrap">
-      <select
-        value={colaboradorId}
-        onChange={(e) => setColaboradorId(e.target.value)}
-        className="input !w-auto !py-1.5 !px-2 !text-sm"
-      >
-        {colaboradores.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.nome}
-          </option>
-        ))}
-      </select>
+      {colaboradores.length > 1 && (
+        <select
+          value={colaboradorId}
+          onChange={(e) => setColaboradorId(e.target.value)}
+          className="input !w-auto !py-1.5 !px-2 !text-sm"
+        >
+          {colaboradores.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nome}
+            </option>
+          ))}
+        </select>
+      )}
       <button
         type="button"
         disabled={isPending}
