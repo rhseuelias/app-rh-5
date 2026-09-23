@@ -6,17 +6,19 @@ import { logout } from "@/lib/actions";
 
 const ITENS = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/calendario", label: "Calendário Geral", icon: "🗓️" },
   { href: "/candidatos", label: "Pré-cadastro", icon: "📝" },
-  { href: "/onboarding", label: "Painel de Integração", icon: "✅" },
   { href: "/colaboradores", label: "Colaboradores", icon: "👥" },
+  { href: "/onboarding", label: "Painel de Integração", icon: "✅" },
+  { href: "/calendario", label: "Calendário Geral", icon: "🗓️" },
   { href: "/ferias", label: "Férias", icon: "🏖️" },
+  { href: "/departamento-pessoal/beneficios", label: "Departamento Pessoal", icon: "🎁" },
   { href: "/aniversarios", label: "Aniversários", icon: "🎂" },
   { href: "/projecao-custo", label: "Projeção de Custo", icon: "💰" },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ papel }: { papel?: string | null }) {
   const pathname = usePathname();
+  const itens = papel === "assistente" ? ITENS.filter((i) => i.href !== "/projecao-custo") : ITENS;
 
   return (
     <aside className="w-64 shrink-0 bg-ink-900 min-h-screen flex flex-col">
@@ -27,7 +29,7 @@ export default function Sidebar() {
         <p className="text-xs text-slate-400 mt-0.5">Gestão de pessoas que gera resultados</p>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
-        {ITENS.map((item) => {
+        {itens.map((item) => {
           const ativo = pathname?.startsWith(item.href);
           return (
             <Link
