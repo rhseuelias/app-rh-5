@@ -495,19 +495,24 @@ export interface BeneficioExtra {
 // ------------------------------------------------------------
 
 export type CategoriaFolha = "provento" | "desconto" | "espelhamento";
-export type FormatoFolha = "moeda" | "texto";
+export type FormatoFolha = "moeda" | "texto" | "sim_nao";
 
-/** Uma coluna da grade de Folha (ex.: "Comissão", "Unimed Titular",
- * "Vale Transporte Recarga"). Cadastro global — não muda por empresa. */
+/** Uma coluna da grade de Folha (ex.: "Comissão", "Unimed Titular").
+ * Cadastro global — não muda por empresa. */
 export interface FolhaTipo {
   id: string;
   categoria: CategoriaFolha;
   nome: string;
   codigo: string | null;
-  /** "moeda" = campo em R$ com máscara; "texto" = campo livre (ex.: "SIM", "4%"). */
+  /** "moeda" = campo em R$ com máscara; "texto" = campo livre; "sim_nao"
+   * = Sim/Não (ex.: Adiantamento, Desc. Transporte). */
   formato: FormatoFolha;
   ordem: number;
   ativo: boolean;
+  /** true = a coluna é calculada sozinha pelo sistema (hoje só a Quebra
+   * de Caixa: 10% do salário de quem tem "caixa" no cargo) — não dá
+   * pra editar na tela, o valor final é sempre recalculado ao salvar. */
+  calculo_automatico: boolean;
   created_at: string;
 }
 
@@ -537,4 +542,15 @@ export interface FolhaNota {
   colaborador_id: string;
   nota: string | null;
   updated_at: string;
+}
+
+/** Marca que 1 evento (coluna) foi concluído pra 1 unidade em 1 mês —
+ * é o que libera o próximo evento e, quando todo mundo termina, libera
+ * o Relatório de Conferência. */
+export interface FolhaEventoConcluido {
+  id: string;
+  competencia_id: string;
+  grupo: string; // nome da unidade/empresa (ou "ESTÁGIO")
+  tipo_id: string;
+  concluido_em: string;
 }
