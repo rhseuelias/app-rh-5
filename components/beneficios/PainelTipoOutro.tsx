@@ -116,7 +116,7 @@ export default function PainelTipoOutro({
             <tbody>
               {filtradas.map((l) => (
                 <tr key={l.tr.id} className="border-b border-slate-100 even:bg-slate-50/60">
-                  <td className="py-2 px-4 font-bold text-slate-900 text-sm">{l.nome}</td>
+                  <td className="py-2 px-4 font-medium text-slate-800">{l.nome}</td>
                   <td className="py-2 px-4">
                     <span className="text-[10px] font-semibold uppercase text-violet-600 bg-violet-50 rounded px-1.5 py-0.5">
                       {l.tr.modo === "km" ? "Km rodado" : "Viagens/dia"}
