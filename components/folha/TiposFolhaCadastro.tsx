@@ -10,6 +10,12 @@ const ROTULO_CATEGORIA: Record<string, string> = {
   espelhamento: "🟡 Espelhamento",
 };
 
+const ROTULO_FORMATO: Record<string, string> = {
+  moeda: "R$",
+  texto: "texto",
+  sim_nao: "Sim/Não",
+};
+
 function TipoItem({ tipo }: { tipo: FolhaTipo }) {
   const [isPending, startTransition] = useTransition();
 
@@ -30,6 +36,10 @@ function TipoItem({ tipo }: { tipo: FolhaTipo }) {
     <li className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-full pl-3.5 pr-2 py-1.5 text-sm">
       <span className="font-semibold text-slate-700">{tipo.nome}</span>
       <span className="text-xs text-slate-400">{ROTULO_CATEGORIA[tipo.categoria] ?? tipo.categoria}</span>
+      <span className="text-xs text-slate-300">{ROTULO_FORMATO[tipo.formato] ?? tipo.formato}</span>
+      {tipo.calculo_automatico && (
+        <span className="text-xs text-brand-600" title="Calculado automaticamente pelo sistema">🧮 auto</span>
+      )}
       <button
         type="button"
         onClick={remover}
@@ -64,11 +74,11 @@ export default function TiposFolhaCadastro({ tipos }: { tipos: FolhaTipo[] }) {
         <select name="categoria" required defaultValue="provento" className="input !w-auto !py-1.5 !text-sm">
           <option value="provento">Provento</option>
           <option value="desconto">Desconto</option>
-          <option value="espelhamento">Espelhamento</option>
         </select>
         <select name="formato" defaultValue="moeda" className="input !w-auto !py-1.5 !text-sm">
           <option value="moeda">Valor em R$</option>
-          <option value="texto">Texto livre (ex.: SIM, %)</option>
+          <option value="texto">Texto livre</option>
+          <option value="sim_nao">Sim/Não</option>
         </select>
         <input name="codigo" className="input !w-20 !py-1.5 !text-sm" placeholder="Código" />
         <button type="submit" className="btn-secondary !text-sm !py-1.5">＋ Cadastrar coluna</button>
