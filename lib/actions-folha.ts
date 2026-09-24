@@ -243,3 +243,33 @@ export async function salvarEventoFolha(
   revalidatePath(ROTA);
   return { ok: true as const, linhas };
 }
+
+/** Apaga o que foi lançado num evento (coluna) pra um grupo (unidade) —
+ * some com os valores salvos dos colaboradores dele nesse evento e tira
+ * a "concluído" de cima, pra poder lançar tudo de novo do zero. Usado
+ * pelo botão "Limpar evento" quando alguém digitou algo errado e quer
+ * refazer, em vez de corrigir célula por célula. */
+export async function limparEventoFolha(competencia: string, grupo: string, tipoId: string, colaboradorIds: string[]) {
+  const supabase = createClient();
+  const comp = await garantirCompetencia(supabase, competencia);
+  if (comp.fechado) return { ok: false as const, motivo: "mes_fechado" as const };
+
+  if (colaboradorIds.length > 0) {
+    await supabase
+      .from("folha_lancamentos")
+      .delete()
+      .eq("competencia_id", comp.id)
+      .eq("tipo_id", tipoId)
+      .in("colaborador_id", colaboradorIds);
+  }
+
+  await supabase
+    .from("folha_eventos_concluidos")
+    .delete()
+    .eq("competencia_id", comp.id)
+    .eq("grupo", grupo)
+    .eq("tipo_id", tipoId);
+
+  revalidatePath(ROTA);
+  return { ok: true as const };
+}
