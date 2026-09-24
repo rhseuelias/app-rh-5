@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { FolhaTipo } from "@/types/db";
+import { tiposDoGrupo } from "@/lib/folha-calculos";
 import FolhaEventoStep from "./FolhaEventoStep";
 import FolhaRelatorioFinal from "./FolhaRelatorioFinal";
 
@@ -25,14 +26,18 @@ export interface GrupoFolha {
 /**
  * Orquestra o processo por unidade: escolher a unidade → preencher um
  * evento (coluna) por vez, concluindo cada um antes de liberar o
- * próximo → quando TODAS as unidades concluem TODOS os eventos, libera
- * o Relatório de Conferência (a grade inteira, travada, pra olhar).
+ * próximo → quando TODAS as unidades concluem TODOS os eventos que
+ * valem pra elas, libera o Relatório de Conferência (a grade inteira,
+ * travada, pra olhar). Cada unidade só vê as colunas que valem pra
+ * ela — `gruposPorTipo` diz quais colunas são restritas a quais
+ * unidades/empresas (sem entrada ali = vale pra todo mundo).
  */
 export default function FolhaWizard({
   competencia,
   mesFechado,
   tipos,
   grupos,
+  gruposPorTipo,
   valoresIniciais,
   valoresBase,
   notasIniciais,
@@ -42,6 +47,7 @@ export default function FolhaWizard({
   mesFechado: boolean;
   tipos: FolhaTipo[];
   grupos: GrupoFolha[];
+  gruposPorTipo: Record<string, string[]>;
   valoresIniciais: Record<string, Record<string, ValorCelula>>;
   valoresBase: Record<string, Record<string, ValorCelula>>;
   notasIniciais: Record<string, string>;
@@ -53,7 +59,8 @@ export default function FolhaWizard({
   const [concluidos, setConcluidos] = useState(eventosConcluidosIniciais);
 
   function grupoEstaCompleto(rotulo: string): boolean {
-    return tipos.length > 0 && tipos.every((t) => concluidos[rotulo]?.includes(t.id));
+    const tiposG = tiposDoGrupo(tipos, rotulo, gruposPorTipo);
+    return tiposG.length > 0 && tiposG.every((t) => concluidos[rotulo]?.includes(t.id));
   }
 
   const todosCompletos = grupos.length > 0 && grupos.every((g) => grupoEstaCompleto(g.rotulo));
@@ -78,6 +85,7 @@ export default function FolhaWizard({
       <FolhaRelatorioFinal
         tipos={tipos}
         grupos={grupos}
+        gruposPorTipo={gruposPorTipo}
         valores={valores}
         notasIniciais={notasIniciais}
         competencia={competencia}
@@ -94,7 +102,7 @@ export default function FolhaWizard({
         competencia={competencia}
         mesFechado={mesFechado}
         grupo={grupo}
-        tipos={tipos}
+        tipos={tiposDoGrupo(tipos, grupo.rotulo, gruposPorTipo)}
         valores={valores}
         valoresBase={valoresBase}
         concluidosDoGrupo={concluidos[grupo.rotulo] ?? []}
@@ -129,8 +137,9 @@ export default function FolhaWizard({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {grupos.map((g) => {
+          const tiposG = tiposDoGrupo(tipos, g.rotulo, gruposPorTipo);
           const feitos = concluidos[g.rotulo]?.length ?? 0;
-          const total = tipos.length;
+          const total = tiposG.length;
           const completo = grupoEstaCompleto(g.rotulo);
           return (
             <button
