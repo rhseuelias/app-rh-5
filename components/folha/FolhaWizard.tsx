@@ -5,6 +5,7 @@ import type { FolhaTipo } from "@/types/db";
 import { tiposDoGrupo } from "@/lib/folha-calculos";
 import FolhaEventoStep from "./FolhaEventoStep";
 import FolhaRelatorioFinal from "./FolhaRelatorioFinal";
+import FolhaRelatorioDinamico from "./FolhaRelatorioDinamico";
 
 export interface ValorCelula {
   valor: number;
@@ -23,14 +24,29 @@ export interface GrupoFolha {
   colaboradores: ColaboradorFolha[];
 }
 
+/** Colaborador com o vínculo de empresa/unidade, usado só pelo Relatório
+ * Dinâmico (que agrupa por EMPRESA, diferente do lançamento que agrupa por
+ * unidade). `subgrupoRotulo` é o mesmo rótulo usado no lançamento (unidade,
+ * "ESTÁGIO" ou a própria empresa) — serve só pra saber quais colunas valem
+ * (`gruposPorTipo` � indexado por esse rótulo). */
+export interface ColaboradorComVinculo extends ColaboradorFolha {
+  subgrupoRotulo: string;
+}
+
+export interface EmpresaFolha {
+  nome: string;
+  colaboradores: ColaboradorComVinculo[];
+}
+
 /**
  * Orquestra o processo por unidade: escolher a unidade → preencher um
  * evento (coluna) por vez, concluindo cada um antes de liberar o
  * próximo → quando TODAS as unidades concluem TODOS os eventos que
  * valem pra elas, libera o Relatório de Conferência (a grade inteira,
- * travada, pra olhar). Cada unidade só vê as colunas que valem pra
- * ela — `gruposPorTipo` diz quais colunas são restritas a quais
- * unidades/empresas (sem entrada ali = vale pra todo mundo).
+ * travada, pra olhar) e o Relatório Dinâmico (comparação por empresa,
+ * com somatório de cada coluna). Cada unidade só vê as colunas que
+ * valem pra ela — `gruposPorTipo` diz quais colunas são restritas a
+ * quais unidades/empresas (sem entrada ali = vale pra todo mundo).
  */
 export default function FolhaWizard({
   competencia,
@@ -38,6 +54,7 @@ export default function FolhaWizard({
   tipos,
   grupos,
   gruposPorTipo,
+  empresasFolha,
   valoresIniciais,
   valoresBase,
   notasIniciais,
@@ -48,6 +65,7 @@ export default function FolhaWizard({
   tipos: FolhaTipo[];
   grupos: GrupoFolha[];
   gruposPorTipo: Record<string, string[]>;
+  empresasFolha: EmpresaFolha[];
   valoresIniciais: Record<string, Record<string, ValorCelula>>;
   valoresBase: Record<string, Record<string, ValorCelula>>;
   notasIniciais: Record<string, string>;
@@ -55,6 +73,7 @@ export default function FolhaWizard({
 }) {
   const [grupoSelecionado, setGrupoSelecionado] = useState<string | null>(null);
   const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
+  const [mostrarRelatorioDinamico, setMostrarRelatorioDinamico] = useState(false);
   const [valores, setValores] = useState(valoresIniciais);
   const [concluidos, setConcluidos] = useState(eventosConcluidosIniciais);
 
@@ -78,6 +97,19 @@ export default function FolhaWizard({
       if (atual.includes(tipoId)) return prev;
       return { ...prev, [grupo]: [...atual, tipoId] };
     });
+  }
+
+  if (mostrarRelatorioDinamico) {
+    return (
+      <FolhaRelatorioDinamico
+        competencia={competencia}
+        tipos={tipos}
+        gruposPorTipo={gruposPorTipo}
+        empresasFolha={empresasFolha}
+        valores={valores}
+        onVoltar={() => setMostrarRelatorioDinamico(false)}
+      />
+    );
   }
 
   if (mostrarRelatorio) {
@@ -117,21 +149,38 @@ export default function FolhaWizard({
       <div className="card">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
           <h3 className="text-sm font-semibold text-slate-700">🧾 Lançamento por unidade</h3>
-          <button
-            type="button"
-            disabled={!todosCompletos}
-            onClick={() => setMostrarRelatorio(true)}
-            className={`btn-secondary !text-sm !py-1.5 ${
-              todosCompletos ? "!bg-ink-900 !text-white !border-ink-900" : "opacity-40 cursor-not-allowed"
-            }`}
-            title={todosCompletos ? "Ver a grade completa, pronta pra conferência" : "Termine todas as unidades pra liberar"}
-          >
-            📋 Relatório de Conferência {todosCompletos ? "" : "(bloqueado)"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={!todosCompletos}
+              onClick={() => setMostrarRelatorio(true)}
+              className={`btn-secondary !text-sm !py-1.5 ${
+                todosCompletos ? "!bg-ink-900 !text-white !border-ink-900" : "opacity-40 cursor-not-allowed"
+              }`}
+              title={todosCompletos ? "Ver a grade completa, pronta pra conferência" : "Termine todas as unidades pra liberar"}
+            >
+              📋 Relatório de Conferência {todosCompletos ? "" : "(bloqueado)"}
+            </button>
+            <button
+              type="button"
+              disabled={!todosCompletos}
+              onClick={() => setMostrarRelatorioDinamico(true)}
+              className={`btn-secondary !text-sm !py-1.5 ${
+                todosCompletos ? "!bg-white !text-ink-900 !border-ink-900" : "opacity-40 cursor-not-allowed"
+              }`}
+              title={
+                todosCompletos
+                  ? "Comparar as empresas e ver o somatório de cada coluna, pra conferência"
+                  : "Termine todas as unidades pra liberar"
+              }
+            >
+              📐 Relatório Dinâmico {todosCompletos ? "" : "(bloqueado)"}
+            </button>
+          </div>
         </div>
         <p className="text-xs text-slate-400">
           Escolha uma unidade pra lançar. Dentro dela, é um evento (coluna) por vez — conclua o atual pra liberar o
-          próximo. Só depois de terminar TODAS as unidades o Relatório de Conferência libera.
+          próximo. Só depois de terminar TODAS as unidades os relatórios liberam.
         </p>
       </div>
 
