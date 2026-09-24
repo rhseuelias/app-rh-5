@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import type { FolhaTipo } from "@/types/db";
-import { salvarEventoFolha } from "@/lib/actions-folha";
+import { limparEventoFolha, salvarEventoFolha } from "@/lib/actions-folha";
 import { calcularQuebraCaixa } from "@/lib/folha-calculos";
 import CelulaLancamento from "./CelulaLancamento";
 import type { ColaboradorFolha, GrupoFolha, ValorCelula } from "./FolhaWizard";
@@ -21,6 +21,7 @@ export default function FolhaEventoStep({
   valoresBase,
   concluidosDoGrupo,
   onConcluir,
+  onLimpar,
   onVoltar,
 }: {
   competencia: string;
@@ -31,11 +32,15 @@ export default function FolhaEventoStep({
   valoresBase: Record<string, Record<string, ValorCelula>>;
   concluidosDoGrupo: string[];
   onConcluir: (grupo: string, tipoId: string, lancamentos: Record<string, ValorCelula>) => void;
+  onLimpar: (grupo: string, tipoId: string) => void;
   onVoltar: () => void;
 }) {
   const primeiroNaoFeito = tipos.findIndex((t) => !concluidosDoGrupo.includes(t.id));
   const indiceDesbloqueado = primeiroNaoFeito === -1 ? tipos.length - 1 : primeiroNaoFeito;
   const [indice, setIndice] = useState(indiceDesbloqueado);
+  // muda toda vez que um evento é limpo — força o formulário a recomeçar do
+  // zero (os campos guardam o valor inicial só na hora que nascem)
+  const [resetKey, setResetKey] = useState(0);
 
   const tipo = tipos[indice];
   const grupoCompleto = primeiroNaoFeito === -1;
@@ -87,7 +92,7 @@ export default function FolhaEventoStep({
 
       {tipo && (
         <EventoForm
-          key={tipo.id}
+          key={`${tipo.id}-${resetKey}`}
           competencia={competencia}
           mesFechado={mesFechado}
           grupo={grupo}
@@ -100,6 +105,11 @@ export default function FolhaEventoStep({
             if (indice === indiceDesbloqueado && indice < tipos.length - 1) {
               setIndice(indice + 1);
             }
+          }}
+          onLimpar={() => {
+            onLimpar(grupo.rotulo, tipo.id);
+            setIndice((i) => (i > 0 ? i - 1 : i));
+            setResetKey((k) => k + 1);
           }}
         />
       )}
@@ -116,6 +126,7 @@ function EventoForm({
   valoresBase,
   jaConcluido,
   onConcluido,
+  onLimpar,
 }: {
   competencia: string;
   mesFechado: boolean;
@@ -125,6 +136,7 @@ function EventoForm({
   valoresBase: Record<string, Record<string, ValorCelula>>;
   jaConcluido: boolean;
   onConcluido: (lancamentos: Record<string, ValorCelula>) => void;
+  onLimpar: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
@@ -165,6 +177,23 @@ function EventoForm({
         return;
       }
       onConcluido(lancamentos);
+    });
+  }
+
+  function limpar() {
+    const ok = window.confirm(
+      `Limpar "${tipo.nome}" de ${grupo.rotulo}? Isso apaga o que foi salvo nesse evento e volta pro evento anterior.`
+    );
+    if (!ok) return;
+    setErro(null);
+    startTransition(async () => {
+      const ids = grupo.colaboradores.map((c) => c.id);
+      const resultado = await limparEventoFolha(competencia, grupo.rotulo, tipo.id, ids);
+      if (!resultado.ok) {
+        setErro("Esse mês está fechado — reabra ali em cima pra poder editar.");
+        return;
+      }
+      onLimpar();
     });
   }
 
@@ -209,14 +238,25 @@ function EventoForm({
         {mesFechado ? (
           <span className="text-sm text-slate-400">🔒 mês fechado</span>
         ) : (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={concluir}
-            className="btn-secondary !bg-ink-900 !text-white !border-ink-900 disabled:opacity-50"
-          >
-            {isPending ? "Salvando..." : jaConcluido ? "✓ Concluído — salvar de novo" : "Concluir e avançar"}
-          </button>
+          <>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={limpar}
+              title="Apaga os valores lançados nesse evento e volta pro evento anterior"
+              className="btn-secondary !text-sm disabled:opacity-50"
+            >
+              🗑️ Limpar evento
+            </button>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={concluir}
+              className="btn-secondary !bg-ink-900 !text-white !border-ink-900 disabled:opacity-50"
+            >
+              {isPending ? "Salvando..." : jaConcluido ? "✓ Concluído — salvar de novo" : "Concluir e avançar"}
+            </button>
+          </>
         )}
       </div>
     </div>
