@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import type { CategoriaFolha, FolhaTipo } from "@/types/db";
 import { salvarFolhaLote } from "@/lib/actions-folha";
+import { tiposDoGrupo } from "@/lib/folha-calculos";
 import { formatarReais } from "@/lib/formatadores";
 import type { GrupoFolha, ValorCelula } from "./FolhaWizard";
 
@@ -20,12 +21,14 @@ const ROTULO_CATEGORIA: Record<CategoriaFolha, string> = {
 
 /** Relatório de Conferência: a grade inteira, travada — cada unidade
  * com o cabeçalho das colunas repetido (igual à planilha), pronta pra
- * conferir antes de mandar pra contabilidade. Libera só quando todas
- * as unidades concluem todos os eventos. */
+ * conferir antes de mandar pra contabilidade. Cada unidade mostra só
+ * as colunas que valem pra ela (`gruposPorTipo`). Libera só quando
+ * todas as unidades concluem todos os eventos. */
 export default function FolhaRelatorioFinal({
   competencia,
   tipos,
   grupos,
+  gruposPorTipo,
   valores,
   notasIniciais,
   onVoltar,
@@ -33,12 +36,11 @@ export default function FolhaRelatorioFinal({
   competencia: string;
   tipos: FolhaTipo[];
   grupos: GrupoFolha[];
+  gruposPorTipo: Record<string, string[]>;
   valores: Record<string, Record<string, ValorCelula>>;
   notasIniciais: Record<string, string>;
   onVoltar: () => void;
 }) {
-  const categorias = Array.from(new Set(tipos.map((t) => t.categoria))) as CategoriaFolha[];
-
   function subtotalGrupo(colaboradores: { id: string }[], tipoId: string, formato: string): number | null {
     if (formato !== "moeda") return null;
     let soma = 0;
@@ -68,75 +70,79 @@ export default function FolhaRelatorioFinal({
         </p>
       </div>
 
-      {grupos.map((g) => (
-        <div key={g.rotulo} className="card !p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="bg-ink-900">
-                  <th colSpan={tipos.length + 2} className="py-1.5 px-3 text-left text-white text-xs font-bold uppercase tracking-wide">
-                    {g.rotulo}
-                  </th>
-                </tr>
-                <tr>
-                  <th className="py-2 px-3 text-left text-slate-400 text-xs uppercase bg-white sticky left-0 z-10">Colaborador</th>
-                  {categorias.map((categoria) => {
-                    const doGrupo = tipos.filter((t) => t.categoria === categoria);
-                    if (doGrupo.length === 0) return null;
-                    return (
-                      <th
-                        key={categoria}
-                        colSpan={doGrupo.length}
-                        className={`py-1.5 px-2 text-center text-[11px] font-bold uppercase tracking-wide ${COR_CATEGORIA[categoria]}`}
+      {grupos.map((g) => {
+        const tiposG = tiposDoGrupo(tipos, g.rotulo, gruposPorTipo);
+        const categoriasG = Array.from(new Set(tiposG.map((t) => t.categoria))) as CategoriaFolha[];
+        return (
+          <div key={g.rotulo} className="card !p-0 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-ink-900">
+                    <th colSpan={tiposG.length + 2} className="py-1.5 px-3 text-left text-white text-xs font-bold uppercase tracking-wide">
+                      {g.rotulo}
+                    </th>
+                  </tr>
+                  <tr>
+                    <th className="py-2 px-3 text-left text-slate-400 text-xs uppercase bg-white sticky left-0 z-10">Colaborador</th>
+                    {categoriasG.map((categoria) => {
+                      const doGrupo = tiposG.filter((t) => t.categoria === categoria);
+                      if (doGrupo.length === 0) return null;
+                      return (
+                        <th
+                          key={categoria}
+                          colSpan={doGrupo.length}
+                          className={`py-1.5 px-2 text-center text-[11px] font-bold uppercase tracking-wide ${COR_CATEGORIA[categoria]}`}
                       >
                         {ROTULO_CATEGORIA[categoria]}
+                        </th>
+                      );
+                    })}
+                    <th className="py-2 px-3 text-left text-slate-400 text-xs uppercase">Ponto</th>
+                  </tr>
+                  <tr>
+                    <th className="bg-white sticky left-0" />
+                    {tiposG.map((t) => (
+                      <th key={t.id} className="py-2 px-2 text-center text-slate-500 text-[11px] font-semibold whitespace-nowrap">
+                        {t.nome}
+                        {t.codigo && <div className="text-[10px] text-slate-300 font-normal">{t.codigo}</div>}
                       </th>
-                    );
-                  })}
-                  <th className="py-2 px-3 text-left text-slate-400 text-xs uppercase">Ponto</th>
-                </tr>
-                <tr>
-                  <th className="bg-white sticky left-0" />
-                  {tipos.map((t) => (
-                    <th key={t.id} className="py-2 px-2 text-center text-slate-500 text-[11px] font-semibold whitespace-nowrap">
-                      {t.nome}
-                      {t.codigo && <div className="text-[10px] text-slate-300 font-normal">{t.codigo}</div>}
-                    </th>
+                    ))}
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {g.colaboradores.map((c) => (
+                    <LinhaColaborador
+                      key={c.id}
+                      competencia={competencia}
+                      colaboradorId={c.id}
+                      nome={c.nome}
+                      tipos={tiposG}
+                      valoresColaborador={valores[c.id] ?? {}}
+                      notaInicial={notasIniciais[c.id] ?? ""}
+                    />
                   ))}
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {g.colaboradores.map((c) => (
-                  <LinhaColaborador
-                    key={c.id}
-                    competencia={competencia}
-                    colaboradorId={c.id}
-                    nome={c.nome}
-                    tipos={tipos}
-                    valoresColaborador={valores[c.id] ?? {}}
-                    notaInicial={notasIniciais[c.id] ?? ""}
-                  />
-                ))}
-                <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold">
-                  <td className="py-1.5 px-3 text-slate-600 text-xs sticky left-0 bg-slate-50">
-                    Subtotal {g.rotulo}
-                  </td>
-                  {tipos.map((t) => {
-                    const sub = subtotalGrupo(g.colaboradores, t.id, t.formato);
-                    return (
-                      <td key={t.id} className="py-1.5 px-2 text-center text-xs text-slate-700">
-                        {sub === null ? "—" : formatarReais(sub)}
-                      </td>
-                    );
-                  })}
-                  <td />
-                </tr>
-              </tbody>
-            </table>
+                  <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold">
+                    <td className="py-1.5 px-3 text-slate-600 text-xs sticky left-0 bg-slate-50">
+                      Subtotal {g.rotulo}
+                    </td>
+                    {tiposG.map((t) => {
+                      const sub = subtotalGrupo(g.colaboradores, t.id, t.formato);
+                      return (
+                        <td key={t.id} className="py-1.5 px-2 text-center text-xs text-slate-700">
+                          {sub === null ? "—" : formatarReais(sub)}
+                        </td>
+                      );
+                    })}
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       <div className="card !p-0 overflow-hidden">
         <div className="overflow-x-auto">
