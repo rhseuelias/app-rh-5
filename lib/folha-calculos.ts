@@ -1,4 +1,4 @@
-import type { Colaborador, Empresa, FolhaLancamento, Unidade } from "@/types/db";
+import type { Colaborador, Empresa, FolhaLancamento, FolhaTipo, Unidade } from "@/types/db";
 
 export function colaboradorAtivoFolha(c: Colaborador): boolean {
   return c.status === "ativo" || c.status === "experiencia";
@@ -46,4 +46,26 @@ export function calcularQuebraCaixa(colaborador: Pick<Colaborador, "cargo" | "sa
   const cargo = (colaborador.cargo ?? "").toLowerCase();
   if (!cargo.includes("caixa")) return 0;
   return Math.round((colaborador.salario_base || 0) * 0.1 * 100) / 100;
+}
+
+/** true = essa coluna (tipo) vale pra essa unidade/empresa. Sem
+ * restrição cadastrada (lista vazia ou ausente) = vale pra todo
+ * mundo, que é o padrão de toda coluna. */
+export function tipoValeParaGrupo(
+  tipoId: string,
+  grupo: string,
+  gruposPorTipo: Record<string, string[]>
+): boolean {
+  const lista = gruposPorTipo[tipoId];
+  if (!lista || lista.length === 0) return true;
+  return lista.includes(grupo);
+}
+
+/** Filtra a lista de colunas pras que valem pra essa unidade/empresa. */
+export function tiposDoGrupo(
+  tipos: FolhaTipo[],
+  grupo: string,
+  gruposPorTipo: Record<string, string[]>
+): FolhaTipo[] {
+  return tipos.filter((t) => tipoValeParaGrupo(t.id, grupo, gruposPorTipo));
 }
