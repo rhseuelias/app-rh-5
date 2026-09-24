@@ -8,6 +8,7 @@ import type {
   FolhaLancamento,
   FolhaNota,
   FolhaTipo,
+  FolhaTipoGrupo,
   Unidade,
 } from "@/types/db";
 import { colaboradorAtivoFolha, compararGrupos, rotuloGrupoColaborador } from "@/lib/folha-calculos";
@@ -31,12 +32,14 @@ export default async function FolhaPage({
     { data: colaboradoresData },
     { data: competenciasData },
     { data: tiposData },
+    { data: tiposGruposData },
   ] = await Promise.all([
     supabase.from("empresas").select("*"),
     supabase.from("unidades").select("*"),
     supabase.from("colaboradores").select("*"),
     supabase.from("folha_competencias").select("*").order("competencia", { ascending: false }),
     supabase.from("folha_tipos").select("*").eq("ativo", true).neq("categoria", "espelhamento").order("ordem"),
+    supabase.from("folha_tipos_grupos").select("*"),
   ]);
 
   const empresas = (empresasData ?? []) as Empresa[];
@@ -44,6 +47,14 @@ export default async function FolhaPage({
   const todosColaboradores = ((colaboradoresData ?? []) as Colaborador[]).filter(colaboradorAtivoFolha);
   const competencias = (competenciasData ?? []) as FolhaCompetencia[];
   const tipos = (tiposData ?? []) as FolhaTipo[];
+  const tiposGrupos = (tiposGruposData ?? []) as FolhaTipoGrupo[];
+
+  // pra cada coluna (tipo), a lista de unidades/empresas que usam ela —
+  // sem entrada aqui pra um tipo_id = a coluna vale pra todo mundo
+  const gruposPorTipo: Record<string, string[]> = {};
+  for (const tg of tiposGrupos) {
+    (gruposPorTipo[tg.tipo_id] ??= []).push(tg.grupo);
+  }
 
   if (empresas.length === 0) {
     return (
@@ -139,6 +150,10 @@ export default async function FolhaPage({
     }))
     .sort((a, b) => compararGrupos(a.rotulo, b.rotulo));
 
+  // lista de todas as unidades/empresas existentes — usada pra montar
+  // os checkboxes de "quais unidades usam essa coluna"
+  const todosGrupos = grupos.map((g) => g.rotulo);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -168,7 +183,7 @@ export default async function FolhaPage({
         </div>
       )}
 
-      <TiposFolhaCadastro tipos={tipos} />
+      <TiposFolhaCadastro tipos={tipos} todosGrupos={todosGrupos} gruposPorTipo={gruposPorTipo} />
 
       {tipos.length === 0 ? (
         <div className="card">
@@ -184,6 +199,7 @@ export default async function FolhaPage({
           mesFechado={mesFechado}
           tipos={tipos}
           grupos={grupos}
+          gruposPorTipo={gruposPorTipo}
           valoresIniciais={valoresIniciais}
           valoresBase={valoresBase}
           notasIniciais={notasIniciais}
