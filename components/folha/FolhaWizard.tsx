@@ -28,7 +28,7 @@ export interface GrupoFolha {
  * Dinâmico (que agrupa por EMPRESA, diferente do lançamento que agrupa por
  * unidade). `subgrupoRotulo` é o mesmo rótulo usado no lançamento (unidade,
  * "ESTÁGIO" ou a própria empresa) — serve só pra saber quais colunas valem
- * (`gruposPorTipo` � indexado por esse rótulo). */
+ * (`gruposPorTipo` é indexado por esse rótulo). */
 export interface ColaboradorComVinculo extends ColaboradorFolha {
   subgrupoRotulo: string;
 }
@@ -99,6 +99,26 @@ export default function FolhaWizard({
     });
   }
 
+  function handleLimpar(grupo: string, tipoId: string) {
+    setValores((prev) => {
+      const novo: typeof prev = { ...prev };
+      for (const colaboradorId of Object.keys(novo)) {
+        const valoresColab = novo[colaboradorId];
+        if (valoresColab && tipoId in valoresColab) {
+          const resto = { ...valoresColab };
+          delete resto[tipoId];
+          novo[colaboradorId] = resto;
+        }
+      }
+      return novo;
+    });
+    setConcluidos((prev) => {
+      const atual = prev[grupo] ?? [];
+      if (!atual.includes(tipoId)) return prev;
+      return { ...prev, [grupo]: atual.filter((id) => id !== tipoId) };
+    });
+  }
+
   if (mostrarRelatorioDinamico) {
     return (
       <FolhaRelatorioDinamico
@@ -139,6 +159,7 @@ export default function FolhaWizard({
         valoresBase={valoresBase}
         concluidosDoGrupo={concluidos[grupo.rotulo] ?? []}
         onConcluir={handleConcluir}
+        onLimpar={handleLimpar}
         onVoltar={() => setGrupoSelecionado(null)}
       />
     );
