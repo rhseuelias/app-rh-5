@@ -554,3 +554,12 @@ export interface FolhaEventoConcluido {
   tipo_id: string;
   concluido_em: string;
 }
+
+/** Restringe 1 coluna (tipo) a um subconjunto de unidades/empresas —
+ * se um tipo_id não tiver nenhuma linha aqui, ele vale pra todo mundo
+ * (comportamento padrão, igual antes dessa tabela existir). */
+export interface FolhaTipoGrupo {
+  id: string;
+  tipo_id: string;
+  grupo: string;
+}
