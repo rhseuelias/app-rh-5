@@ -6,6 +6,7 @@ import {
   percentualFolhaSobreFaturamento,
   LIMITE_SAUDAVEL_FOLHA_PCT,
 } from "@/lib/calculos";
+import { corDaEmpresa } from "@/lib/empresa-cores";
 import EmpresaForm from "@/components/EmpresaForm";
 import UnidadesForm from "@/components/UnidadesForm";
 
@@ -70,61 +71,75 @@ export default async function ProjecaoCustoPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {porEmpresa.map(({ empresa, custoTotal, pct, headcount, detalhado }) => (
-          <div key={empresa.id} className="card">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="font-medium text-slate-900">{empresa.nome}</h2>
-                <p className="text-xs text-slate-400">{headcount} colaboradores</p>
+        {porEmpresa.map(({ empresa, custoTotal, pct, headcount, detalhado }, i) => {
+          const cor = corDaEmpresa(empresa.nome, i);
+          return (
+            <div
+              key={empresa.id}
+              className="card"
+              style={{ borderTopWidth: 8, borderTopStyle: "solid", borderTopColor: cor.cor }}
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <span
+                    className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full mb-2"
+                    style={{ background: cor.bg, color: cor.cor }}
+                  >
+                    <span className="w-2 h-2 rounded-full" style={{ background: cor.cor }} />
+                    {empresa.nome}
+                  </span>
+                  <h2 className="font-medium text-slate-900">{empresa.nome}</h2>
+                  <p className="text-xs text-slate-400">{headcount} colaboradores</p>
+                </div>
+                {pct !== null && (
+                  <span
+                    className={`badge ${
+                      pct <= LIMITE_SAUDAVEL_FOLHA_PCT
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {pct.toFixed(1)}% do faturamento
+                  </span>
+                )}
               </div>
-              {pct !== null && (
-                <span
-                  className={`badge ${
-                    pct <= LIMITE_SAUDAVEL_FOLHA_PCT
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-red-100 text-red-700"
-                  }`}
-                >
-                  {pct.toFixed(1)}% do faturamento
-                </span>
-              )}
+              <p className="text-2xl font-semibold text-slate-900 mt-3">
+                {custoTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                Faturamento cadastrado:{" "}
+                {empresa.faturamento_mensal.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })}
+              </p>
+
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 mt-4 border-t border-slate-100 pt-3">
+                <dt>Remuneração</dt>
+                <dd className="text-right text-slate-700">
+                  {detalhado.remuneracao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </dd>
+                <dt>Benefícios</dt>
+                <dd className="text-right text-slate-700">
+                  {detalhado.beneficios.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </dd>
+                <dt>Tributos (INSS + FGTS)</dt>
+                <dd className="text-right text-slate-700">
+                  {detalhado.tributos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </dd>
+                <dt>Passivo trabalhista</dt>
+                <dd className="text-right text-slate-700">
+                  {detalhado.passivoTrabalhista.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </dd>
+              </dl>
+
+              <UnidadesForm
+                empresaId={empresa.id}
+                unidades={listaUnidades.filter((u) => u.empresa_id === empresa.id)}
+              />
             </div>
-            <p className="text-2xl font-semibold text-slate-900 mt-3">
-              {custoTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-            </p>
-            <p className="text-xs text-slate-400 mt-1">
-              Faturamento cadastrado:{" "}
-              {empresa.faturamento_mensal.toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              })}
-            </p>
-
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 mt-4 border-t border-slate-100 pt-3">
-              <dt>Remuneração</dt>
-              <dd className="text-right text-slate-700">
-                {detalhado.remuneracao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-              </dd>
-              <dt>Benefícios</dt>
-              <dd className="text-right text-slate-700">
-                {detalhado.beneficios.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-              </dd>
-              <dt>Tributos (INSS + FGTS)</dt>
-              <dd className="text-right text-slate-700">
-                {detalhado.tributos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-              </dd>
-              <dt>Passivo trabalhista</dt>
-              <dd className="text-right text-slate-700">
-                {detalhado.passivoTrabalhista.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-              </dd>
-            </dl>
-
-            <UnidadesForm
-              empresaId={empresa.id}
-              unidades={listaUnidades.filter((u) => u.empresa_id === empresa.id)}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {semEmpresa.length > 0 && (
