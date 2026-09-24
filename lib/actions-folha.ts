@@ -83,13 +83,25 @@ export async function cadastrarTipoFolha(formData: FormData) {
     .maybeSingle();
   const proximaOrdem = (maxOrdemData?.ordem ?? 0) + 1;
 
-  await supabase.from("folha_tipos").insert({
-    nome,
-    categoria,
-    formato,
-    codigo: str(formData, "codigo"),
-    ordem: proximaOrdem,
-  });
+  const { data: novoTipo } = await supabase
+    .from("folha_tipos")
+    .insert({
+      nome,
+      categoria,
+      formato,
+      codigo: str(formData, "codigo"),
+      ordem: proximaOrdem,
+    })
+    .select("id")
+    .single();
+
+  // se marcou unidades específicas na hora de cadastrar, já salva a
+  // restrição; sem marcação nenhuma, a coluna vale pra todo mundo (padrão)
+  const grupos = formData.getAll("grupos").map(String).filter(Boolean);
+  if (novoTipo && grupos.length > 0) {
+    await supabase.from("folha_tipos_grupos").insert(grupos.map((g) => ({ tipo_id: novoTipo.id, grupo: g })));
+  }
+
   revalidatePath(ROTA);
 }
 
@@ -98,6 +110,17 @@ export async function removerTipoFolha(id: string) {
   // não apaga os lançamentos já feitos com essa coluna (ficam no
   // histórico) — só desativa, pra sumir da grade de novos lançamentos
   await supabase.from("folha_tipos").update({ ativo: false }).eq("id", id);
+  revalidatePath(ROTA);
+}
+
+/** Define quais unidades/empresas usam uma coluna (tipo). Lista vazia =
+ * volta a valer pra todo mundo (comportamento padrão). */
+export async function salvarGruposTipo(tipoId: string, grupos: string[]) {
+  const supabase = createClient();
+  await supabase.from("folha_tipos_grupos").delete().eq("tipo_id", tipoId);
+  if (grupos.length > 0) {
+    await supabase.from("folha_tipos_grupos").insert(grupos.map((g) => ({ tipo_id: tipoId, grupo: g })));
+  }
   revalidatePath(ROTA);
 }
 
