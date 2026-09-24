@@ -15,7 +15,13 @@ import { colaboradorAtivoFolha, compararGrupos, rotuloGrupoColaborador } from "@
 import { competenciaAtual, rotuloCompetencia } from "@/lib/beneficios-calculos";
 import TiposFolhaCadastro from "@/components/folha/TiposFolhaCadastro";
 import CompetenciaAcoesFolha from "@/components/folha/CompetenciaAcoesFolha";
-import FolhaWizard, { type ColaboradorFolha, type GrupoFolha, type ValorCelula } from "@/components/folha/FolhaWizard";
+import FolhaWizard, {
+  type ColaboradorComVinculo,
+  type ColaboradorFolha,
+  type EmpresaFolha,
+  type GrupoFolha,
+  type ValorCelula,
+} from "@/components/folha/FolhaWizard";
 
 export const dynamic = "force-dynamic";
 
@@ -154,6 +160,44 @@ export default async function FolhaPage({
   // os checkboxes de "quais unidades usam essa coluna"
   const todosGrupos = grupos.map((g) => g.rotulo);
 
+  // agrupa por EMPRESA (BDU/BABOON/BSE) — usado só pelo Relatório Dinâmico,
+  // que compara empresa por empresa (diferente do lançamento, que é por
+  // unidade). `subgrupoRotulo` guarda o mesmo rótulo usado no lançamento
+  // (unidade, "ESTÁGIO" ou a própria empresa), só pra saber quais colunas
+  // valem pra cada colaborador dentro do detalhe por empresa.
+  const colaboradoresPorEmpresaId = new Map<string, ColaboradorComVinculo[]>();
+  const semEmpresaFolha: ColaboradorComVinculo[] = [];
+  for (const c of todosColaboradores) {
+    const item: ColaboradorComVinculo = {
+      id: c.id,
+      nome: c.nome,
+      cargo: c.cargo,
+      salario_base: c.salario_base,
+      subgrupoRotulo: rotuloGrupoColaborador(c, empresasPorId, unidadesPorId),
+    };
+    if (c.empresa_id && empresasPorId[c.empresa_id]) {
+      const lista = colaboradoresPorEmpresaId.get(c.empresa_id) ?? [];
+      lista.push(item);
+      colaboradoresPorEmpresaId.set(c.empresa_id, lista);
+    } else {
+      semEmpresaFolha.push(item);
+    }
+  }
+  const empresasFolha: EmpresaFolha[] = empresas
+    .map((e) => ({
+      nome: e.nome,
+      colaboradores: (colaboradoresPorEmpresaId.get(e.id) ?? []).sort((a, b) =>
+        a.nome.localeCompare(b.nome, "pt-BR")
+      ),
+    }))
+    .filter((e) => e.colaboradores.length > 0);
+  if (semEmpresaFolha.length > 0) {
+    empresasFolha.push({
+      nome: "Sem empresa",
+      colaboradores: semEmpresaFolha.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+    });
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -200,6 +244,7 @@ export default async function FolhaPage({
           tipos={tipos}
           grupos={grupos}
           gruposPorTipo={gruposPorTipo}
+          empresasFolha={empresasFolha}
           valoresIniciais={valoresIniciais}
           valoresBase={valoresBase}
           notasIniciais={notasIniciais}
