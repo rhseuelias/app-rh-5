@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, EtapaProcesso, HistoricoEtapa, ProcessoIntegracao } from "@/types/db";
 import { differenceInCalendarDays } from "date-fns";
 import LinhaDoTempoIntegracao from "@/components/integracao/LinhaDoTempoIntegracao";
+import { formatarDataBR } from "@/lib/calculos";
 
 export const dynamic = "force-dynamic";
 
@@ -129,7 +130,7 @@ export default async function ColaboradorIntegracaoPage({
           </div>
           <div className="flex flex-wrap gap-5">
             <Stat label="Status geral" valor={STATUS_GERAL_LABEL[processoTyped.status_geral]} cor={STATUS_GERAL_COR[processoTyped.status_geral]} />
-            <Stat label="Data de admissão" valor={colaboradorTyped.data_admissao ? new Date(colaboradorTyped.data_admissao).toLocaleDateString("pt-BR") : "—"} />
+            <Stat label="Data de admissão" valor={formatarDataBR(colaboradorTyped.data_admissao)} />
             <Stat label="Tempo de processo" valor={processoTyped.cronometro_iniciado_em ? `${tempoProcessoDias} dias` : "não iniciado"} />
             <Stat label="Prazo" valor={prazoGeral} cor={prazoGeral === "Atrasado" ? "text-red-600" : prazoGeral === "No prazo" ? "text-emerald-600" : undefined} />
           </div>

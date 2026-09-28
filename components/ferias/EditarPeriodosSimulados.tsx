@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { addDays } from "date-fns";
 import { editarPeriodoSimulado, removerPeriodoSimulado, removerDefinicaoColaborador } from "@/lib/actions";
+import DateInput from "@/components/DateInput";
 
 export interface PeriodoEditavel {
   id: string;
@@ -105,10 +106,9 @@ export default function EditarPeriodosSimulados({
                     <span className="text-[10px] text-slate-400">era {formatarData(p.dataInicio)} — {formatarData(p.dataFim)}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <input
-                      type="date"
+                    <DateInput
                       value={inicio}
-                      onChange={(e) => atualizarRascunho(p, "inicio", e.target.value)}
+                      onChange={(v) => atualizarRascunho(p, "inicio", v)}
                       className="input !text-[10px] !py-1 !px-1.5 !w-auto"
                     />
                     <input

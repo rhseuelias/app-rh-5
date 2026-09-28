@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase-server";
 import { buscarLinhasRelatorioFerias } from "@/lib/ferias-relatorio";
-import { FERIAS_STATUS_LABEL } from "@/lib/calculos";
+import { FERIAS_STATUS_LABEL, formatarDataBR } from "@/lib/calculos";
 
 function dataBR(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-BR");
+  return formatarDataBR(iso);
 }
 
 export async function GET(req: Request) {

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { sugerirOpcoesFerias, criarFeriasDeSugestao } from "@/lib/actions";
+import { formatarDataBR } from "@/lib/calculos";
 
 interface Opcao {
   inicio: string;
@@ -13,7 +15,7 @@ interface Opcao {
 }
 
 function formatarData(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-BR");
+  return formatarDataBR(iso);
 }
 
 export default function SugerirFeriasBotao({
@@ -60,7 +62,7 @@ export default function SugerirFeriasBotao({
   }
 
   return (
-    <div className="relative inline-block">
+    <div className="inline-block">
       <button
         type="button"
         onClick={() => (aberto ? setAberto(false) : buscar())}
@@ -69,48 +71,62 @@ export default function SugerirFeriasBotao({
         ✨ Sugerir férias
       </button>
 
-      {aberto && (
-        <div className="absolute z-20 left-0 mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-card p-3 text-left">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold text-slate-700">Opções sugeridas</p>
-            <button onClick={() => setAberto(false)} className="text-slate-400 text-xs">
-              ✕
-            </button>
-          </div>
+      {aberto &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+            onClick={() => setAberto(false)}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 max-h-[85vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-base font-semibold text-slate-800">Opções sugeridas</p>
+                <button
+                  type="button"
+                  onClick={() => setAberto(false)}
+                  className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                >
+                  ✕
+                </button>
+              </div>
 
-          {criado ? (
-            <p className="text-xs text-emerald-600 py-2">Período planejado criado ✓</p>
-          ) : erro ? (
-            <p className="text-xs text-amber-600 py-2 leading-snug">{erro}</p>
-          ) : isPending && !opcoes ? (
-            <p className="text-xs text-slate-400 py-2">Calculando…</p>
-          ) : opcoes && opcoes.length === 0 ? (
-            <p className="text-xs text-amber-600 py-2">
-              Não achei data livre dentro do prazo legal — programe manualmente.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {opcoes?.map((o, i) => (
-                <li key={i} className="border border-slate-100 rounded-lg p-2">
-                  <p className="text-xs font-medium text-slate-800">
-                    {formatarData(o.inicio)} — {formatarData(o.fim)}
-                  </p>
-                  <p className="text-[10px] text-emerald-600 mt-1 leading-snug">
-                    ✓ {o.dias} dias · ✓ Sem conflito · ✓ Dentro do prazo · ✓ Regras da CLT atendidas
-                  </p>
-                  <button
-                    disabled={isPending}
-                    onClick={() => escolher(o)}
-                    className="mt-1.5 text-[10px] font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-full px-2.5 py-1"
-                  >
-                    Usar esta opção
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+              {criado ? (
+                <p className="text-sm text-emerald-600 py-2">Período planejado criado ✓</p>
+              ) : erro ? (
+                <p className="text-sm text-amber-600 py-2 leading-snug">{erro}</p>
+              ) : isPending && !opcoes ? (
+                <p className="text-sm text-slate-400 py-2">Calculando…</p>
+              ) : opcoes && opcoes.length === 0 ? (
+                <p className="text-sm text-amber-600 py-2">
+                  Não achei data livre dentro do prazo legal — programe manualmente.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {opcoes?.map((o, i) => (
+                    <li key={i} className="border border-slate-100 rounded-lg p-3">
+                      <p className="text-sm font-medium text-slate-800">
+                        {formatarData(o.inicio)} — {formatarData(o.fim)}
+                      </p>
+                      <p className="text-xs text-emerald-600 mt-1 leading-snug">
+                        ✓ {o.dias} dias · ✓ Sem conflito · ✓ Dentro do prazo · ✓ Regras da CLT atendidas
+                      </p>
+                      <button
+                        disabled={isPending}
+                        onClick={() => escolher(o)}
+                        className="mt-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-full px-3 py-1.5"
+                      >
+                        Usar esta opção
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

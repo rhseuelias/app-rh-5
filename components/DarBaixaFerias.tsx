@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { darBaixaFerias, type ResultadoBaixaFerias } from "@/lib/actions";
+import DateInput from "@/components/DateInput";
 
 interface Linha {
   colaboradorId: string;
@@ -80,20 +81,18 @@ export default function DarBaixaFerias({ colaboradores }: { colaboradores: { id:
             </div>
             <div>
               <label className="label">Início</label>
-              <input
-                type="date"
+              <DateInput
                 className="input"
                 value={linha.dataInicio}
-                onChange={(e) => atualizar(i, "dataInicio", e.target.value)}
+                onChange={(v) => atualizar(i, "dataInicio", v)}
               />
             </div>
             <div>
               <label className="label">Fim</label>
-              <input
-                type="date"
+              <DateInput
                 className="input"
                 value={linha.dataFim}
-                onChange={(e) => atualizar(i, "dataFim", e.target.value)}
+                onChange={(v) => atualizar(i, "dataFim", v)}
               />
             </div>
             <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2 whitespace-nowrap">

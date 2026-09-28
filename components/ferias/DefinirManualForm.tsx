@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { addDays } from "date-fns";
 import { definirFeriasManualCenario } from "@/lib/actions";
+import DateInput from "@/components/DateInput";
 
 function fimCalculado(inicio: string, dias: number): string {
   if (!inicio || !dias) return "—";
@@ -90,10 +91,9 @@ export default function DefinirManualForm({
             {linhas.map((l, i) => (
               <div key={i} className="flex items-center gap-1.5">
                 <span className="text-[10px] text-slate-400 w-14">Período {i + 1}</span>
-                <input
-                  type="date"
+                <DateInput
                   value={l.inicio}
-                  onChange={(e) => atualizar(i, "inicio", e.target.value)}
+                  onChange={(v) => atualizar(i, "inicio", v)}
                   className="input !text-[10px] !py-1 !px-1.5 !w-auto"
                 />
                 <input

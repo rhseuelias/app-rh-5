@@ -33,12 +33,12 @@ create table if not exists perfis (
 );
 
 -- ------------------------------------------------------------
--- COLABORADORES (CLT e PJ no mesmo cadastro, com "tipo")
+-- COLABORADORES (CLT, PJ e Estágio no mesmo cadastro, com "tipo")
 -- ------------------------------------------------------------
 create table if not exists colaboradores (
   id uuid primary key default gen_random_uuid(),
   empresa_id uuid references empresas(id) on delete set null,
-  tipo text not null default 'CLT' check (tipo in ('CLT', 'PJ')),
+  tipo text not null default 'CLT' check (tipo in ('CLT', 'PJ', 'Estagio')),
   nome text not null,
   cpf_cnpj text,
   cargo text,
@@ -70,6 +70,12 @@ create table if not exists colaboradores (
   contrato_fim date,
   contrato_renovacao_automatica boolean default false,
   valor_nota_fiscal numeric(12,2),
+  comissao_corte_pct numeric(5,2) check (comissao_corte_pct in (33, 35, 38, 40, 50)),
+  comissao_quimica_pct numeric(5,2) check (comissao_quimica_pct in (33, 35)),
+  assinatura_pj_path text, -- assinatura do próprio profissional PJ (contrato)
+  assinatura_pj_link_token uuid unique, -- link de assinatura digital
+  assinatura_pj_link_criado_em timestamptz,
+  assinatura_pj_assinado_em timestamptz, -- preenchido quando ele assina pelo link
 
   observacoes text,
   created_at timestamptz default now(),
@@ -78,6 +84,35 @@ create table if not exists colaboradores (
 
 create index if not exists idx_colaboradores_empresa on colaboradores(empresa_id);
 create index if not exists idx_colaboradores_status on colaboradores(status);
+create index if not exists idx_colaboradores_assinatura_pj_link_token
+  on colaboradores(assinatura_pj_link_token);
+
+-- ------------------------------------------------------------
+-- HISTÓRICO DE CONTRATOS PJ (cada período encerrado por uma renovação)
+-- ------------------------------------------------------------
+create table if not exists historico_contratos_pj (
+  id uuid primary key default gen_random_uuid(),
+  colaborador_id uuid not null references colaboradores(id) on delete cascade,
+  contrato_inicio date,
+  contrato_fim date,
+  valor_nota_fiscal numeric(12,2),
+  criado_em timestamptz not null default now()
+);
+
+create index if not exists historico_contratos_pj_colaborador_id_idx
+  on historico_contratos_pj(colaborador_id);
+
+-- ------------------------------------------------------------
+-- ASSINATURAS FIXAS do contrato PJ (Salão Parceiro + 2 testemunhas) —
+-- linha única, cadastrada em Configurações > Contrato PJ
+-- ------------------------------------------------------------
+create table if not exists config_assinaturas_pj (
+  id uuid primary key default gen_random_uuid(),
+  assinatura_salao_path text,
+  assinatura_testemunha1_path text,
+  assinatura_testemunha2_path text,
+  updated_at timestamptz not null default now()
+);
 
 -- ------------------------------------------------------------
 -- DOCUMENTOS do colaborador (referência a arquivos no Supabase Storage)
@@ -194,6 +229,8 @@ alter table onboarding_etapas enable row level security;
 alter table eventos_calendario enable row level security;
 alter table feriados enable row level security;
 alter table historico_colaborador enable row level security;
+alter table historico_contratos_pj enable row level security;
+alter table config_assinaturas_pj enable row level security;
 
 -- política simples: qualquer usuário autenticado (das 3 pessoas do RH)
 -- pode ler e escrever em tudo. Se no futuro quiser diferenciar por papel
@@ -205,7 +242,8 @@ begin
   for t in select unnest(array[
     'empresas','perfis','colaboradores','documentos_colaborador',
     'periodos_aquisitivos','ferias','onboarding_etapas',
-    'eventos_calendario','feriados','historico_colaborador'
+    'eventos_calendario','feriados','historico_colaborador',
+    'historico_contratos_pj','config_assinaturas_pj'
   ])
   loop
     execute format(

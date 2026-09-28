@@ -8,8 +8,10 @@ import {
   RESPONSAVEL_LABEL,
   calcularExperiencia,
   etapaAtrasada,
+  formatarDataBR,
 } from "@/lib/calculos";
 import { atualizarStatusEtapa, registrarAvaliacao90Dias } from "@/lib/actions-integracao";
+import DateInput from "@/components/DateInput";
 
 export default function LinhaDoTempoIntegracao({
   processoId,
@@ -96,10 +98,10 @@ function EtapaItem({
           <p className="text-xs text-slate-400 mt-0.5">
             {RESPONSAVEL_LABEL[etapa.responsavel] ?? etapa.responsavel}
             {etapa.prazo && !concluidaOuExperiencia && (
-              <> · prazo {new Date(etapa.prazo).toLocaleDateString("pt-BR")}{atrasada ? " — atrasada" : ""}</>
+              <> · prazo {formatarDataBR(etapa.prazo)}{atrasada ? " — atrasada" : ""}</>
             )}
             {etapa.data_conclusao && (
-              <> · concluída em {new Date(etapa.data_conclusao).toLocaleDateString("pt-BR")}</>
+              <> · concluída em {formatarDataBR(etapa.data_conclusao)}</>
             )}
             {etapa.bloqueada && <> · bloqueada até concluir a etapa anterior</>}
           </p>
@@ -146,7 +148,7 @@ function PainelExperiencia({ dataAdmissao, prazoDias }: { dataAdmissao: string |
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
         <div>
           <p className="text-slate-400">Admissão</p>
-          <p className="font-medium text-slate-700">{new Date(dataAdmissao).toLocaleDateString("pt-BR")}</p>
+          <p className="font-medium text-slate-700">{formatarDataBR(dataAdmissao)}</p>
         </div>
         <div>
           <p className="text-slate-400">Dias decorridos</p>
@@ -158,7 +160,7 @@ function PainelExperiencia({ dataAdmissao, prazoDias }: { dataAdmissao: string |
         </div>
         <div>
           <p className="text-slate-400">Fim previsto</p>
-          <p className="font-medium text-slate-700">{fim.toLocaleDateString("pt-BR")}</p>
+          <p className="font-medium text-slate-700">{formatarDataBR(fim)}</p>
         </div>
       </div>
     </div>
@@ -203,11 +205,10 @@ function PainelEtapa({
       {etapa.chave === "admissao" && (
         <div>
           <label className="label">Data de admissão</label>
-          <input
-            type="date"
+          <DateInput
             className="input"
             value={dataAdmissao}
-            onChange={(e) => setDataAdmissao(e.target.value)}
+            onChange={setDataAdmissao}
           />
         </div>
       )}
@@ -300,7 +301,7 @@ function PainelAvaliacao({
     return (
       <div className="mt-2 ml-1 card !p-4 text-sm text-slate-600">
         Avaliação registrada em{" "}
-        {etapa.data_conclusao ? new Date(etapa.data_conclusao).toLocaleDateString("pt-BR") : "—"}.
+        {formatarDataBR(etapa.data_conclusao)}.
       </div>
     );
   }

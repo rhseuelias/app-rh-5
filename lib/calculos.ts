@@ -11,6 +11,13 @@ export function custoMensalColaborador(c: Colaborador): number {
     return c.valor_nota_fiscal ?? 0;
   }
 
+  if (c.tipo === "Estagio") {
+    // Estágio não tem INSS patronal, FGTS nem passivo trabalhista — só a
+    // bolsa auxílio (guardada em valor_nota_fiscal) e o auxílio transporte
+    // (guardado em custo_vt).
+    return (c.valor_nota_fiscal ?? 0) + (c.custo_vt ?? 0);
+  }
+
   const remuneracao = c.salario_base + c.comissao_media + c.auxilio_outros;
   const beneficios =
     c.custo_vt + c.custo_va_vr + c.custo_assist_medica + c.custo_assist_psicologica;
@@ -45,6 +52,13 @@ export function custoDetalhado(c: Colaborador) {
   if (c.tipo === "PJ") {
     const total = c.valor_nota_fiscal ?? 0;
     return { remuneracao: total, beneficios: 0, tributos: 0, passivoTrabalhista: 0, total };
+  }
+
+  if (c.tipo === "Estagio") {
+    const remuneracao = c.valor_nota_fiscal ?? 0;
+    const beneficios = c.custo_vt ?? 0;
+    const total = remuneracao + beneficios;
+    return { remuneracao, beneficios, tributos: 0, passivoTrabalhista: 0, total };
   }
 
   const remuneracao = c.salario_base + c.comissao_media + c.auxilio_outros;
@@ -91,10 +105,13 @@ export function diasParaFimExperiencia(dataFimExperiencia: string): number {
  * Gera o período aquisitivo de férias (12 meses a partir da admissão ou do
  * fim do período aquisitivo anterior) e o limite legal de concessão
  * (11 meses após o fim do período aquisitivo — total 23 meses da abertura).
+ * O fim de cada período é sempre um dia antes de completar o mês redondo
+ * (ex.: admissão 04/08/2022 → período aquisitivo 04/08/2022 a 03/08/2023),
+ * já que o dia seguinte ao fim é o início do próximo período.
  */
 export function calcularPeriodoAquisitivo(dataInicio: string) {
   const inicio = new Date(dataInicio);
-  const fim = addMonths(inicio, 12);
+  const fim = addDays(addMonths(inicio, 12), -1);
   const limite_concessao = addMonths(fim, 11);
   return { inicio, fim, limite_concessao };
 }
@@ -102,6 +119,24 @@ export function calcularPeriodoAquisitivo(dataInicio: string) {
 /** Dias até o limite de concessão de férias vencer (útil para alertas). */
 export function diasParaVencerFerias(limiteConcessao: string): number {
   return differenceInCalendarDays(new Date(limiteConcessao), new Date());
+}
+
+/**
+ * Formata uma data guardada como "yyyy-MM-dd" (ou um objeto Date, ex.: o
+ * retorno de calcularPeriodoAquisitivo) pro padrão brasileiro dd/mm/aaaa.
+ * Nunca usa `new Date(texto).toLocaleDateString(...)` direto numa data sem
+ * horário — isso é interpretado como UTC e, dependendo do fuso de quem tá
+ * rodando o código (servidor ou navegador), pode mostrar o dia ANTERIOR ao
+ * salvo no banco. Aqui só reformata o texto (ou converte o Date pro mesmo
+ * texto ISO com toISOString, que é o mesmo "round trip" já usado ao salvar),
+ * sem nunca ler a data com métodos que dependem do fuso local.
+ */
+export function formatarDataBR(data: string | Date | null | undefined): string {
+  if (!data) return "—";
+  const iso = typeof data === "string" ? data : data.toISOString();
+  const [ano, mes, dia] = iso.slice(0, 10).split("-");
+  if (!ano || !mes || !dia) return "—";
+  return `${dia}/${mes}/${ano}`;
 }
 
 // ------------------------------------------------------------
@@ -254,6 +289,12 @@ export const GRAU_INSTRUCAO_LABEL: Record<string, string> = {
   pos_graduacao: "Pós-graduação",
   mestrado: "Mestrado",
   doutorado_pos_doutorado: "Doutorado/Pós-Doutorado",
+};
+
+export const TIPO_COLABORADOR_LABEL: Record<string, string> = {
+  CLT: "CLT",
+  PJ: "PJ",
+  Estagio: "Estagiário(a)",
 };
 
 export const CONTRATO_EXPERIENCIA_LABEL: Record<string, string> = {

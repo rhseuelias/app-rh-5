@@ -3,7 +3,7 @@ import Link from "next/link";
 import { addDays } from "date-fns";
 import type { Colaborador, Empresa, Unidade, Ferias, PeriodoAquisitivo, Feriado, CenarioSimulacao } from "@/types/db";
 import { formatarReais } from "@/lib/formatadores";
-import { diasParaVencerFerias } from "@/lib/calculos";
+import { diasParaVencerFerias, formatarDataBR } from "@/lib/calculos";
 import { detectarConflitos, respeitaRegraInicio, paraSetDeDatas } from "@/lib/ferias-calculos";
 import { normalizarConfig, periodosDoModelo, calcularSaldo } from "@/lib/simulacao-ferias";
 import { criarCenario, excluirCenario, duplicarCenario, limparCenario, promoverCenario } from "@/lib/actions";
@@ -274,7 +274,7 @@ export default async function SimulacaoFeriasPage({
   const diasPorColaborador: Record<string, Record<string, CelulaSimulacao>> = {};
   function pintarPeriodo(f: Ferias, cor: string, rotulo: string) {
     if (!diasPorColaborador[f.colaborador_id]) diasPorColaborador[f.colaborador_id] = {};
-    const titulo = `${rotulo} — ${new Date(f.data_inicio).toLocaleDateString("pt-BR")} a ${new Date(f.data_fim).toLocaleDateString("pt-BR")}`;
+    const titulo = `${rotulo} — ${formatarDataBR(f.data_inicio)} a ${formatarDataBR(f.data_fim)}`;
     let d = new Date(f.data_inicio);
     const fim = new Date(f.data_fim);
     while (d <= fim) {
@@ -429,9 +429,9 @@ export default async function SimulacaoFeriasPage({
                 <tr key={c.id} className="border-t border-slate-100">
                   <td className="py-2.5 px-4">{c.nome}</td>
                   <td className="py-2.5 px-4 text-xs text-slate-500">
-                    {new Date(periodo.inicio).toLocaleDateString("pt-BR")} – {new Date(periodo.fim).toLocaleDateString("pt-BR")}
+                    {formatarDataBR(periodo.inicio)} – {formatarDataBR(periodo.fim)}
                     <br />
-                    <span className="text-slate-400">limite: {new Date(periodo.limite_concessao).toLocaleDateString("pt-BR")}</span>
+                    <span className="text-slate-400">limite: {formatarDataBR(periodo.limite_concessao)}</span>
                   </td>
                   <td className="py-2.5 px-4 text-xs">
                     {saldo} dias {diasSimulados > 0 && <span className="text-slate-400">({diasSimulados} simulados)</span>}
@@ -448,7 +448,7 @@ export default async function SimulacaoFeriasPage({
                       colaboradorId={c.id}
                       colaboradorNome={c.nome}
                       periodoAquisitivoId={periodo.id}
-                      periodoAquisitivoLabel={`${new Date(periodo.inicio).toLocaleDateString("pt-BR")} a ${new Date(periodo.fim).toLocaleDateString("pt-BR")}`}
+                      periodoAquisitivoLabel={`${formatarDataBR(periodo.inicio)} a ${formatarDataBR(periodo.fim)}`}
                       saldoDisponivel={saldo}
                       periodosPadrao={periodosModelo}
                     />
@@ -531,16 +531,16 @@ export default async function SimulacaoFeriasPage({
                     <tr key={c.id} className="border-t border-slate-100">
                       <td className="py-2 px-3">{c.nome}</td>
                       <td className="py-2 px-3 text-xs text-slate-500">
-                        {new Date(periodo.inicio).toLocaleDateString("pt-BR")}–{new Date(periodo.fim).toLocaleDateString("pt-BR")}
+                        {formatarDataBR(periodo.inicio)}–{formatarDataBR(periodo.fim)}
                       </td>
-                      <td className="py-2 px-3 text-xs">{p1 ? new Date(p1.data_inicio).toLocaleDateString("pt-BR") : "—"}</td>
-                      <td className="py-2 px-3 text-xs">{p1 ? new Date(p1.data_fim).toLocaleDateString("pt-BR") : "—"}</td>
+                      <td className="py-2 px-3 text-xs">{p1 ? formatarDataBR(p1.data_inicio) : "—"}</td>
+                      <td className="py-2 px-3 text-xs">{p1 ? formatarDataBR(p1.data_fim) : "—"}</td>
                       <td className="py-2 px-3 text-xs">{p1 ? p1.dias : "—"}</td>
-                      <td className="py-2 px-3 text-xs">{p2 ? new Date(p2.data_inicio).toLocaleDateString("pt-BR") : "—"}</td>
-                      <td className="py-2 px-3 text-xs">{p2 ? new Date(p2.data_fim).toLocaleDateString("pt-BR") : "—"}</td>
+                      <td className="py-2 px-3 text-xs">{p2 ? formatarDataBR(p2.data_inicio) : "—"}</td>
+                      <td className="py-2 px-3 text-xs">{p2 ? formatarDataBR(p2.data_fim) : "—"}</td>
                       <td className="py-2 px-3 text-xs">{p2 ? p2.dias : "—"}</td>
                       <td className="py-2 px-3 text-xs">
-                        {p3 ? `${new Date(p3.data_inicio).toLocaleDateString("pt-BR")}–${new Date(p3.data_fim).toLocaleDateString("pt-BR")} (${p3.dias}d)` : "—"}
+                        {p3 ? `${formatarDataBR(p3.data_inicio)}–${formatarDataBR(p3.data_fim)} (${p3.dias}d)` : "—"}
                       </td>
                       <td className="py-2 px-3">
                         {completo ? (

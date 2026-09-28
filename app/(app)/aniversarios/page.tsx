@@ -1,5 +1,14 @@
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa } from "@/types/db";
+import { formatarDataBR } from "@/lib/calculos";
+
+/** Mês (0-11) e dia extraídos direto do texto "yyyy-MM-dd" — nunca via
+ * new Date(texto).getMonth()/.getDate(), que depende do fuso de quem tá
+ * rodando o código e pode cair no dia/mês anterior. */
+function mesDia(dataISO: string): { mes: number; dia: number } {
+  const [, mes, dia] = dataISO.slice(0, 10).split("-").map(Number);
+  return { mes: mes - 1, dia };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -26,17 +35,17 @@ export default async function AniversariosPage() {
   const hoje = new Date();
 
   const ordenados = [...colaboradores].sort((a, b) => {
-    const da = new Date(a.data_nascimento!);
-    const db = new Date(b.data_nascimento!);
-    const keyA = (da.getMonth() + 1) * 100 + da.getDate();
-    const keyB = (db.getMonth() + 1) * 100 + db.getDate();
+    const da = mesDia(a.data_nascimento!);
+    const db = mesDia(b.data_nascimento!);
+    const keyA = (da.mes + 1) * 100 + da.dia;
+    const keyB = (db.mes + 1) * 100 + db.dia;
     return keyA - keyB;
   });
 
   // tempo de casa: marcos de 1, 5 e 10 anos
   function marco(c: Colaborador): string | null {
     if (!c.data_admissao) return null;
-    const anos = hoje.getFullYear() - new Date(c.data_admissao).getFullYear();
+    const anos = hoje.getFullYear() - Number(c.data_admissao.slice(0, 4));
     if ([1, 5, 10, 15, 20].includes(anos)) return `${anos} ano${anos > 1 ? "s" : ""} de empresa`;
     return null;
   }
@@ -63,9 +72,9 @@ export default async function AniversariosPage() {
           </thead>
           <tbody>
             {ordenados.map((c) => {
-              const d = new Date(c.data_nascimento!);
+              const { mes } = mesDia(c.data_nascimento!);
               const marcoEmpresa = marco(c);
-              const mesAtual = d.getMonth() === hoje.getMonth();
+              const mesAtual = mes === hoje.getMonth();
               return (
                 <tr
                   key={c.id}
@@ -76,9 +85,9 @@ export default async function AniversariosPage() {
                     {c.empresa_id ? nomeEmpresaPorId[c.empresa_id] ?? "—" : "—"}
                   </td>
                   <td className="py-3 px-4">
-                    {d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                    {formatarDataBR(c.data_nascimento).slice(0, 5)}
                   </td>
-                  <td className="py-3 px-4">{MESES[d.getMonth()]}</td>
+                  <td className="py-3 px-4">{MESES[mes]}</td>
                   <td className="py-3 px-4">
                     {marcoEmpresa && (
                       <span className="badge bg-pink-100 text-pink-700">{marcoEmpresa}</span>

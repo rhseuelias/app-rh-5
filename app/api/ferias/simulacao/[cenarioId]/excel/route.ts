@@ -6,7 +6,9 @@ import { buscarDadosRelatorioSimulacao } from "@/lib/ferias-relatorio";
 const ORIGEM_LABEL: Record<string, string> = { manual: "Manual", automatica: "Automática" };
 
 function dataBR(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-BR");
+  const [ano, mes, dia] = iso.slice(0, 10).split("-");
+  if (!ano || !mes || !dia) return "—";
+  return `${dia}/${mes}/${ano}`;
 }
 
 export async function GET(req: Request, { params }: { params: { cenarioId: string } }) {

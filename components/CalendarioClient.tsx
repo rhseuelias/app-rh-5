@@ -9,6 +9,7 @@ import {
   REPETICAO_EVENTO_LABEL,
 } from "@/lib/calculos";
 import { criarEventoCalendario, excluirEventoCalendario } from "@/lib/actions";
+import DateInput from "@/components/DateInput";
 import {
   addMonths,
   endOfMonth,
@@ -306,18 +307,18 @@ function ModalNovoEvento({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">De</label>
-              <input type="date" name="data_inicio" required defaultValue={paraISO(dia)} className="input" />
+              <DateInput name="data_inicio" required defaultValue={paraISO(dia)} className="input" />
             </div>
             <div>
               <label className="label">Até (opcional)</label>
-              <input type="date" name="data_fim" className="input" />
+              <DateInput name="data_fim" className="input" />
             </div>
           </div>
 
           {repete !== "nenhuma" && (
             <div>
               <label className="label">Repetir até (opcional)</label>
-              <input type="date" name="repete_ate" className="input" />
+              <DateInput name="repete_ate" className="input" />
               <p className="text-[11px] text-slate-400 mt-1">
                 Se não preencher, repete por 1 ano a partir da data de início.
               </p>

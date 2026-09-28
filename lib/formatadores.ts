@@ -26,7 +26,7 @@ export function formatarCNPJ(valor: string): string {
 }
 
 /** Formata como CPF (11 dígitos) ou CNPJ (12+ dígitos), conforme o tamanho digitado. */
-export function formatarCpfOuCnpj(valor: string, tipo: "CLT" | "PJ"): string {
+export function formatarCpfOuCnpj(valor: string, tipo: "CLT" | "PJ" | "Estagio"): string {
   return tipo === "PJ" ? formatarCNPJ(valor) : formatarCPF(valor);
 }
 

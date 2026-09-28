@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import Sidebar from "@/components/Sidebar";
+import { obterPapelUsuarioLogado } from "@/lib/permissoes";
 
 export default async function AppLayout({
   children,
@@ -16,9 +17,11 @@ export default async function AppLayout({
     redirect("/login");
   }
 
+  const papel = await obterPapelUsuarioLogado();
+
   return (
     <div className="flex min-h-screen bg-[#f4f6fb]">
-      <Sidebar />
+      <Sidebar papel={papel} />
       <main className="flex-1 p-6 md:p-10 max-w-7xl mx-auto w-full">{children}</main>
     </div>
   );

@@ -3,7 +3,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import { createClient } from "@/lib/supabase-server";
 import { buscarLinhasRelatorioFerias } from "@/lib/ferias-relatorio";
 import { formatarReais } from "@/lib/formatadores";
-import { FERIAS_STATUS_LABEL } from "@/lib/calculos";
+import { FERIAS_STATUS_LABEL, formatarDataBR } from "@/lib/calculos";
 
 const MARGEM = 40;
 const LARGURA = 841.89; // A4 paisagem — cabe mais colunas
@@ -16,7 +16,7 @@ const COR_LABEL = rgb(0.45, 0.48, 0.55);
 const COR_LINHA = rgb(0.85, 0.86, 0.9);
 
 function dataBR(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-BR");
+  return formatarDataBR(iso);
 }
 
 export async function GET(req: Request) {

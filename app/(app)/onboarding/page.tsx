@@ -167,9 +167,8 @@ export default async function PainelIntegracaoPage({
 
         {linhas.length === 0 ? (
           <p className="text-sm text-slate-500">
-            Nenhum processo de integração ainda — eles são criados automaticamente quando você converte um
-            candidato em colaborador na tela de Pré-cadastro (ou pelo botão "Incluir no processo de integração"
-            na ficha do colaborador).
+            Nenhum processo de integração ainda — pra começar um, abra a ficha do colaborador e clique em
+            "Incluir no processo de integração".
           </p>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr_1fr_1fr_272px] gap-4 items-start">

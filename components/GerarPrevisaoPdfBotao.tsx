@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { PeriodoAquisitivo } from "@/types/db";
+import { formatarDataBR } from "@/lib/calculos";
 
 /**
  * Antes de baixar o PDF de previsão de férias, mostra qual período
@@ -54,8 +55,8 @@ export default function GerarPrevisaoPdfBotao({
             <>
               <p className="text-[10px] text-slate-400 leading-snug mb-2">
                 Referência: período aberto{" "}
-                {new Date(periodoAberto.inicio).toLocaleDateString("pt-BR")}–
-                {new Date(periodoAberto.fim).toLocaleDateString("pt-BR")}
+                {formatarDataBR(periodoAberto.inicio)}–
+                {formatarDataBR(periodoAberto.fim)}
                 <br />
                 Saldo disponível: {saldo} dia{saldo !== 1 ? "s" : ""}
               </p>

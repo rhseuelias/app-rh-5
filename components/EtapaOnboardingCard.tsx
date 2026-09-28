@@ -2,6 +2,7 @@
 
 import type { OnboardingEtapa } from "@/types/db";
 import { atualizarEtapaOnboarding } from "@/lib/actions";
+import { formatarDataBR } from "@/lib/calculos";
 import { useTransition } from "react";
 
 export default function EtapaOnboardingCard({
@@ -27,7 +28,7 @@ export default function EtapaOnboardingCard({
       <p className="font-medium text-slate-800">{nomeColaborador}</p>
       {etapa.prazo && (
         <p className="text-xs text-slate-500">
-          prazo: {new Date(etapa.prazo).toLocaleDateString("pt-BR")}
+          prazo: {formatarDataBR(etapa.prazo)}
         </p>
       )}
       <button

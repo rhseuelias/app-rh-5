@@ -6,7 +6,6 @@ import { logout } from "@/lib/actions";
 
 const ITENS = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/candidatos", label: "Pré-cadastro", icon: "📝" },
   { href: "/colaboradores", label: "Colaboradores", icon: "👥" },
   { href: "/onboarding", label: "Painel de Integração", icon: "✅" },
   { href: "/calendario", label: "Calendário Geral", icon: "🗓️" },

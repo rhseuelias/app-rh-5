@@ -4,6 +4,7 @@ import {
   ESTADO_CIVIL_LABEL,
   GRAU_INSTRUCAO_LABEL,
   CONTRATO_EXPERIENCIA_LABEL,
+  TIPO_COLABORADOR_LABEL,
   DIAS_SEMANA,
   cargaHorariaDia,
   minutosCargaDia,
@@ -17,7 +18,12 @@ function simNao(v: boolean): string {
 
 function dataBR(v: string | null): string {
   if (!v) return "—";
-  return new Date(v).toLocaleDateString("pt-BR");
+  // não usa new Date(v).toLocaleDateString(...) — em datas sem horário isso
+  // é interpretado como UTC e pode mostrar um dia a menos dependendo do
+  // fuso do servidor. Aqui é só reformatar o texto, sem passar por Date.
+  const [ano, mes, dia] = v.slice(0, 10).split("-");
+  if (!ano || !mes || !dia) return "—";
+  return `${dia}/${mes}/${ano}`;
 }
 
 export interface CampoFicha {
@@ -95,7 +101,7 @@ export async function buscarFichaAdmissao(colaboradorId: string): Promise<FichaA
   ];
 
   const funcional: CampoFicha[] = [
-    { label: "Tipo", valor: c.tipo },
+    { label: "Tipo", valor: TIPO_COLABORADOR_LABEL[c.tipo] ?? c.tipo },
     { label: "Cargo", valor: c.cargo ?? "—" },
     { label: "Departamento", valor: c.departamento ?? "—" },
     { label: "Líder", valor: c.lider ?? "—" },

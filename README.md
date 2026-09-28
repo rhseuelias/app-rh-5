@@ -3,8 +3,8 @@
 **Gestão de pessoas que gera resultados**
 
 App interno de gestão de RH (CLT/PJ) — Dashboard, Colaboradores, Férias,
-Situação Aquisitiva, Onboarding, Calendário Geral, Aniversários e Projeção
-de Custo.
+Situação Aquisitiva, Onboarding, Calendário Geral, Aniversários, Projeção
+de Custo e Departamento Pessoal (Controle de Benefícios).
 
 ## Stack
 
@@ -67,7 +67,13 @@ Abra http://localhost:3000
     configuração salva (modelo de fracionamento, regras de data, capacidade
     da equipe, estratégia de priorização) e a marcação de quem definiu cada
     período (RH manualmente ou o algoritmo automático).
-13. Vá em **Project Settings → API**. Copie:
+13. Faça o mesmo com o arquivo `supabase/migration_015_beneficios.sql`
+    (cole em uma **New query** e clique em **Run**). Isso cria o módulo
+    **Departamento Pessoal → Controle de Benefícios** (Transporte,
+    Alimentação, Prêmio e Outros), mensal e com histórico, separado por
+    empresa e por unidade — só colaboradores CLT e Estagiário entram nesse
+    controle.
+14. Vá em **Project Settings → API**. Copie:
    - **Project URL** → cole em `NEXT_PUBLIC_SUPABASE_URL`
    - **anon public key** → cole em `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - **service_role key** (em "Project API keys", não a "anon") → cole em
@@ -390,6 +396,8 @@ supabase/migration_006_calendario_avancado.sql  cor, repetição, alerta por e-m
 supabase/migration_007_ferias_avancado.sql  cenários de simulação, status planejada, valor estimado e base de feriados
 supabase/migration_008_simulacao_avancada.sql  cenários com empresa/unidade/ano/config, e quem definiu cada período
   simulado (manual ou automático)
+supabase/migration_015_beneficios.sql  Departamento Pessoal → Controle de Benefícios (Transporte, Alimentação,
+  Prêmio e Outros), mensal e com histórico
 types/db.ts      tipos TypeScript do domínio
 ```
 
@@ -402,13 +410,15 @@ Colaboradores (CLT e PJ no mesmo cadastro, com Ficha de Admissão completa,
 dependentes, horário de trabalho, exclusão e desligamento detalhado) ·
 Férias + Situação Aquisitiva · Aniversários (com empresa) · Projeção de
 Custo, Empresas/Unidades e Filiais (faturamento, absenteísmo, performance,
-treinamento, clima, custo detalhado por empresa) · Ficha de Admissão em
-PDF e Excel, pronta pra mandar pra contabilidade · Campos com máscara
-automática de CPF, CNPJ e moeda.
+treinamento, clima, custo detalhado por empresa) · Departamento Pessoal →
+Controle de Benefícios (Transporte, Alimentação, Prêmio e Outros — mensal,
+com histórico, separado por empresa/unidade e por tipo de cartão, só CLT e
+Estagiário) · Ficha de Admissão em PDF e Excel, pronta pra mandar pra
+contabilidade · Campos com máscara automática de CPF, CNPJ e moeda.
 
 ## Deixado para uma fase 2 (ver decisão de escopo)
 
-Reuniões de Liderança, Plano de Cargos e Salários, Benefícios, Ações e
+Reuniões de Liderança, Plano de Cargos e Salários, Ações e
 Cursos de RH, Convenção Coletiva, Calendário DP separado, envio real de
 lembretes por e-mail/WhatsApp (exige backend + credenciais próprias de
 WhatsApp Business API), organograma completo de Empresas e Departamentos.

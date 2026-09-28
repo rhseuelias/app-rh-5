@@ -93,8 +93,8 @@ export default function FolhaRelatorioFinal({
                           key={categoria}
                           colSpan={doGrupo.length}
                           className={`py-1.5 px-2 text-center text-[11px] font-bold uppercase tracking-wide ${COR_CATEGORIA[categoria]}`}
-                      >
-                        {ROTULO_CATEGORIA[categoria]}
+                        >
+                          {ROTULO_CATEGORIA[categoria]}
                         </th>
                       );
                     })}

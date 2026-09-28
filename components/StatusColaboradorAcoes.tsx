@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { atualizarStatusColaborador, desligarColaborador, excluirColaborador } from "@/lib/actions";
 import { TIPO_RESCISAO_OPCOES } from "@/lib/calculos";
+import DateInput from "@/components/DateInput";
 
 export default function StatusColaboradorAcoes({
   id,
@@ -65,7 +66,7 @@ export default function StatusColaboradorAcoes({
           <h3 className="font-medium text-slate-900 text-sm">Confirmar desligamento</h3>
           <div>
             <label className="label">Data do último dia</label>
-            <input type="date" name="data_ultimo_dia" required className="input" />
+            <DateInput name="data_ultimo_dia" required className="input" />
           </div>
           <div>
             <label className="label">Tipo de rescisão</label>

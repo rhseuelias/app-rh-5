@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import type { Candidato } from "@/types/db";
 import { submeterPreCadastro } from "@/lib/actions-candidatos";
+import DateInput from "@/components/DateInput";
 
 const TIPOS_DOCUMENTO = [
   { valor: "rg", label: "RG" },
@@ -60,8 +61,7 @@ export default function PreCadastroForm({ token, candidato }: { token: string; c
           </div>
           <div>
             <label className="label">Data de nascimento</label>
-            <input
-              type="date"
+            <DateInput
               name="data_nascimento"
               required
               className="input"

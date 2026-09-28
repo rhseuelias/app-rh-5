@@ -7,6 +7,7 @@ import {
   FERIAS_STATUS_LABEL,
   FERIAS_STATUS_COR,
   FERIAS_LEGENDA,
+  formatarDataBR,
 } from "@/lib/calculos";
 import { formatarReais } from "@/lib/formatadores";
 import { detectarConflitos } from "@/lib/ferias-calculos";
@@ -147,7 +148,7 @@ export default async function FeriasPage({
   for (const f of feriasNoPeriodo) {
     if (!diasPorColaborador[f.colaborador_id]) diasPorColaborador[f.colaborador_id] = {};
     const cor = f.simulacao ? "bg-amber-400" : FERIAS_STATUS_COR[f.status] ?? "bg-slate-400";
-    const titulo = `${FERIAS_STATUS_LABEL[f.status] ?? f.status} — ${new Date(f.data_inicio).toLocaleDateString("pt-BR")} a ${new Date(f.data_fim).toLocaleDateString("pt-BR")}`;
+    const titulo = `${FERIAS_STATUS_LABEL[f.status] ?? f.status} — ${formatarDataBR(f.data_inicio)} a ${formatarDataBR(f.data_fim)}`;
     let d = new Date(f.data_inicio);
     const fim = new Date(f.data_fim);
     while (d <= fim) {
@@ -229,7 +230,7 @@ export default async function FeriasPage({
             {vencendoEm60Dias.map((p) => (
               <li key={p.id}>
                 {nomePorColaborador[p.colaborador_id] ?? "—"} — limite:{" "}
-                {new Date(p.limite_concessao).toLocaleDateString("pt-BR")} (
+                {formatarDataBR(p.limite_concessao)} (
                 {p.diasRestantes < 0 ? "vencido" : `${p.diasRestantes} dias`})
               </li>
             ))}
@@ -327,8 +328,8 @@ export default async function FeriasPage({
               <tr key={f.id} className="border-t border-slate-100">
                 <td className="py-3 px-4">{nomePorColaborador[f.colaborador_id] ?? "—"}</td>
                 <td className="py-3 px-4">
-                  {new Date(f.data_inicio).toLocaleDateString("pt-BR")} —{" "}
-                  {new Date(f.data_fim).toLocaleDateString("pt-BR")}
+                  {formatarDataBR(f.data_inicio)} —{" "}
+                  {formatarDataBR(f.data_fim)}
                 </td>
                 <td className="py-3 px-4">{f.dias}</td>
                 <td className="py-3 px-4 text-slate-500">

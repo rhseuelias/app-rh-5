@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { addDays } from "date-fns";
 import { createClient } from "@/lib/supabase-server";
+import { formatarDataBR } from "@/lib/calculos";
 
 function str(formData: FormData, campo: string): string | null {
   const v = formData.get(campo);
@@ -239,7 +240,7 @@ async function tratarEfeitoEspecial(
         data_inicio: dataAlerta,
         colaborador_id: processo.colaborador_id,
         empresa_id: colaborador.empresa_id,
-        descricao: `Fim do período de experiência em ${new Date(fimISO).toLocaleDateString("pt-BR")}.`,
+        descricao: `Fim do período de experiência em ${formatarDataBR(fimISO)}.`,
       });
     }
   }

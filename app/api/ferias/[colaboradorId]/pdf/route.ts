@@ -19,7 +19,9 @@ function limpar(texto: string): string {
 }
 
 function dataBR(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-BR");
+  const [ano, mes, dia] = iso.slice(0, 10).split("-");
+  if (!ano || !mes || !dia) return "—";
+  return `${dia}/${mes}/${ano}`;
 }
 
 export async function GET(req: Request, { params }: { params: { colaboradorId: string } }) {

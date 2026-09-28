@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
-import { calcularFimExperiencia, calcularPeriodoAquisitivo } from "@/lib/calculos";
-import { addDays, differenceInCalendarDays } from "date-fns";
+import { calcularFimExperiencia, calcularPeriodoAquisitivo, formatarDataBR } from "@/lib/calculos";
+import { addDays, addMonths, differenceInCalendarDays } from "date-fns";
 import {
   calcularValorFerias,
   paraSetDeDatas,
@@ -22,12 +22,24 @@ import {
   calcularSaldo,
 } from "@/lib/simulacao-ferias";
 import type { Colaborador, PeriodoAquisitivo, Ferias, Feriado, ConfigSimulacao } from "@/types/db";
-import { colaboradoresDoCSV, feriasParaBaixaDoCSV, semAcentos } from "@/lib/csv";
+import { formatarCpfOuCnpj } from "@/lib/formatadores";
+import {
+  colaboradoresDoCSV,
+  feriasParaBaixaDoCSV,
+  fichasGoogleFormsDoCSV,
+  semAcentos,
+  type TipoFichaGoogleForms,
+} from "@/lib/csv";
 
 function num(formData: FormData, campo: string): number {
   const v = formData.get(campo);
   if (!v || v === "") return 0;
   return Number(v);
+}
+
+function numOrNull(formData: FormData, campo: string): number | null {
+  const v = formData.get(campo);
+  return v && v !== "" ? Number(v) : null;
 }
 
 function str(formData: FormData, campo: string): string | null {
@@ -74,6 +86,8 @@ export async function salvarColaborador(formData: FormData) {
     contrato_inicio: str(formData, "contrato_inicio"),
     contrato_fim: str(formData, "contrato_fim"),
     valor_nota_fiscal: num(formData, "valor_nota_fiscal"),
+    comissao_corte_pct: numOrNull(formData, "comissao_corte_pct"),
+    comissao_quimica_pct: numOrNull(formData, "comissao_quimica_pct"),
     observacoes: str(formData, "observacoes"),
 
     // Ficha de Admissão — dados pessoais extras
@@ -233,8 +247,13 @@ export async function importarColaboradoresCSV(formData: FormData): Promise<Resu
         : null,
     ].filter((v): v is string => Boolean(v));
 
+    const regimeNormalizado = linha.regime ? semAcentos(linha.regime).toUpperCase() : "";
     const payload = {
-      tipo: (linha.regime === "PJ" ? "PJ" : "CLT") as "CLT" | "PJ",
+      tipo: (regimeNormalizado.includes("ESTAGIO")
+        ? "Estagio"
+        : regimeNormalizado === "PJ"
+          ? "PJ"
+          : "CLT") as "CLT" | "PJ" | "Estagio",
       nome: linha.nome,
       cargo: linha.cargo,
       departamento: linha.departamento,
@@ -290,6 +309,342 @@ export async function importarColaboradoresCSV(formData: FormData): Promise<Resu
   return resultado;
 }
 
+export interface ResultadoImportacaoFichas extends ResultadoImportacaoColaboradores {
+  tipo: TipoFichaGoogleForms;
+  /** Quem já estava cadastrado e teve a ficha atualizada com as respostas do formulário. */
+  atualizados: string[];
+  dependentesCriados: number;
+  /** Avisos por pessoa (ex.: data não reconhecida, dependente fora do formato). */
+  avisos: string[];
+  /** Perguntas do formulário que não têm campo próprio — as respostas foram pras observações. */
+  perguntasSemCampo: string[];
+}
+
+/** Só os números (pra comparar CPF/CNPJ escritos de jeitos diferentes). */
+function soDigitos(v: string | null | undefined): string {
+  return (v ?? "").replace(/\D/g, "");
+}
+
+/**
+ * Importa as respostas das Fichas de Admissão do Google Forms (CSV).
+ * Quem importa escolhe antes se o arquivo é do formulário CLT ou do PJ.
+ *
+ * - Pessoa nova: cria o cadastro com esse tipo. Se a data de admissão vier
+ *   preenchida, gera os mesmos efeitos de um cadastro manual (etapas de
+ *   onboarding, 1º período aquisitivo e evento de admissão no calendário).
+ * - Pessoa que já existe (mesmo CPF/CNPJ ou, se não tiver, mesmo nome):
+ *   ATUALIZA a ficha com o que foi respondido no formulário. Pergunta em
+ *   branco (ou que não existe no formulário) não apaga o que já estava
+ *   cadastrado.
+ *
+ * Empresa e unidade são casadas pelo nome com as cadastradas no app — a
+ * unidade é procurada primeiro dentro da empresa respondida.
+ */
+export async function importarFichasGoogleFormsCSV(
+  formData: FormData
+): Promise<{ ok: true; resultado: ResultadoImportacaoFichas } | { ok: false; erro: string }> {
+  // devolve o erro como texto (em vez de "throw") porque, no site publicado,
+  // o Next.js esconde a mensagem de erros lançados em server actions
+  try {
+    return { ok: true, resultado: await importarFichasGoogleForms(formData) };
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : "Falha ao importar o CSV." };
+  }
+}
+
+type ColaboradorExistente = {
+  id: string;
+  nome: string | null;
+  cpf_cnpj: string | null;
+  tipo: string;
+  observacoes: string | null;
+};
+
+async function importarFichasGoogleForms(formData: FormData): Promise<ResultadoImportacaoFichas> {
+  const supabase = createClient();
+  const arquivo = formData.get("arquivo") as File | null;
+  const tipoEscolhido = String(formData.get("tipo") ?? "");
+
+  if (tipoEscolhido !== "CLT" && tipoEscolhido !== "PJ") {
+    throw new Error("Escolha se o arquivo é do formulário CLT ou do PJ.");
+  }
+  const tipo: TipoFichaGoogleForms = tipoEscolhido;
+
+  if (!arquivo || arquivo.size === 0) {
+    throw new Error("Selecione o arquivo CSV com as respostas do formulário.");
+  }
+  if (/\.zip$/i.test(arquivo.name)) {
+    throw new Error(
+      "Esse arquivo é um .zip. Dê dois cliques nele no Mac pra abrir, e envie o arquivo .csv que aparecer dentro."
+    );
+  }
+
+  const { fichas, perguntasSemCampo } = fichasGoogleFormsDoCSV(await arquivo.text(), tipo);
+  if (fichas.length === 0) {
+    throw new Error("Não encontrei nenhuma resposta com nome preenchido nesse arquivo.");
+  }
+
+  const [{ data: empresasData }, { data: unidadesData }, { data: existentesData }] = await Promise.all([
+    supabase.from("empresas").select("id, nome"),
+    supabase.from("unidades").select("id, nome, empresa_id"),
+    supabase.from("colaboradores").select("id, nome, cpf_cnpj, tipo, observacoes"),
+  ]);
+
+  const empresas = (empresasData ?? []) as { id: string; nome: string }[];
+  const unidades = (unidadesData ?? []) as { id: string; nome: string; empresa_id: string | null }[];
+  const existentes = (existentesData ?? []) as ColaboradorExistente[];
+  const existentePorNome = new Map(existentes.map((c) => [semAcentos(c.nome ?? ""), c]));
+  const existentePorDocumento = new Map(
+    existentes.filter((c) => soDigitos(c.cpf_cnpj).length >= 11).map((c) => [soDigitos(c.cpf_cnpj), c])
+  );
+
+  // "Barbearia Seu Elias (BSE)" precisa achar a empresa "BSE" ou
+  // "Barbearia Seu Elias" — tenta o texto inteiro, o que está entre
+  // parênteses e o que está antes deles.
+  function acharPorNome<T extends { nome: string }>(lista: T[], resposta: string | null): T | undefined {
+    if (!resposta) return undefined;
+    const dentroParenteses = resposta.match(/\(([^)]+)\)/)?.[1] ?? "";
+    const antesParenteses = resposta.replace(/\(.*\)/, "");
+    const tentativas = [resposta, dentroParenteses, antesParenteses]
+      .map((t) => semAcentos(t))
+      .filter((t) => t.length >= 2);
+
+    for (const t of tentativas) {
+      const exato = lista.find((item) => semAcentos(item.nome) === t);
+      if (exato) return exato;
+    }
+    for (const t of tentativas.filter((t) => t.length >= 4)) {
+      const parecido = lista.find((item) => {
+        const nome = semAcentos(item.nome);
+        return nome.length >= 4 && (nome.includes(t) || t.includes(nome));
+      });
+      if (parecido) return parecido;
+    }
+    return undefined;
+  }
+
+  const resultado: ResultadoImportacaoFichas = {
+    tipo,
+    criados: 0,
+    atualizados: [],
+    duplicados: [],
+    semEmpresaOuUnidade: [],
+    erros: [],
+    dependentesCriados: 0,
+    avisos: [],
+    perguntasSemCampo,
+  };
+
+  for (const ficha of fichas) {
+    const chaveNome = semAcentos(ficha.nome);
+    const documento = soDigitos(ficha.cpf_cnpj);
+
+    // empresa primeiro; a unidade é procurada dentro dela (o mesmo nome de
+    // unidade pode existir em mais de uma empresa)
+    const empresaRespondida = acharPorNome(empresas, ficha.empresa);
+    const unidade =
+      (empresaRespondida
+        ? acharPorNome(
+            unidades.filter((u) => u.empresa_id === empresaRespondida.id),
+            ficha.unidade
+          )
+        : undefined) ?? acharPorNome(unidades, ficha.unidade);
+    const empresa =
+      empresaRespondida ??
+      (unidade?.empresa_id ? empresas.find((e) => e.id === unidade.empresa_id) : undefined);
+
+    if ((ficha.empresa && !empresa) || (ficha.unidade && !unidade)) {
+      resultado.semEmpresaOuUnidade.push(ficha.nome);
+    }
+
+    // no PJ a "admissão" é o início do contrato (igual ao cadastro manual)
+    const dataAdmissao = tipo === "PJ" ? ficha.contrato_inicio ?? ficha.data_admissao : ficha.data_admissao;
+
+    // tudo que veio do formulário. Valores null = pergunta em branco ou que
+    // não existe no formulário.
+    // guarda CPF/CNPJ já com pontos, barra e traço (é assim que vai pro contrato PJ e pra ficha)
+    const tamanhoEsperado = tipo === "PJ" ? 14 : 11;
+    const documentoFormatado =
+      documento.length === tamanhoEsperado ? formatarCpfOuCnpj(documento, tipo) : ficha.cpf_cnpj;
+
+    const dadosDoFormulario = {
+      cpf_cnpj: documentoFormatado,
+      rg: ficha.rg,
+      cargo: ficha.cargo,
+      departamento: ficha.departamento,
+      lider: ficha.lider,
+      empresa_id: empresa?.id ?? null,
+      unidade_id: unidade?.id ?? null,
+      data_nascimento: ficha.data_nascimento,
+      data_admissao: dataAdmissao,
+      estado_civil: ficha.estado_civil,
+      raca_cor: ficha.raca_cor,
+      grau_instrucao: ficha.grau_instrucao,
+      endereco: ficha.endereco,
+      contrato_experiencia: tipo === "CLT" ? ficha.contrato_experiencia : null,
+      salario_base: ficha.salario_base,
+      comissao_media: ficha.comissao_media,
+      auxilio_outros: ficha.auxilio_outros,
+      custo_vt: ficha.custo_vt,
+      custo_va_vr: ficha.custo_va_vr,
+      custo_assist_medica: ficha.custo_assist_medica,
+      custo_assist_psicologica: ficha.custo_assist_psicologica,
+      banco: ficha.banco,
+      agencia: ficha.agencia,
+      conta: ficha.conta,
+      conta_digito: ficha.conta_digito,
+      vale_alimentacao_valor_desconto: ficha.vale_alimentacao_valor_desconto,
+      telefone: ficha.telefone,
+      email: ficha.email,
+      nome_contato_emergencia: ficha.nome_contato_emergencia,
+      telefone_contato_emergencia: ficha.telefone_contato_emergencia,
+      contrato_inicio: tipo === "PJ" ? ficha.contrato_inicio : null,
+      contrato_fim: tipo === "PJ" ? ficha.contrato_fim : null,
+      valor_nota_fiscal: tipo === "PJ" ? ficha.valor_nota_fiscal : null,
+    };
+    const booleanos = {
+      adiantamento_salario: ficha.adiantamento_salario,
+      primeiro_emprego: ficha.primeiro_emprego,
+      insalubridade: ficha.insalubridade,
+      periculosidade: ficha.periculosidade,
+      quebra_caixa: ficha.quebra_caixa,
+      gratificacao_funcao: ficha.gratificacao_funcao,
+      vale_transporte: ficha.vale_transporte,
+      vale_transporte_desconto: ficha.vale_transporte_desconto,
+      vale_alimentacao: ficha.vale_alimentacao,
+    };
+
+    const existente =
+      (documento.length >= 11 ? existentePorDocumento.get(documento) : undefined) ??
+      existentePorNome.get(chaveNome);
+
+    let colaboradorId: string;
+
+    if (existente) {
+      // ---- já cadastrado: atualiza só o que foi respondido ----
+      const atualizacao: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      for (const [campo, valor] of Object.entries(dadosDoFormulario)) {
+        if (valor !== null && valor !== "") atualizacao[campo] = valor;
+      }
+      for (const campo of ficha.booleanosRespondidos) {
+        atualizacao[campo] = booleanos[campo as keyof typeof booleanos];
+      }
+      // o nome passa a ser o escrito no formulário (corrige maiúsculas/acentos)
+      atualizacao.nome = ficha.nome;
+      if (ficha.observacoes && !(existente.observacoes ?? "").includes(ficha.observacoes)) {
+        atualizacao.observacoes = [existente.observacoes, ficha.observacoes].filter(Boolean).join("\n");
+      }
+      if (tipo === "CLT" && atualizacao.data_admissao) {
+        atualizacao.data_fim_experiencia = calcularFimExperiencia(String(atualizacao.data_admissao))
+          .toISOString()
+          .slice(0, 10);
+      }
+
+      const { error } = await supabase.from("colaboradores").update(atualizacao).eq("id", existente.id);
+      if (error) {
+        resultado.erros.push(`${ficha.nome}: ${error.message}`);
+        continue;
+      }
+
+      colaboradorId = existente.id;
+      resultado.atualizados.push(ficha.nome);
+      if (existente.tipo !== tipo) {
+        resultado.avisos.push(
+          `${ficha.nome}: já estava cadastrado como ${existente.tipo === "Estagio" ? "Estágio" : existente.tipo} — os dados foram atualizados, mas o tipo não foi mudado`
+        );
+      }
+    } else {
+      // ---- pessoa nova: cria o cadastro ----
+      const payload = {
+        ...dadosDoFormulario,
+        ...booleanos,
+        tipo,
+        nome: ficha.nome,
+        salario_base: ficha.salario_base ?? 0,
+        comissao_media: ficha.comissao_media ?? 0,
+        auxilio_outros: ficha.auxilio_outros ?? 0,
+        custo_vt: ficha.custo_vt ?? 0,
+        custo_va_vr: ficha.custo_va_vr ?? 0,
+        custo_assist_medica: ficha.custo_assist_medica ?? 0,
+        custo_assist_psicologica: ficha.custo_assist_psicologica ?? 0,
+        data_fim_experiencia:
+          tipo === "CLT" && dataAdmissao ? calcularFimExperiencia(dataAdmissao).toISOString().slice(0, 10) : null,
+        // CLT recém-admitido entra em experiência (igual ao cadastro manual); PJ já entra ativo
+        status: (tipo === "CLT" ? "experiencia" : "ativo") as "experiencia" | "ativo",
+        observacoes: ficha.observacoes,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase.from("colaboradores").insert(payload).select("id").single();
+      if (error || !data) {
+        resultado.erros.push(`${ficha.nome}: ${error?.message ?? "falha ao salvar"}`);
+        continue;
+      }
+
+      colaboradorId = data.id;
+      resultado.criados++;
+      const novo: ColaboradorExistente = {
+        id: data.id,
+        nome: ficha.nome,
+        cpf_cnpj: documentoFormatado,
+        tipo,
+        observacoes: ficha.observacoes,
+      };
+      existentePorNome.set(chaveNome, novo);
+      if (documento.length >= 11) existentePorDocumento.set(documento, novo);
+
+      if (dataAdmissao) {
+        const etapas = ["pre_admissao", "primeiro_dia", "checkin_30", "avaliacao_45", "avaliacao_90"];
+        await supabase.from("onboarding_etapas").insert(
+          etapas.map((etapa) => ({ colaborador_id: colaboradorId, etapa }))
+        );
+
+        const { inicio, fim, limite_concessao } = calcularPeriodoAquisitivo(dataAdmissao);
+        await supabase.from("periodos_aquisitivos").insert({
+          colaborador_id: colaboradorId,
+          inicio: inicio.toISOString().slice(0, 10),
+          fim: fim.toISOString().slice(0, 10),
+          limite_concessao: limite_concessao.toISOString().slice(0, 10),
+        });
+
+        await supabase.from("eventos_calendario").insert({
+          titulo: `Admissão — ${ficha.nome}`,
+          categoria: "admissao",
+          data_inicio: dataAdmissao,
+          colaborador_id: colaboradorId,
+        });
+      }
+    }
+
+    for (const aviso of ficha.avisos) resultado.avisos.push(`${ficha.nome}: ${aviso}`);
+
+    // dependentes: só inclui os que ainda não estão cadastrados (mesmo CPF)
+    if (ficha.dependentes.length > 0) {
+      const { data: jaCadastrados } = await supabase
+        .from("dependentes_colaborador")
+        .select("cpf")
+        .eq("colaborador_id", colaboradorId);
+      const cpfsExistentes = new Set(((jaCadastrados ?? []) as { cpf: string }[]).map((d) => soDigitos(d.cpf)));
+      const novos = ficha.dependentes.filter((d) => !cpfsExistentes.has(soDigitos(d.cpf)));
+
+      if (novos.length > 0) {
+        const { error: erroDependentes } = await supabase
+          .from("dependentes_colaborador")
+          .insert(novos.map((d) => ({ colaborador_id: colaboradorId, ...d })));
+        if (erroDependentes) {
+          resultado.avisos.push(`${ficha.nome}: dependentes não foram salvos (${erroDependentes.message})`);
+        } else {
+          resultado.dependentesCriados += novos.length;
+        }
+      }
+    }
+  }
+
+  revalidatePath("/colaboradores");
+  revalidatePath("/dashboard");
+  return resultado;
+}
+
 export interface ResultadoPeriodoAquisitivo {
   ok: boolean;
   mensagem: string;
@@ -335,7 +690,7 @@ export async function gerarPrimeiroPeriodoAquisitivo(colaboradorId: string): Pro
   revalidatePath("/ferias/simulacao");
   return {
     ok: true,
-    mensagem: `Período aquisitivo gerado: ${inicio.toLocaleDateString("pt-BR")} a ${fim.toLocaleDateString("pt-BR")}.`,
+    mensagem: `Período aquisitivo gerado: ${formatarDataBR(inicio)} a ${formatarDataBR(fim)}.`,
   };
 }
 
@@ -449,7 +804,86 @@ export async function gerarProximoPeriodoAquisitivo(
   revalidatePath("/ferias/simulacao");
   return {
     ok: true,
-    mensagem: `Próximo período aquisitivo gerado: ${inicio.toLocaleDateString("pt-BR")} a ${fim.toLocaleDateString("pt-BR")}.`,
+    mensagem: `Próximo período aquisitivo gerado: ${formatarDataBR(inicio)} a ${formatarDataBR(fim)}.`,
+  };
+}
+
+/**
+ * Versão da ação anterior usada pela janela central de "gerar próximo": em
+ * vez de calcular as datas automaticamente, recebe início/fim/limite de
+ * concessão já preenchidos (o front sugere as datas calculadas, mas o
+ * usuário pode ajustar antes de confirmar). Repete as mesmas validações
+ * (sem outro período aberto, período de referência já com os 30 dias
+ * utilizados) como segurança, mesmo que a tela só ofereça esse botão quando
+ * o saldo já é zero.
+ */
+export async function gerarProximoPeriodoAquisitivoComDatas(formData: FormData): Promise<ResultadoPeriodoAquisitivo> {
+  const supabase = createClient();
+  const periodoAnteriorId = str(formData, "periodo_anterior_id");
+  const colaboradorId = str(formData, "colaborador_id");
+  const inicio = str(formData, "inicio");
+  const fim = str(formData, "fim");
+  const limiteConcessao = str(formData, "limite_concessao");
+
+  if (!periodoAnteriorId || !colaboradorId) {
+    return { ok: false, mensagem: "Período aquisitivo de referência não encontrado." };
+  }
+  if (!inicio || !fim || !limiteConcessao) {
+    return { ok: false, mensagem: "Preencha as 3 datas do novo período." };
+  }
+  if (fim <= inicio) {
+    return { ok: false, mensagem: "A data de fim precisa ser depois da data de início." };
+  }
+  if (limiteConcessao <= fim) {
+    return { ok: false, mensagem: "O limite de concessão precisa ser depois da data de fim." };
+  }
+
+  const [{ data: periodoAnterior }, { data: aquisitivosData }, { data: feriasData }] = await Promise.all([
+    supabase.from("periodos_aquisitivos").select("*").eq("id", periodoAnteriorId).single(),
+    supabase.from("periodos_aquisitivos").select("*").eq("colaborador_id", colaboradorId),
+    supabase
+      .from("ferias")
+      .select("dias")
+      .eq("periodo_aquisitivo_id", periodoAnteriorId)
+      .neq("status", "cancelado")
+      .eq("simulacao", false),
+  ]);
+  if (!periodoAnterior) return { ok: false, mensagem: "Período aquisitivo de referência não encontrado." };
+
+  const aquisitivos = (aquisitivosData ?? []) as PeriodoAquisitivo[];
+  if (aquisitivos.some((p) => p.status === "aberto" && p.id !== periodoAnterior.id)) {
+    return {
+      ok: false,
+      mensagem: "Já existe outro período aquisitivo aberto pra esse colaborador. Encerre-o antes de gerar um novo.",
+    };
+  }
+
+  const usados = ((feriasData ?? []) as { dias: number }[]).reduce((s, f) => s + f.dias, 0);
+  const saldo = calcularSaldo(usados);
+  if (saldo > 0) {
+    return {
+      ok: false,
+      mensagem: `Esse período ainda tem ${saldo} dia${saldo !== 1 ? "s" : ""} de saldo disponível. Utilize todos os 30 dias antes de gerar o próximo período.`,
+    };
+  }
+
+  await supabase.from("periodos_aquisitivos").insert({
+    colaborador_id: colaboradorId,
+    inicio,
+    fim,
+    limite_concessao: limiteConcessao,
+  });
+  if (periodoAnterior.status === "aberto") {
+    await supabase.from("periodos_aquisitivos").update({ status: "gozado" }).eq("id", periodoAnterior.id);
+  }
+
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+  revalidatePath("/colaboradores");
+  revalidatePath("/ferias");
+  revalidatePath("/ferias/simulacao");
+  return {
+    ok: true,
+    mensagem: `Próximo período aquisitivo gerado: ${formatarDataBR(inicio)} a ${formatarDataBR(fim)}.`,
   };
 }
 
@@ -510,6 +944,123 @@ export async function gerarPeriodosAquisitivosFaltantes(): Promise<{ criados: nu
   return { criados, semDataAdmissao };
 }
 
+/**
+ * Gera sozinho o próximo período aquisitivo de qualquer colaborador cujo
+ * último período já passou da data de fim — o período aquisitivo é um
+ * relógio de 12 em 12 meses que não espera o colaborador tirar as férias
+ * pra virar o próximo (diferente da ação manual "gerar próximo", que só
+ * libera depois que os 30 dias foram usados). Se o período vencido ainda
+ * estava com status "aberto" (não foi fechado por uma baixa completa),
+ * marca como "vencido" em vez de deixar dois períodos "aberto" ao mesmo
+ * tempo pro mesmo colaborador.
+ *
+ * Chamada direto (sem formulário) no carregamento das páginas de
+ * Dashboard, Colaboradores e da ficha de cada colaborador — por isso não
+ * usa revalidatePath aqui: essas páginas já são "force-dynamic" e buscam
+ * os dados de novo logo em seguida, então o período recém-criado já
+ * aparece na mesma carregada. Colaboradores desligados são ignorados.
+ */
+export async function autoGerarProximosPeriodosVencidos(): Promise<{ criados: number }> {
+  const supabase = createClient();
+  const hojeISO = new Date().toISOString().slice(0, 10);
+
+  const [{ data: periodosData }, { data: colaboradoresData }] = await Promise.all([
+    supabase.from("periodos_aquisitivos").select("*").order("fim", { ascending: false }),
+    supabase.from("colaboradores").select("id, status"),
+  ]);
+  const todos = (periodosData ?? []) as PeriodoAquisitivo[];
+  const statusPorColaborador = new Map(
+    ((colaboradoresData ?? []) as { id: string; status: string }[]).map((c) => [c.id, c.status])
+  );
+
+  // já ordenado por fim desc — o primeiro período que aparecer por
+  // colaborador é o mais recente dele
+  const maisRecentePorColaborador = new Map<string, PeriodoAquisitivo>();
+  for (const p of todos) {
+    if (!maisRecentePorColaborador.has(p.colaborador_id)) {
+      maisRecentePorColaborador.set(p.colaborador_id, p);
+    }
+  }
+
+  let criados = 0;
+  for (const [colaboradorId, ultimo] of maisRecentePorColaborador) {
+    if (statusPorColaborador.get(colaboradorId) === "desligado") continue;
+    if (ultimo.fim >= hojeISO) continue; // ainda não venceu
+
+    const baseData = addDays(new Date(ultimo.fim), 1).toISOString().slice(0, 10);
+    const { inicio, fim, limite_concessao } = calcularPeriodoAquisitivo(baseData);
+
+    await supabase.from("periodos_aquisitivos").insert({
+      colaborador_id: colaboradorId,
+      inicio: inicio.toISOString().slice(0, 10),
+      fim: fim.toISOString().slice(0, 10),
+      limite_concessao: limite_concessao.toISOString().slice(0, 10),
+    });
+    if (ultimo.status === "aberto") {
+      await supabase.from("periodos_aquisitivos").update({ status: "vencido" }).eq("id", ultimo.id);
+    }
+    criados++;
+  }
+
+  return { criados };
+}
+
+export interface ResultadoCorrecaoPeriodos {
+  corrigidos: number;
+  total: number;
+}
+
+/**
+ * Correção pontual (rodar uma vez por colaborador): o cálculo antigo de
+ * período aquisitivo tinha um erro de "um dia a mais" no fim do período
+ * (ex.: admissão 04/08/2022 gerava período até 04/08/2023, quando o certo
+ * é 03/08/2023 — o dia seguinte é sempre o início do próximo período).
+ * Isso já foi corrigido em calcularPeriodoAquisitivo pros próximos
+ * períodos gerados; essa ação revisa os períodos já salvos DESSE
+ * colaborador e corrige só os que ainda batem exatamente com o cálculo
+ * antigo (fim = início + 12 meses, limite = fim antigo + 11 meses) —
+ * nunca mexe num período editado manualmente.
+ */
+export async function corrigirPeriodosAquisitivosDatas(colaboradorId: string): Promise<ResultadoCorrecaoPeriodos> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("periodos_aquisitivos")
+    .select("id, inicio, fim, limite_concessao")
+    .eq("colaborador_id", colaboradorId);
+  const periodos = (data ?? []) as { id: string; inicio: string; fim: string; limite_concessao: string }[];
+
+  const atualizacoes: { id: string; fim: string; limite_concessao: string }[] = [];
+  for (const p of periodos) {
+    const fimAntigoEsperado = addMonths(new Date(p.inicio), 12).toISOString().slice(0, 10);
+    if (p.fim !== fimAntigoEsperado) continue; // já corrigido, ou período com fim editado manualmente
+
+    const limiteAntigoEsperado = addMonths(new Date(p.fim), 11).toISOString().slice(0, 10);
+    if (p.limite_concessao !== limiteAntigoEsperado) continue; // limite editado manualmente
+
+    const novoFim = addDays(new Date(p.fim), -1);
+    const novoLimite = addMonths(novoFim, 11);
+    atualizacoes.push({
+      id: p.id,
+      fim: novoFim.toISOString().slice(0, 10),
+      limite_concessao: novoLimite.toISOString().slice(0, 10),
+    });
+  }
+
+  for (const a of atualizacoes) {
+    await supabase
+      .from("periodos_aquisitivos")
+      .update({ fim: a.fim, limite_concessao: a.limite_concessao })
+      .eq("id", a.id);
+  }
+
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+  revalidatePath("/colaboradores");
+  revalidatePath("/ferias");
+  revalidatePath("/ferias/simulacao");
+  revalidatePath("/dashboard");
+  return { corrigidos: atualizacoes.length, total: periodos.length };
+}
+
 export async function atualizarStatusColaborador(id: string, status: string) {
   const supabase = createClient();
   const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
@@ -544,11 +1095,79 @@ export async function desligarColaborador(formData: FormData) {
 }
 
 /**
+ * Renova o contrato de um colaborador PJ: guarda o período atual (início,
+ * fim e valor da nota fiscal) na tabela de histórico e substitui esses
+ * campos pelo novo período informado no formulário — assim nenhum
+ * contrato anterior se perde, fica tudo registrado ano a ano.
+ */
+export async function renovarContratoPJ(formData: FormData) {
+  const supabase = createClient();
+  const id = str(formData, "colaborador_id")!;
+
+  const { data: atual } = await supabase
+    .from("colaboradores")
+    .select("contrato_inicio, contrato_fim, valor_nota_fiscal")
+    .eq("id", id)
+    .single();
+
+  if (atual && (atual.contrato_inicio || atual.contrato_fim)) {
+    await supabase.from("historico_contratos_pj").insert({
+      colaborador_id: id,
+      contrato_inicio: atual.contrato_inicio,
+      contrato_fim: atual.contrato_fim,
+      valor_nota_fiscal: atual.valor_nota_fiscal,
+    });
+  }
+
+  const novoInicio = str(formData, "novo_contrato_inicio");
+  await supabase
+    .from("colaboradores")
+    .update({
+      contrato_inicio: novoInicio,
+      contrato_fim: str(formData, "novo_contrato_fim"),
+      valor_nota_fiscal: num(formData, "novo_valor_nota_fiscal"),
+      data_admissao: novoInicio,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  revalidatePath(`/colaboradores/${id}`);
+  revalidatePath("/colaboradores");
+  revalidatePath("/dashboard");
+}
+
+/**
  * Exclui em definitivo o colaborador e todos os registros ligados a ele
  * (férias, período aquisitivo, onboarding, processo de integração, eventos
  * do calendário, dependentes, histórico) — as tabelas têm "on delete cascade".
  * Ação irreversível; a confirmação em duas etapas fica na tela (StatusColaboradorAcoes).
  */
+/** Edita um período já registrado no histórico de renovações de contrato PJ
+ * (corrige data ou valor lançado errado numa renovação anterior). */
+export async function editarHistoricoContratoPJ(formData: FormData) {
+  const supabase = createClient();
+  const id = str(formData, "id")!;
+  const colaboradorId = str(formData, "colaborador_id")!;
+
+  await supabase
+    .from("historico_contratos_pj")
+    .update({
+      contrato_inicio: str(formData, "contrato_inicio"),
+      contrato_fim: str(formData, "contrato_fim"),
+      valor_nota_fiscal: numOrNull(formData, "valor_nota_fiscal"),
+    })
+    .eq("id", id);
+
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+}
+
+/** Exclui em definitivo um período do histórico de renovações de contrato PJ. */
+export async function excluirHistoricoContratoPJ(id: string, colaboradorId: string) {
+  const supabase = createClient();
+  await supabase.from("historico_contratos_pj").delete().eq("id", id);
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+}
+
 export async function excluirColaborador(id: string) {
   const supabase = createClient();
   await supabase.from("colaboradores").delete().eq("id", id);
@@ -771,6 +1390,50 @@ export async function excluirFeriasCancelada(id: string, colaboradorId: string) 
   revalidatePath(`/colaboradores/${colaboradorId}`);
   revalidatePath("/ferias");
   revalidatePath("/calendario");
+}
+
+/**
+ * Exclui em definitivo qualquer registro do histórico de férias, seja
+ * qual for o status — diferente de excluirFeriasCancelada, que só deixa
+ * apagar registros já cancelados. Se o registro apagado estava vinculado
+ * a um período aquisitivo que tinha sido fechado ("gozado"/"vencido") por
+ * causa dele, reabre o período (volta pra "aberto") quando ainda sobrar
+ * saldo depois da exclusão.
+ */
+export async function excluirFeriasHistorico(id: string, colaboradorId: string) {
+  const supabase = createClient();
+  const { data: registro } = await supabase
+    .from("ferias")
+    .select("periodo_aquisitivo_id")
+    .eq("id", id)
+    .single();
+
+  await supabase.from("ferias").delete().eq("id", id);
+
+  if (registro?.periodo_aquisitivo_id) {
+    const periodoId = registro.periodo_aquisitivo_id;
+    const [{ data: periodo }, { data: usadosData }] = await Promise.all([
+      supabase.from("periodos_aquisitivos").select("status").eq("id", periodoId).single(),
+      supabase
+        .from("ferias")
+        .select("dias")
+        .eq("periodo_aquisitivo_id", periodoId)
+        .neq("status", "cancelado")
+        .eq("simulacao", false),
+    ]);
+    const usados = ((usadosData ?? []) as { dias: number }[]).reduce((s, f) => s + f.dias, 0);
+    const saldo = calcularSaldo(usados);
+    if (periodo && periodo.status !== "aberto" && saldo > 0) {
+      await supabase.from("periodos_aquisitivos").update({ status: "aberto" }).eq("id", periodoId);
+    }
+  }
+
+  revalidatePath(`/colaboradores/${colaboradorId}`);
+  revalidatePath("/colaboradores");
+  revalidatePath("/ferias");
+  revalidatePath("/ferias/simulacao");
+  revalidatePath("/calendario");
+  revalidatePath("/dashboard");
 }
 
 export interface ResultadoDarBaixaPeriodo {
@@ -1578,11 +2241,11 @@ export async function definirFeriasManualCenario(formData: FormData): Promise<Re
     if (!respeitaRegraInicio(j.inicio, feriadosSet)) {
       return {
         ok: false,
-        erro: `⚠️ Data inválida: ${j.inicio.toLocaleDateString("pt-BR")} não pode ser início de férias (cai numa sexta/sábado ou nos 2 dias antes de um feriado — CLT art. 134 §3º).`,
+        erro: `⚠️ Data inválida: ${formatarDataBR(j.inicio)} não pode ser início de férias (cai numa sexta/sábado ou nos 2 dias antes de um feriado — CLT art. 134 §3º).`,
       };
     }
     if (j.fim > limite) {
-      return { ok: false, erro: `⚠️ O período iniciado em ${j.inicio.toLocaleDateString("pt-BR")} ultrapassa o limite de concessão (${limite.toLocaleDateString("pt-BR")}).` };
+      return { ok: false, erro: `⚠️ O período iniciado em ${formatarDataBR(j.inicio)} ultrapassa o limite de concessão (${formatarDataBR(limite)}).` };
     }
   }
   for (let i = 0; i < janelas.length; i++) {

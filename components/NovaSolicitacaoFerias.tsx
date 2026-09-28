@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import type { Colaborador, PeriodoAquisitivo } from "@/types/db";
 import { solicitarFerias } from "@/lib/actions";
 import { differenceInCalendarDays } from "date-fns";
+import { formatarDataBR } from "@/lib/calculos";
+import DateInput from "@/components/DateInput";
 
 export default function NovaSolicitacaoFerias({
   colaboradores,
@@ -99,8 +101,8 @@ export default function NovaSolicitacaoFerias({
           <option value="">Selecione</option>
           {periodosDoColaborador.map((p) => (
             <option key={p.id} value={p.id}>
-              {new Date(p.inicio).toLocaleDateString("pt-BR")} –{" "}
-              {new Date(p.fim).toLocaleDateString("pt-BR")}
+              {formatarDataBR(p.inicio)} –{" "}
+              {formatarDataBR(p.fim)}
             </option>
           ))}
         </select>
@@ -108,23 +110,21 @@ export default function NovaSolicitacaoFerias({
 
       <div>
         <label className="label">Início</label>
-        <input
-          type="date"
+        <DateInput
           required
           className="input"
           value={inicio}
-          onChange={(e) => setInicio(e.target.value)}
+          onChange={setInicio}
         />
       </div>
 
       <div>
         <label className="label">Fim</label>
-        <input
-          type="date"
+        <DateInput
           required
           className="input"
           value={fim}
-          onChange={(e) => setFim(e.target.value)}
+          onChange={setFim}
         />
       </div>
 

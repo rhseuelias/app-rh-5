@@ -15,15 +15,18 @@ import {
   diasParaVencerFerias,
   etapaAtrasada,
   FERIAS_STATUS_LABEL,
+  formatarDataBR,
 } from "@/lib/calculos";
-import { differenceInCalendarDays, addDays } from "date-fns";
+import { differenceInCalendarDays, addDays, subMonths } from "date-fns";
 import Link from "next/link";
 import {
   DonutCargo,
   DonutDuas,
-  BarrasIndicadoresEmpresa,
   BarrasTempoEmpresa,
+  EvolucaoIndicadores,
 } from "@/components/dashboard/DashboardCharts";
+import { autoGerarProximosPeriodosVencidos } from "@/lib/actions";
+import { souAssistente } from "@/lib/permissoes";
 
 export const dynamic = "force-dynamic";
 
@@ -41,23 +44,55 @@ const STATUS_GERAL_ICONE: Record<string, string> = {
   nao_efetivado: "🚫",
 };
 
+// tema "Dark Analytics" — tons claros o bastante pra ler sobre o fundo navy
+// (ink-900/ink-800) do dashboard
 const STATUS_GERAL_COR: Record<string, string> = {
-  integracao: "text-slate-700",
-  experiencia: "text-blue-600",
-  efetivado: "text-emerald-600",
+  integracao: "text-slate-200",
+  experiencia: "text-blue-300",
+  efetivado: "text-emerald-300",
   nao_efetivado: "text-slate-500",
 };
 
 const FERIAS_STATUS_BADGE: Record<string, string> = {
-  planejada: "bg-blue-100 text-blue-700",
-  solicitado: "bg-slate-100 text-slate-600",
-  aprovado: "bg-emerald-100 text-emerald-700",
-  concluido: "bg-emerald-100 text-emerald-700",
-  cancelado: "bg-slate-100 text-slate-400",
+  planejada: "bg-blue-400/15 text-blue-300",
+  solicitado: "bg-white/10 text-slate-300",
+  aprovado: "bg-emerald-400/15 text-emerald-300",
+  concluido: "bg-emerald-400/15 text-emerald-300",
+  cancelado: "bg-white/5 text-slate-500",
 };
+
+const FONTE_TECH = "'Space Grotesk', sans-serif";
+const FONTE_MONO = "'JetBrains Mono', monospace";
+
+/**
+ * Gera uma série mensal "de exemplo" (12 pontos, do mês mais antigo pro mais
+ * recente), terminando sempre no valor real de hoje — usada só pra ilustrar
+ * como o gráfico de evolução vai ficar quando o app passar a guardar um
+ * histórico mensal de verdade. Determinística (sem Math.random) pra não
+ * mudar a cada carregamento da página.
+ */
+function gerarSerieExemplo(valorAtual: number, amplitude: number, hoje: Date) {
+  const MESES = 12;
+  return Array.from({ length: MESES }, (_, i) => {
+    const idx = MESES - 1 - i; // 11 = mês atual, 0 = 11 meses atrás
+    const d = subMonths(hoje, idx);
+    const mes = d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+    if (idx === 0) return { mes, valor: Math.round(valorAtual * 10) / 10 };
+    const onda = Math.sin((MESES - idx) * 1.1) * amplitude;
+    const tendencia = valorAtual - amplitude * 0.6 * (idx / MESES);
+    return { mes, valor: Math.max(0, Math.round((tendencia + onda) * 10) / 10) };
+  });
+}
 
 export default async function DashboardPage() {
   const supabase = createClient();
+
+  // gera sozinho o próximo período aquisitivo de quem já passou da data
+  // de fim do período anterior, antes de buscar os dados da página
+  await autoGerarProximosPeriodosVencidos();
+
+  // perfil "assistente" não vê custo/folha/faturamento em lugar nenhum do app
+  const ocultarFinanceiro = await souAssistente();
 
   const hoje = new Date();
   const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
@@ -71,6 +106,7 @@ export default async function DashboardPage() {
     { data: configIntegracao },
     { data: periodosAbertos },
     { data: feriasProximas },
+    { data: feriasDoPeriodo },
   ] = await Promise.all([
     supabase.from("colaboradores").select("*"),
     supabase.from("empresas").select("*"),
@@ -85,6 +121,15 @@ export default async function DashboardPage() {
       .neq("status", "cancelado")
       .gte("data_inicio", hoje.toISOString().slice(0, 10))
       .lte("data_inicio", daqui30.toISOString().slice(0, 10))
+      .order("data_inicio", { ascending: true }),
+    // todo mundo com período aquisitivo vinculado — só pra saber se uma
+    // férias é a 1ª/2ª/3ª daquele período (coluna "Período" da tabela)
+    supabase
+      .from("ferias")
+      .select("id,periodo_aquisitivo_id,data_inicio")
+      .eq("simulacao", false)
+      .neq("status", "cancelado")
+      .not("periodo_aquisitivo_id", "is", null)
       .order("data_inicio", { ascending: true }),
   ]);
 
@@ -130,10 +175,17 @@ export default async function DashboardPage() {
   const ativos = lista.filter((c) => c.status === "ativo" || c.status === "experiencia");
   const clt = ativos.filter((c) => c.tipo === "CLT");
   const pj = ativos.filter((c) => c.tipo === "PJ");
+  const estagio = ativos.filter((c) => c.tipo === "Estagio");
 
+  const admissoesMes = lista.filter(
+    (c) => c.data_admissao && new Date(c.data_admissao) >= inicioMes
+  ).length;
   const desligamentosMes = lista.filter(
     (c) => c.data_desligamento && new Date(c.data_desligamento) >= inicioMes
   ).length;
+
+  // Variação real de headcount no mês (admissões - desligamentos deste mês).
+  const deltaHeadcount = admissoesMes - desligamentosMes;
 
   // Turnover do mês = desligamentos do mês / headcount ativo atual.
   const turnoverMensal = ativos.length > 0 ? (desligamentosMes / ativos.length) * 100 : 0;
@@ -144,10 +196,20 @@ export default async function DashboardPage() {
     return dias >= 0 && dias <= 15;
   });
 
+  // contratos PJ perto do fim (≤60 dias) — pra lembrar de renovar antes de vencer
+  const contratosPJVencendo = pj.filter((c) => {
+    if (!c.contrato_fim) return false;
+    const dias = diasParaFimExperiencia(c.contrato_fim);
+    return dias >= 0 && dias <= 60;
+  });
+
   const aniversariantesMes = lista.filter((c) => {
     if (!c.data_nascimento) return false;
-    const nasc = new Date(c.data_nascimento);
-    return nasc.getMonth() === hoje.getMonth();
+    // não usa new Date(texto).getMonth() — pega o mês direto do texto
+    // "yyyy-MM-dd", porque ler um Date construído assim com métodos que
+    // dependem do fuso local pode cair no mês anterior.
+    const mesNasc = Number(c.data_nascimento.slice(5, 7)) - 1;
+    return mesNasc === hoje.getMonth();
   });
 
   const nomeEmpresaPorId = Object.fromEntries(listaEmpresas.map((e) => [e.id, e.nome]));
@@ -159,15 +221,14 @@ export default async function DashboardPage() {
   );
   const pctFolha = percentualFolhaSobreFaturamento(custoTotalFolha, faturamentoTotal);
 
-  // Absenteísmo/Performance médios — média simples dos valores cadastrados
-  // por empresa (mesmos campos já usados na tabela "Indicadores por empresa").
-  function mediaCampo(campo: "absenteismo_pct" | "performance_pct"): number | null {
+  // Absenteísmo médio — média simples dos valores cadastrados por empresa
+  // (mesmo campo já usado na tabela "Visão por empresa").
+  function mediaCampo(campo: "absenteismo_pct"): number | null {
     const valores = listaEmpresas.map((e) => e[campo]).filter((v): v is number => v != null);
     if (valores.length === 0) return null;
     return valores.reduce((a, b) => a + b, 0) / valores.length;
   }
   const absenteismoMedio = mediaCampo("absenteismo_pct");
-  const performanceMedia = mediaCampo("performance_pct");
 
   // ------------------------------------------------------------
   // Alertas — férias com período aquisitivo vencendo em até 30 dias
@@ -218,65 +279,119 @@ export default async function DashboardPage() {
   }
 
   // ------------------------------------------------------------
-  // Indicadores + headcount + custo por empresa (pro gráfico e a tabela)
+  // Headcount, custo e turnover por empresa (pra tabela "Visão por empresa")
   // ------------------------------------------------------------
-  const dadosIndicadoresEmpresa = listaEmpresas.map((e) => ({
-    empresa: e.nome,
-    performance: e.performance_pct ?? 0,
-    absenteismo: e.absenteismo_pct ?? 0,
-    treinamento: e.treinamento_pct ?? 0,
-    clima: e.clima_pct ?? 0,
-  }));
-
   const empresasDetalhado = listaEmpresas.map((e) => {
     const colaboradoresDaEmpresa = ativos.filter((c) => c.empresa_id === e.id);
     const custo = colaboradoresDaEmpresa.reduce((acc, c) => acc + custoMensalColaborador(c), 0);
-    return { empresa: e, headcount: colaboradoresDaEmpresa.length, custo };
+    const desligadosEmpresaMes = lista.filter(
+      (c) => c.empresa_id === e.id && c.data_desligamento && new Date(c.data_desligamento) >= inicioMes
+    ).length;
+    const turnoverEmpresa = colaboradoresDaEmpresa.length > 0 ? (desligadosEmpresaMes / colaboradoresDaEmpresa.length) * 100 : 0;
+    const custoFaturamentoPct = percentualFolhaSobreFaturamento(custo, e.faturamento_mensal);
+    return { empresa: e, headcount: colaboradoresDaEmpresa.length, custo, turnoverEmpresa, custoFaturamentoPct };
   });
 
   // ------------------------------------------------------------
-  // Férias nos próximos 30 dias
+  // Férias nos próximos 30 dias — com o número do período (1º/2º/3º...)
+  // dentro do período aquisitivo, calculado a partir da ordem real das
+  // férias já lançadas naquele período.
   // ------------------------------------------------------------
   const feriasProximasLista = (feriasProximas ?? []) as Ferias[];
   const nomeColaboradorPorId = Object.fromEntries(lista.map((c) => [c.id, c.nome]));
 
+  const feriasPorPeriodo = new Map<string, string[]>(); // periodo_aquisitivo_id -> ids em ordem de data_inicio
+  for (const f of (feriasDoPeriodo ?? []) as { id: string; periodo_aquisitivo_id: string | null }[]) {
+    if (!f.periodo_aquisitivo_id) continue;
+    if (!feriasPorPeriodo.has(f.periodo_aquisitivo_id)) feriasPorPeriodo.set(f.periodo_aquisitivo_id, []);
+    feriasPorPeriodo.get(f.periodo_aquisitivo_id)!.push(f.id);
+  }
+  function sequenciaDaFerias(f: Ferias): number | null {
+    if (!f.periodo_aquisitivo_id) return null;
+    const ids = feriasPorPeriodo.get(f.periodo_aquisitivo_id);
+    if (!ids) return null;
+    const idx = ids.indexOf(f.id);
+    return idx === -1 ? null : idx + 1;
+  }
+
+  // ------------------------------------------------------------
+  // 🧪 DADOS DE EXEMPLO — o app ainda não guarda esse histórico/módulo.
+  // Gerados de forma determinística (não é aleatório a cada F5) só pra
+  // mostrar como o dashboard fica quando essas informações existirem de
+  // verdade no sistema.
+  // ------------------------------------------------------------
+  const serieHeadcountExemplo = gerarSerieExemplo(ativos.length, Math.max(1, ativos.length * 0.08), hoje);
+  const serieTurnoverExemplo = gerarSerieExemplo(turnoverMensal, 0.8, hoje);
+  const serieAbsenteismoExemplo = gerarSerieExemplo(absenteismoMedio ?? 3, 0.6, hoje);
+
+  const deltaTurnoverExemplo = -(Math.round(turnoverMensal * 0.15 * 10) / 10);
+  const deltaAbsenteismoExemplo = -(Math.round((absenteismoMedio ?? 3) * 0.08 * 10) / 10);
+  const deltaCustoExemploPct = 2.1;
+
+  const pdiEmAndamentoExemplo = Math.max(1, Math.round(ativos.length * 0.18));
+  const treinamentosRealizadosExemplo = Math.max(1, Math.round(ativos.length * 0.35));
+  const avaliacaoDesempenhoPctExemplo = 80;
+  const avaliacoesPendentesExemplo = Math.max(0, Math.round(ativos.length * 0.1));
+  const pdisAtrasadosExemplo = Math.max(0, Math.round(pdiEmAndamentoExemplo * 0.2));
+
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-display font-bold text-slate-900">Dashboard</h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Visão geral do RH ·{" "}
-          {hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}
-        </p>
+    <div className="rounded-3xl bg-ink-900 p-6 md:p-10 space-y-7">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 style={{ fontFamily: FONTE_TECH }} className="text-[26px] font-bold text-white">
+            Dashboard
+          </h1>
+          <p className="text-slate-400 text-[13px] mt-1">
+            Visão geral do RH ·{" "}
+            {hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 bg-ink-800 border border-white/10 rounded-lg px-3.5 py-2 text-[11px] text-brand-300">
+          <span className="w-1.5 h-1.5 rounded-full bg-brand-400 inline-block" />
+          dados atualizados agora
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-gold-500/10 border border-gold-500/25 px-4 py-2.5 text-xs text-gold-300">
+        🧪 Os itens marcados com esse ícone usam <strong>dados de exemplo</strong> — o sistema ainda não guarda
+        esse histórico ou não tem esse módulo. O resto do dashboard usa dados reais do seu banco.
       </div>
 
       {/* KPIs principais */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <Indicador icon="👥" label="Headcount" valor={ativos.length.toString()} />
+      <div className={`grid grid-cols-2 md:grid-cols-3 gap-3.5 ${ocultarFinanceiro ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
         <Indicador
-          icon="🔄"
+          label="Headcount"
+          valor={ativos.length.toString()}
+          delta={`${deltaHeadcount >= 0 ? "+" : ""}${deltaHeadcount}`}
+          deltaCor={deltaHeadcount >= 0 ? "teal" : "red"}
+        />
+        <Indicador
           label="Turnover (mês)"
           valor={`${turnoverMensal.toFixed(1)}%`}
           alerta={turnoverMensal > 5}
+          delta={`${deltaTurnoverExemplo >= 0 ? "+" : ""}${deltaTurnoverExemplo} pts`}
+          deltaCor={deltaTurnoverExemplo <= 0 ? "teal" : "red"}
+          deltaSimulado
         />
         <Indicador
-          icon="📆"
           label="Absenteísmo médio"
           valor={absenteismoMedio == null ? "—" : `${absenteismoMedio.toFixed(1)}%`}
           alerta={absenteismoMedio != null && absenteismoMedio > 5}
+          delta={absenteismoMedio == null ? undefined : `${deltaAbsenteismoExemplo >= 0 ? "+" : ""}${deltaAbsenteismoExemplo} pts`}
+          deltaCor={deltaAbsenteismoExemplo <= 0 ? "teal" : "red"}
+          deltaSimulado
         />
+        {!ocultarFinanceiro && (
+          <Indicador
+            label="Custo de pessoal"
+            valor={custoTotalFolha.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+            delta={`+${deltaCustoExemploPct}%`}
+            deltaCor="gold"
+            deltaSimulado
+            valorMenor
+          />
+        )}
         <Indicador
-          icon="💰"
-          label="Custo de pessoal"
-          valor={custoTotalFolha.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
-        />
-        <Indicador
-          icon="🎯"
-          label="Performance média"
-          valor={performanceMedia == null ? "—" : `${performanceMedia.toFixed(0)}%`}
-        />
-        <Indicador
-          icon="🏖️"
           label="Férias próximas"
           valor={feriasProximasLista.length.toString()}
           sublabel="próximos 30 dias"
@@ -284,10 +399,12 @@ export default async function DashboardPage() {
       </div>
 
       {processosNoPainel.length > 0 && (
-        <div className="card">
-          <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-            <h2 className="font-display font-semibold text-slate-900">🧭 Painel de Integração</h2>
-            <Link href="/onboarding" className="text-sm text-brand-600">
+        <div className="card-dark">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+            <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px]">
+              🧭 Painel de Integração
+            </h2>
+            <Link href="/onboarding" className="text-sm text-brand-300 hover:text-brand-200">
               Ver painel completo →
             </Link>
           </div>
@@ -295,96 +412,196 @@ export default async function DashboardPage() {
             {statusPainel.map(({ status, total }) => (
               <div key={status}>
                 <p className="text-2xl">{STATUS_GERAL_ICONE[status]}</p>
-                <p className={`text-xl font-display font-bold ${STATUS_GERAL_COR[status]}`}>{total}</p>
-                <p className="text-xs text-slate-500">{STATUS_GERAL_LABEL[status]}</p>
+                <p style={{ fontFamily: FONTE_MONO }} className={`text-xl font-bold ${STATUS_GERAL_COR[status]}`}>
+                  {total}
+                </p>
+                <p className="text-xs text-slate-400">{STATUS_GERAL_LABEL[status]}</p>
               </div>
             ))}
             <div>
               <p className="text-2xl">⏰</p>
-              <p className={`text-xl font-display font-bold ${atrasadasPainel > 0 ? "text-red-600" : "text-slate-900"}`}>
+              <p style={{ fontFamily: FONTE_MONO }} className={`text-xl font-bold ${atrasadasPainel > 0 ? "text-red-400" : "text-white"}`}>
                 {atrasadasPainel}
               </p>
-              <p className="text-xs text-slate-500">Etapa{atrasadasPainel !== 1 ? "s" : ""} atrasada{atrasadasPainel !== 1 ? "s" : ""}</p>
+              <p className="text-xs text-slate-400">Etapa{atrasadasPainel !== 1 ? "s" : ""} atrasada{atrasadasPainel !== 1 ? "s" : ""}</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Alertas, custo × faturamento, experiência e aniversariantes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        <div className="card card-hover">
-          <h2 className="font-display font-semibold text-slate-900 mb-3">🔔 Alertas e Pendências</h2>
+      {/* Evolução dos indicadores e distribuição por cargo */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4">
+        <div className="card-dark">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-1">
+            📈 Evolução dos indicadores <span className="text-xs font-normal text-gold-400">🧪 exemplo</span>
+          </h2>
+          <EvolucaoIndicadores
+            serieHeadcount={serieHeadcountExemplo}
+            serieTurnover={serieTurnoverExemplo}
+            serieAbsenteismo={serieAbsenteismoExemplo}
+            escuro
+          />
+        </div>
+        <div className="card-dark">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-1">
+            👔 Distribuição por cargo
+          </h2>
+          <DonutCargo dados={dadosCargo} escuro />
+        </div>
+      </div>
+
+      {/* Desenvolvimento, pessoas e alertas */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="card-dark">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
+            🌱 Desenvolvimento <span className="text-xs font-normal text-gold-400">🧪 exemplo</span>
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <p style={{ fontFamily: FONTE_MONO }} className="text-2xl font-bold text-white">{pdiEmAndamentoExemplo}</p>
+              <p className="text-xs text-slate-400">PDI em andamento de {ativos.length} colaboradores</p>
+            </div>
+            <div>
+              <p style={{ fontFamily: FONTE_MONO }} className="text-2xl font-bold text-white">{treinamentosRealizadosExemplo}</p>
+              <p className="text-xs text-slate-400">Treinamentos realizados no mês</p>
+            </div>
+            <div>
+              <div className="flex justify-between items-baseline mb-1">
+                <p className="text-xs text-slate-400">Avaliação de desempenho concluída</p>
+                <p style={{ fontFamily: FONTE_MONO }} className="text-sm font-semibold text-slate-200">{avaliacaoDesempenhoPctExemplo}%</p>
+              </div>
+              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full bg-brand-400 rounded-full" style={{ width: `${avaliacaoDesempenhoPctExemplo}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="card-dark">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
+            🧑‍🤝‍🧑 Pessoas
+          </h2>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Tipo de vínculo</p>
+              <DonutDuas
+                labelA="CLT"
+                valorA={clt.length}
+                labelB="PJ"
+                valorB={pj.length}
+                labelC="Estágio"
+                valorC={estagio.length}
+                escuro
+              />
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Tempo de empresa</p>
+              <BarrasTempoEmpresa dados={faixasTempoEmpresa} escuro />
+            </div>
+          </div>
+        </div>
+
+        <div className="card-dark">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
+            🔔 Alertas e Pendências
+          </h2>
           <ul className="space-y-2.5 text-sm">
-            <li className="flex justify-between items-center">
-              <Link href="/colaboradores" className="text-slate-600 hover:underline">
+            <li className="flex justify-between items-center gap-2">
+              <Link href="/colaboradores" className="text-slate-300 hover:underline">
                 Períodos de férias vencendo (≤30 dias)
               </Link>
-              <span className={`font-semibold ${periodosVencendo.length > 0 ? "text-red-600" : "text-slate-400"}`}>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${periodosVencendo.length > 0 ? "text-red-400" : "text-slate-500"}`}>
                 {periodosVencendo.length}
               </span>
             </li>
-            <li className="flex justify-between items-center">
-              <Link href="/colaboradores" className="text-slate-600 hover:underline">
+            <li className="flex justify-between items-center gap-2">
+              <Link href="/colaboradores" className="text-slate-300 hover:underline">
                 Experiências terminando (≤15 dias)
               </Link>
-              <span className={`font-semibold ${emExperienciaVencendo.length > 0 ? "text-amber-600" : "text-slate-400"}`}>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${emExperienciaVencendo.length > 0 ? "text-gold-400" : "text-slate-500"}`}>
                 {emExperienciaVencendo.length}
               </span>
             </li>
-            <li className="flex justify-between items-center">
-              <Link href="/onboarding" className="text-slate-600 hover:underline">
+            <li className="flex justify-between items-center gap-2">
+              <Link href="/colaboradores" className="text-slate-300 hover:underline">
+                Contratos PJ vencendo (≤60 dias)
+              </Link>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${contratosPJVencendo.length > 0 ? "text-gold-400" : "text-slate-500"}`}>
+                {contratosPJVencendo.length}
+              </span>
+            </li>
+            <li className="flex justify-between items-center gap-2">
+              <Link href="/onboarding" className="text-slate-300 hover:underline">
                 Etapas de integração atrasadas
               </Link>
-              <span className={`font-semibold ${atrasadasPainel > 0 ? "text-red-600" : "text-slate-400"}`}>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${atrasadasPainel > 0 ? "text-red-400" : "text-slate-500"}`}>
                 {atrasadasPainel}
+              </span>
+            </li>
+            <li className="flex justify-between items-center gap-2">
+              <span className="text-slate-300">Avaliações de desempenho pendentes <span className="text-gold-400">🧪</span></span>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${avaliacoesPendentesExemplo > 0 ? "text-gold-400" : "text-slate-500"}`}>
+                {avaliacoesPendentesExemplo}
+              </span>
+            </li>
+            <li className="flex justify-between items-center gap-2">
+              <span className="text-slate-300">PDIs atrasados <span className="text-gold-400">🧪</span></span>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${pdisAtrasadosExemplo > 0 ? "text-red-400" : "text-slate-500"}`}>
+                {pdisAtrasadosExemplo}
               </span>
             </li>
           </ul>
         </div>
+      </div>
 
-        <div className="card card-hover">
-          <h2 className="font-display font-semibold text-slate-900 mb-3">
-            💰 Custo de folha × Faturamento
-          </h2>
-          {pctFolha === null ? (
-            <p className="text-sm text-slate-500">
-              Cadastre o faturamento das empresas para ver este indicador.
-            </p>
-          ) : (
-            <div>
-              <p
-                className={`text-3xl font-semibold ${
-                  pctFolha <= LIMITE_SAUDAVEL_FOLHA_PCT ? "text-emerald-600" : "text-red-600"
-                }`}
-              >
-                {pctFolha.toFixed(1)}%
+      {/* Custo × faturamento, experiência e aniversariantes */}
+      <div className={`grid grid-cols-1 gap-4 ${ocultarFinanceiro ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
+        {!ocultarFinanceiro && (
+          <div className="card-dark">
+            <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
+              💰 Custo de folha × Faturamento
+            </h2>
+            {pctFolha === null ? (
+              <p className="text-sm text-slate-400">
+                Cadastre o faturamento das empresas para ver este indicador.
               </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Meta: até {LIMITE_SAUDAVEL_FOLHA_PCT}% do faturamento
-              </p>
-            </div>
-          )}
-          <Link href="/projecao-custo" className="text-sm text-brand-600 mt-3 inline-block">
-            Ver detalhamento →
-          </Link>
-        </div>
+            ) : (
+              <div>
+                <p
+                  style={{ fontFamily: FONTE_MONO }}
+                  className={`text-3xl font-semibold ${
+                    pctFolha <= LIMITE_SAUDAVEL_FOLHA_PCT ? "text-brand-300" : "text-red-400"
+                  }`}
+                >
+                  {pctFolha.toFixed(1)}%
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Meta: até {LIMITE_SAUDAVEL_FOLHA_PCT}% do faturamento
+                </p>
+              </div>
+            )}
+            <Link href="/projecao-custo" className="text-sm text-brand-300 hover:text-brand-200 mt-3 inline-block">
+              Ver detalhamento →
+            </Link>
+          </div>
+        )}
 
-        <div className="card card-hover">
-          <h2 className="font-display font-semibold text-slate-900 mb-3">
+        <div className="card-dark">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
             ⚠️ Experiência terminando
           </h2>
           {emExperienciaVencendo.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum caso no momento.</p>
+            <p className="text-sm text-slate-400">Nenhum caso no momento.</p>
           ) : (
             <ul className="space-y-2">
               {emExperienciaVencendo.map((c) => {
                 const dias = diasParaFimExperiencia(c.data_fim_experiencia!);
                 return (
                   <li key={c.id} className="flex justify-between text-sm">
-                    <Link href={`/colaboradores/${c.id}`} className="text-slate-700 hover:underline truncate">
+                    <Link href={`/colaboradores/${c.id}`} className="text-slate-300 hover:underline truncate">
                       {c.nome}
                     </Link>
-                    <span className={dias <= 7 ? "text-red-600 font-medium shrink-0" : "text-amber-600 shrink-0"}>
+                    <span style={{ fontFamily: FONTE_MONO }} className={dias <= 7 ? "text-red-400 font-medium shrink-0" : "text-gold-400 shrink-0"}>
                       {dias} dia{dias !== 1 ? "s" : ""}
                     </span>
                   </li>
@@ -394,27 +611,26 @@ export default async function DashboardPage() {
           )}
         </div>
 
-        <div className="card card-hover">
-          <h2 className="font-display font-semibold text-slate-900 mb-3">🎂 Aniversariantes do mês</h2>
+        <div className="card-dark">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
+            🎂 Aniversariantes do mês
+          </h2>
           {aniversariantesMes.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum aniversariante este mês.</p>
+            <p className="text-sm text-slate-400">Nenhum aniversariante este mês.</p>
           ) : (
             <ul className="space-y-2">
               {aniversariantesMes.map((c) => (
-                <li key={c.id} className="flex justify-between text-sm text-slate-700 gap-2">
+                <li key={c.id} className="flex justify-between text-sm text-slate-300 gap-2">
                   <span className="truncate">
                     <Link href={`/colaboradores/${c.id}`} className="hover:underline">
                       {c.nome}
                     </Link>
                     {c.empresa_id && nomeEmpresaPorId[c.empresa_id] && (
-                      <span className="text-slate-400"> · {nomeEmpresaPorId[c.empresa_id]}</span>
+                      <span className="text-slate-500"> · {nomeEmpresaPorId[c.empresa_id]}</span>
                     )}
                   </span>
-                  <span className="text-slate-500 shrink-0">
-                    {new Date(c.data_nascimento!).toLocaleDateString("pt-BR", {
-                      day: "2-digit",
-                      month: "2-digit",
-                    })}
+                  <span style={{ fontFamily: FONTE_MONO }} className="text-slate-400 shrink-0">
+                    {formatarDataBR(c.data_nascimento).slice(0, 5)}
                   </span>
                 </li>
               ))}
@@ -423,63 +639,43 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Gráficos de composição do quadro */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="card">
-          <h2 className="font-display font-semibold text-slate-900 mb-1">👔 Distribuição por cargo</h2>
-          <DonutCargo dados={dadosCargo} />
-        </div>
-        <div className="card">
-          <h2 className="font-display font-semibold text-slate-900 mb-1">🧾 Tipo de vínculo</h2>
-          <DonutDuas labelA="CLT" valorA={clt.length} labelB="PJ" valorB={pj.length} />
-        </div>
-        <div className="card">
-          <h2 className="font-display font-semibold text-slate-900 mb-1">⏳ Tempo de empresa</h2>
-          <BarrasTempoEmpresa dados={faixasTempoEmpresa} />
-        </div>
-      </div>
-
-      {/* Indicadores por empresa */}
-      {listaEmpresas.length > 0 && (
-        <div className="card">
-          <h2 className="font-display font-semibold text-slate-900 mb-3">📊 Indicadores por empresa</h2>
-          <BarrasIndicadoresEmpresa dados={dadosIndicadoresEmpresa} />
-        </div>
-      )}
-
       {/* Tabela detalhada de empresas */}
       {empresasDetalhado.length > 0 && (
-        <div className="card">
-          <h2 className="font-display font-semibold text-slate-900 mb-3">🏢 Empresas</h2>
+        <div className="card-dark">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
+            📋 Visão por empresa
+          </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200">
-                  <th className="py-2 pr-4">Empresa</th>
-                  <th className="py-2 pr-4">Headcount</th>
-                  <th className="py-2 pr-4">Custo mensal</th>
-                  <th className="py-2 pr-4">Absenteísmo</th>
-                  <th className="py-2 pr-4">Performance</th>
-                  <th className="py-2 pr-4">Treinamento</th>
-                  <th className="py-2 pr-4">Clima</th>
+                <tr className="text-left text-slate-400 border-b border-white/10">
+                  <th className="py-2 pr-4 font-normal">Empresa</th>
+                  <th className="py-2 pr-4 font-normal">Headcount</th>
+                  <th className="py-2 pr-4 font-normal">Performance</th>
+                  <th className="py-2 pr-4 font-normal">Turnover (mês)</th>
+                  <th className="py-2 pr-4 font-normal">Absenteísmo</th>
+                  {!ocultarFinanceiro && <th className="py-2 pr-4 font-normal">Custo / Faturamento</th>}
                 </tr>
               </thead>
-              <tbody>
-                {empresasDetalhado.map(({ empresa: e, headcount, custo }) => (
-                  <tr key={e.id} className="border-b border-slate-100">
-                    <td className="py-2 pr-4 font-medium text-slate-800">{e.nome}</td>
-                    <td className="py-2 pr-4">{headcount}</td>
-                    <td className="py-2 pr-4">
-                      {custo.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
-                    </td>
-                    <td className="py-2 pr-4">{e.absenteismo_pct ?? "—"}%</td>
-                    <td className="py-2 pr-4">{e.performance_pct ?? "—"}%</td>
-                    <td className="py-2 pr-4">{e.treinamento_pct ?? "—"}%</td>
-                    <td className={`py-2 pr-4 ${
-                      e.clima_pct != null && e.clima_pct < 80 ? "text-red-600" : "text-emerald-600"
-                    }`}>
-                      {e.clima_pct ?? "—"}%
-                    </td>
+              <tbody style={{ fontFamily: FONTE_MONO }}>
+                {empresasDetalhado.map(({ empresa: e, headcount, turnoverEmpresa, custoFaturamentoPct }) => (
+                  <tr key={e.id} className="border-b border-white/5">
+                    <td style={{ fontFamily: "'Inter', sans-serif" }} className="py-2 pr-4 font-medium text-slate-100">{e.nome}</td>
+                    <td className="py-2 pr-4 text-slate-300">{headcount}</td>
+                    <td className="py-2 pr-4 text-slate-300">{e.performance_pct ?? "—"}%</td>
+                    <td className="py-2 pr-4 text-slate-300">{turnoverEmpresa.toFixed(1)}%</td>
+                    <td className="py-2 pr-4 text-slate-300">{e.absenteismo_pct ?? "—"}%</td>
+                    {!ocultarFinanceiro && (
+                      <td className="py-2 pr-4">
+                        {custoFaturamentoPct === null ? (
+                          <span className="text-slate-500">—</span>
+                        ) : (
+                          <span className={custoFaturamentoPct <= LIMITE_SAUDAVEL_FOLHA_PCT ? "text-brand-300" : "text-red-400"}>
+                            {custoFaturamentoPct.toFixed(1)}%
+                          </span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -489,40 +685,47 @@ export default async function DashboardPage() {
       )}
 
       {/* Férias nos próximos 30 dias */}
-      <div className="card">
-        <h2 className="font-display font-semibold text-slate-900 mb-3">🏖️ Férias — próximos 30 dias</h2>
+      <div className="card-dark">
+        <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
+          🏖️ Férias — próximos 30 dias
+        </h2>
         {feriasProximasLista.length === 0 ? (
-          <p className="text-sm text-slate-500">Nenhuma férias programada pros próximos 30 dias.</p>
+          <p className="text-sm text-slate-400">Nenhuma férias programada pros próximos 30 dias.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200">
-                  <th className="py-2 pr-4">Colaborador</th>
-                  <th className="py-2 pr-4">Início</th>
-                  <th className="py-2 pr-4">Fim</th>
-                  <th className="py-2 pr-4">Dias</th>
-                  <th className="py-2 pr-4">Status</th>
+                <tr className="text-left text-slate-400 border-b border-white/10">
+                  <th className="py-2 pr-4 font-normal">Colaborador</th>
+                  <th className="py-2 pr-4 font-normal">Período</th>
+                  <th className="py-2 pr-4 font-normal">Dias</th>
+                  <th className="py-2 pr-4 font-normal">Início</th>
+                  <th className="py-2 pr-4 font-normal">Fim</th>
+                  <th className="py-2 pr-4 font-normal">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {feriasProximasLista.map((f) => (
-                  <tr key={f.id} className="border-b border-slate-100">
-                    <td className="py-2 pr-4 font-medium text-slate-800">
-                      <Link href={`/colaboradores/${f.colaborador_id}`} className="hover:underline">
-                        {nomeColaboradorPorId[f.colaborador_id] ?? "—"}
-                      </Link>
-                    </td>
-                    <td className="py-2 pr-4">{new Date(f.data_inicio).toLocaleDateString("pt-BR")}</td>
-                    <td className="py-2 pr-4">{new Date(f.data_fim).toLocaleDateString("pt-BR")}</td>
-                    <td className="py-2 pr-4">{f.dias}</td>
-                    <td className="py-2 pr-4">
-                      <span className={`badge ${FERIAS_STATUS_BADGE[f.status] ?? "bg-slate-100 text-slate-600"}`}>
-                        {FERIAS_STATUS_LABEL[f.status] ?? f.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {feriasProximasLista.map((f) => {
+                  const seq = sequenciaDaFerias(f);
+                  return (
+                    <tr key={f.id} className="border-b border-white/5">
+                      <td className="py-2 pr-4 font-medium text-slate-100">
+                        <Link href={`/colaboradores/${f.colaborador_id}`} className="hover:underline">
+                          {nomeColaboradorPorId[f.colaborador_id] ?? "—"}
+                        </Link>
+                      </td>
+                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-slate-400">{seq ? `${seq}º período` : "—"}</td>
+                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-slate-300">{f.dias}</td>
+                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-slate-300">{formatarDataBR(f.data_inicio)}</td>
+                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-slate-300">{formatarDataBR(f.data_fim)}</td>
+                      <td className="py-2 pr-4">
+                        <span className={`badge ${FERIAS_STATUS_BADGE[f.status] ?? "bg-white/10 text-slate-300"}`}>
+                          {FERIAS_STATUS_LABEL[f.status] ?? f.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -533,26 +736,42 @@ export default async function DashboardPage() {
 }
 
 function Indicador({
-  icon,
   label,
   valor,
   sublabel,
   alerta,
+  delta,
+  deltaCor,
+  deltaSimulado,
+  valorMenor,
 }: {
-  icon: string;
   label: string;
   valor: string;
   sublabel?: string;
   alerta?: boolean;
+  delta?: string;
+  deltaCor?: "teal" | "red" | "gold";
+  deltaSimulado?: boolean;
+  valorMenor?: boolean;
 }) {
+  const corDelta =
+    deltaCor === "teal" ? "text-brand-300" : deltaCor === "red" ? "text-red-400" : "text-gold-400";
   return (
-    <div className="card card-hover">
-      <div className="icon-chip mb-3">{icon}</div>
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className={`text-2xl font-display font-bold mt-1 ${alerta ? "text-red-600" : "text-slate-900"}`}>
+    <div className="bg-ink-800 border border-white/10 rounded-2xl p-4">
+      <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
+      <p
+        style={{ fontFamily: FONTE_MONO }}
+        className={`font-bold mt-2 ${valorMenor ? "text-xl" : "text-[26px]"} ${alerta ? "text-red-400" : "text-white"}`}
+      >
         {valor}
       </p>
-      {sublabel && <p className="text-xs text-slate-400 mt-0.5">{sublabel}</p>}
+      {delta && (
+        <p style={{ fontFamily: FONTE_MONO }} className={`text-[11px] mt-1.5 ${corDelta}`}>
+          {delta}
+          {deltaSimulado && <span className="text-gold-500/70"> 🧪</span>}
+        </p>
+      )}
+      {sublabel && <p className="text-[11px] text-slate-500 mt-0.5">{sublabel}</p>}
     </div>
   );
 }

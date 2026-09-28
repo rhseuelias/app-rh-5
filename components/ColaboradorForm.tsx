@@ -14,6 +14,7 @@ import {
 } from "@/lib/calculos";
 import CampoMoeda from "@/components/campos/CampoMoeda";
 import CampoDocumento from "@/components/campos/CampoDocumento";
+import DateInput from "@/components/DateInput";
 
 type Dependente = {
   nome: string;
@@ -39,13 +40,19 @@ export default function ColaboradorForm({
   empresas,
   unidades = [],
   dependentes: dependentesDoColaborador,
+  restrito = false,
 }: {
   colaborador?: Colaborador;
   empresas: Empresa[];
   unidades?: Unidade[];
   dependentes?: DependenteColaborador[];
+  /** true = usuário sem acesso a salário/custos (ex.: assistente). Na criação ela ainda preenche o
+   * salário (é ela quem faz a admissão); depois de criado, esses campos ficam ocultos pra ela — o
+   * valor salvo continua indo no formulário escondido, só não aparece na tela. */
+  restrito?: boolean;
 }) {
-  const [tipo, setTipo] = useState(colaborador?.tipo ?? "CLT");
+  const ocultarFinanceiro = restrito && !!colaborador;
+  const [tipo, setTipo] = useState<"CLT" | "PJ" | "Estagio">(colaborador?.tipo ?? "CLT");
   const [empresaId, setEmpresaId] = useState(colaborador?.empresa_id ?? "");
   const [dependentes, setDependentes] = useState<Dependente[]>(
     dependentesIniciais(dependentesDoColaborador)
@@ -94,10 +101,11 @@ export default function ColaboradorForm({
               name="tipo"
               className="input"
               value={tipo}
-              onChange={(e) => setTipo(e.target.value as "CLT" | "PJ")}
+              onChange={(e) => setTipo(e.target.value as "CLT" | "PJ" | "Estagio")}
             >
               <option value="CLT">CLT</option>
               <option value="PJ">PJ</option>
+              <option value="Estagio">Estagiário(a)</option>
             </select>
           </div>
           <div>
@@ -105,9 +113,9 @@ export default function ColaboradorForm({
             <input name="nome" required className="input" defaultValue={colaborador?.nome} />
           </div>
           <CampoDocumento
-            label={tipo === "CLT" ? "CPF" : "CNPJ"}
+            label={tipo === "PJ" ? "CNPJ" : "CPF"}
             name="cpf_cnpj"
-            tipo={tipo === "CLT" ? "cpf" : "cnpj"}
+            tipo={tipo === "PJ" ? "cnpj" : "cpf"}
             defaultValue={colaborador?.cpf_cnpj ?? ""}
           />
           <div>
@@ -160,8 +168,7 @@ export default function ColaboradorForm({
           </div>
           <div>
             <label className="label">Data de nascimento</label>
-            <input
-              type="date"
+            <DateInput
               name="data_nascimento"
               className="input"
               defaultValue={colaborador?.data_nascimento ?? ""}
@@ -215,8 +222,7 @@ export default function ColaboradorForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="label">Data de admissão</label>
-              <input
-                type="date"
+              <DateInput
                 name="data_admissao"
                 className="input"
                 defaultValue={colaborador?.data_admissao ?? ""}
@@ -242,22 +248,43 @@ export default function ColaboradorForm({
                 ))}
               </select>
             </div>
-            <CampoMoeda label="Salário base" name="salario_base" defaultValue={colaborador?.salario_base} />
-            <CampoMoeda label="Comissão média" name="comissao_media" defaultValue={colaborador?.comissao_media} />
-            <CampoMoeda label="Outros auxílios" name="auxilio_outros" defaultValue={colaborador?.auxilio_outros} />
-            <CampoMoeda label="Custo VT" name="custo_vt" defaultValue={colaborador?.custo_vt} />
-            <CampoMoeda label="Custo VA/VR" name="custo_va_vr" defaultValue={colaborador?.custo_va_vr} />
-            <CampoMoeda
-              label="Assistência médica"
-              name="custo_assist_medica"
-              defaultValue={colaborador?.custo_assist_medica}
-            />
-            <CampoMoeda
-              label="Assistência psicológica"
-              name="custo_assist_psicologica"
-              defaultValue={colaborador?.custo_assist_psicologica}
-            />
+            {ocultarFinanceiro ? (
+              <CamposFinanceirosOcultos
+                valores={{
+                  salario_base: colaborador?.salario_base,
+                  comissao_media: colaborador?.comissao_media,
+                  auxilio_outros: colaborador?.auxilio_outros,
+                  custo_vt: colaborador?.custo_vt,
+                  custo_va_vr: colaborador?.custo_va_vr,
+                  custo_assist_medica: colaborador?.custo_assist_medica,
+                  custo_assist_psicologica: colaborador?.custo_assist_psicologica,
+                }}
+              />
+            ) : (
+              <>
+                <CampoMoeda label="Salário base" name="salario_base" defaultValue={colaborador?.salario_base} />
+                <CampoMoeda label="Comissão média" name="comissao_media" defaultValue={colaborador?.comissao_media} />
+                <CampoMoeda label="Outros auxílios" name="auxilio_outros" defaultValue={colaborador?.auxilio_outros} />
+                <CampoMoeda label="Custo VT" name="custo_vt" defaultValue={colaborador?.custo_vt} />
+                <CampoMoeda label="Custo VA/VR" name="custo_va_vr" defaultValue={colaborador?.custo_va_vr} />
+                <CampoMoeda
+                  label="Assistência médica"
+                  name="custo_assist_medica"
+                  defaultValue={colaborador?.custo_assist_medica}
+                />
+                <CampoMoeda
+                  label="Assistência psicológica"
+                  name="custo_assist_psicologica"
+                  defaultValue={colaborador?.custo_assist_psicologica}
+                />
+              </>
+            )}
           </div>
+          {ocultarFinanceiro && (
+            <p className="text-xs text-slate-400">
+              💰 Salário e custos ficam ocultos pra você depois que o colaborador é cadastrado.
+            </p>
+          )}
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-2">
             <Flag label="Adiantamento de salário" name="adiantamento_salario" defaultChecked={colaborador?.adiantamento_salario} />
@@ -268,14 +295,13 @@ export default function ColaboradorForm({
             <Flag label="Gratificação de função (40%)" name="gratificacao_funcao" defaultChecked={colaborador?.gratificacao_funcao} />
           </div>
         </section>
-      ) : (
+      ) : tipo === "PJ" ? (
         <section className="card space-y-4">
           <h2 className="font-medium text-slate-900">Contrato (PJ)</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="label">Início do contrato</label>
-              <input
-                type="date"
+              <DateInput
                 name="contrato_inicio"
                 className="input"
                 defaultValue={colaborador?.contrato_inicio ?? ""}
@@ -283,20 +309,113 @@ export default function ColaboradorForm({
             </div>
             <div>
               <label className="label">Fim do contrato</label>
-              <input
-                type="date"
+              <DateInput
                 name="contrato_fim"
                 className="input"
                 defaultValue={colaborador?.contrato_fim ?? ""}
               />
             </div>
-            <CampoMoeda
-              label="Valor da nota fiscal mensal"
-              name="valor_nota_fiscal"
-              defaultValue={colaborador?.valor_nota_fiscal ?? undefined}
-            />
+            {ocultarFinanceiro ? (
+              <>
+                <input type="hidden" name="valor_nota_fiscal" value={colaborador?.valor_nota_fiscal ?? 0} />
+                <input type="hidden" name="comissao_corte_pct" value={colaborador?.comissao_corte_pct ?? ""} />
+                <input type="hidden" name="comissao_quimica_pct" value={colaborador?.comissao_quimica_pct ?? ""} />
+              </>
+            ) : (
+              <>
+                <CampoMoeda
+                  label="Valor da nota fiscal mensal"
+                  name="valor_nota_fiscal"
+                  defaultValue={colaborador?.valor_nota_fiscal ?? undefined}
+                />
+                <div>
+                  <label className="label">Comissão — Serviços de corte</label>
+                  <select
+                    name="comissao_corte_pct"
+                    className="input"
+                    defaultValue={colaborador?.comissao_corte_pct ?? ""}
+                  >
+                    <option value="">—</option>
+                    {[33, 35, 38, 40, 50].map((p) => (
+                      <option key={p} value={p}>
+                        {p}%
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Comissão — Serviço de química</label>
+                  <select
+                    name="comissao_quimica_pct"
+                    className="input"
+                    defaultValue={colaborador?.comissao_quimica_pct ?? ""}
+                  >
+                    <option value="">—</option>
+                    {[33, 35].map((p) => (
+                      <option key={p} value={p}>
+                        {p}%
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
             <input type="hidden" name="data_admissao" value={colaborador?.contrato_inicio ?? ""} />
           </div>
+          {ocultarFinanceiro && (
+            <p className="text-xs text-slate-400">
+              💰 O valor da nota fiscal e as comissões ficam ocultos pra você depois que o colaborador é
+              cadastrado.
+            </p>
+          )}
+        </section>
+      ) : (
+        <section className="card space-y-4">
+          <h2 className="font-medium text-slate-900">Contrato (Estágio)</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Início do estágio</label>
+              <DateInput
+                name="contrato_inicio"
+                className="input"
+                defaultValue={colaborador?.contrato_inicio ?? ""}
+              />
+            </div>
+            <div>
+              <label className="label">Término previsto</label>
+              <DateInput
+                name="contrato_fim"
+                className="input"
+                defaultValue={colaborador?.contrato_fim ?? ""}
+              />
+            </div>
+            {ocultarFinanceiro ? (
+              <>
+                <input type="hidden" name="valor_nota_fiscal" value={colaborador?.valor_nota_fiscal ?? 0} />
+                <input type="hidden" name="custo_vt" value={colaborador?.custo_vt ?? 0} />
+              </>
+            ) : (
+              <>
+                <CampoMoeda
+                  label="Bolsa auxílio (mensal)"
+                  name="valor_nota_fiscal"
+                  defaultValue={colaborador?.valor_nota_fiscal ?? undefined}
+                />
+                <CampoMoeda
+                  label="Auxílio transporte (mensal)"
+                  name="custo_vt"
+                  defaultValue={colaborador?.custo_vt}
+                />
+              </>
+            )}
+            <input type="hidden" name="data_admissao" value={colaborador?.contrato_inicio ?? ""} />
+          </div>
+          {ocultarFinanceiro && (
+            <p className="text-xs text-slate-400">
+              💰 A bolsa auxílio e o auxílio transporte ficam ocultos pra você depois que o colaborador é
+              cadastrado.
+            </p>
+          )}
         </section>
       )}
 
@@ -332,11 +451,10 @@ export default function ColaboradorForm({
               </div>
               <div>
                 <label className="label">Data nasc.</label>
-                <input
-                  type="date"
+                <DateInput
                   className="input"
                   value={d.data_nascimento}
-                  onChange={(e) => atualizarDependente(i, "data_nascimento", e.target.value)}
+                  onChange={(v) => atualizarDependente(i, "data_nascimento", v)}
                 />
               </div>
               <div>
@@ -400,6 +518,7 @@ export default function ColaboradorForm({
         </div>
       </section>
 
+      {tipo !== "PJ" && (
       <section className="card space-y-3">
         <h2 className="font-medium text-slate-900">Horário de trabalho</h2>
         <div className="overflow-x-auto">
@@ -493,7 +612,9 @@ export default function ColaboradorForm({
           horários lançados em cada dia. Clique em "🔁 Repetir" pra copiar os horários do dia anterior.
         </p>
       </section>
+      )}
 
+      {tipo !== "PJ" && (
       <section className="card space-y-4">
         <h2 className="font-medium text-slate-900">Benefícios</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -540,6 +661,7 @@ export default function ColaboradorForm({
           </div>
         </div>
       </section>
+      )}
 
       <section className="card space-y-4">
         <h2 className="font-medium text-slate-900">Contato</h2>
@@ -604,5 +726,17 @@ function Flag({
       <input type="checkbox" name={name} defaultChecked={defaultChecked} />
       {label}
     </label>
+  );
+}
+
+/** Mantém os valores financeiros indo junto no formulário (pra não zerar ao salvar),
+ * sem mostrar nada em tela — usado pra quem não tem permissão de ver salário/custos. */
+function CamposFinanceirosOcultos({ valores }: { valores: Record<string, number | null | undefined> }) {
+  return (
+    <>
+      {Object.entries(valores).map(([nome, valor]) => (
+        <input key={nome} type="hidden" name={nome} value={valor ?? 0} />
+      ))}
+    </>
   );
 }
