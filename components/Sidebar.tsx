@@ -17,7 +17,9 @@ const ITENS = [
 
 export default function Sidebar({ papel }: { papel?: string | null }) {
   const pathname = usePathname();
-  const itens = papel === "assistente" ? ITENS.filter((i) => i.href !== "/projecao-custo") : ITENS;
+  // perfil "assistente" (ex.: Francielle) não vê Projeção de Custo nem Departamento Pessoal
+  const ESCONDIDOS_ASSISTENTE = ["/projecao-custo", "/departamento-pessoal"];
+  const itens = papel === "assistente" ? ITENS.filter((i) => !ESCONDIDOS_ASSISTENTE.includes(i.href)) : ITENS;
 
   return (
     <aside className="w-64 shrink-0 bg-ink-900 min-h-screen flex flex-col">
