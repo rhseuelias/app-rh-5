@@ -529,8 +529,15 @@ async function importarFichasGoogleForms(formData: FormData): Promise<ResultadoI
       for (const campo of ficha.booleanosRespondidos) {
         atualizacao[campo] = booleanos[campo as keyof typeof booleanos];
       }
-      // o nome passa a ser o escrito no formulário (corrige maiúsculas/acentos)
-      atualizacao.nome = ficha.nome;
+      // o nome passa a ser o escrito no formulário (corrige maiúsculas/acentos) —
+      // exceto quando é o mesmo nome e o novo veio SEM acento (ex.: planilha com
+      // "Joao" e cadastro já com "João"): aí mantém o que já estava certo
+      const nomeExistente = existente.nome ?? "";
+      const mesmoNomeSemAcento =
+        semAcentos(nomeExistente) === chaveNome &&
+        !/[^\x00-\x7F]/.test(ficha.nome) &&
+        /[^\x00-\x7F]/.test(nomeExistente);
+      if (!mesmoNomeSemAcento) atualizacao.nome = ficha.nome;
       if (ficha.observacoes && !(existente.observacoes ?? "").includes(ficha.observacoes)) {
         atualizacao.observacoes = [existente.observacoes, ficha.observacoes].filter(Boolean).join("\n");
       }
