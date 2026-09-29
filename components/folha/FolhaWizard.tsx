@@ -38,6 +38,15 @@ export interface EmpresaFolha {
   colaboradores: ColaboradorComVinculo[];
 }
 
+type StatusUnidade = "pendente" | "andamento" | "concluido";
+type FiltroStatus = "todos" | StatusUnidade;
+
+const STATUS_UNIDADE: Record<StatusUnidade, { label: string; classe: string }> = {
+  pendente: { label: "Pendente", classe: "bg-amber-50 text-amber-700" },
+  andamento: { label: "Em andamento", classe: "bg-blue-50 text-blue-700" },
+  concluido: { label: "Concluído", classe: "bg-emerald-50 text-emerald-700" },
+};
+
 /**
  * Orquestra o processo por unidade: escolher a unidade → preencher um
  * evento (coluna) por vez, concluindo cada um antes de liberar o
@@ -76,6 +85,8 @@ export default function FolhaWizard({
   const [mostrarRelatorioDinamico, setMostrarRelatorioDinamico] = useState(false);
   const [valores, setValores] = useState(valoresIniciais);
   const [concluidos, setConcluidos] = useState(eventosConcluidosIniciais);
+  const [busca, setBusca] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("todos");
 
   function grupoEstaCompleto(rotulo: string): boolean {
     const tiposG = tiposDoGrupo(tipos, rotulo, gruposPorTipo);
@@ -165,11 +176,139 @@ export default function FolhaWizard({
     );
   }
 
+  // situação de cada unidade: quantos eventos (colunas) já foram concluídos
+  const unidades = grupos.map((g) => {
+    const tiposG = tiposDoGrupo(tipos, g.rotulo, gruposPorTipo);
+    const feitos = tiposG.filter((t) => concluidos[g.rotulo]?.includes(t.id)).length;
+    const total = tiposG.length;
+    const completo = total > 0 && feitos === total;
+    const status: StatusUnidade = completo ? "concluido" : feitos > 0 ? "andamento" : "pendente";
+    return { grupo: g, feitos, total, completo, status };
+  });
+  const unidadesConcluidas = unidades.filter((u) => u.completo).length;
+  const pctGeral = unidades.length > 0 ? (unidadesConcluidas / unidades.length) * 100 : 0;
+
+  const termo = busca.trim().toLowerCase();
+  const unidadesVisiveis = unidades.filter(
+    (u) =>
+      (filtroStatus === "todos" || u.status === filtroStatus) &&
+      (termo === "" || u.grupo.rotulo.toLowerCase().includes(termo))
+  );
+  const rotuloAcao = mesFechado ? "Consultar" : "Lançar";
+
   return (
     <div className="space-y-4">
-      <div className="card">
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
-          <h3 className="text-sm font-semibold text-slate-700">🧾 Lançamento por unidade</h3>
+      <section className="card">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <span aria-hidden className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center text-lg">
+              📍
+            </span>
+            <div>
+              <h2 className="font-semibold text-slate-900">Unidades</h2>
+              <p className="text-xs text-slate-500">Acompanhe o progresso de lançamento de cada unidade.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="search"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar unidade..."
+              aria-label="Buscar unidade"
+              className="input !w-44 !py-1.5"
+            />
+            <select
+              value={filtroStatus}
+              onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)}
+              aria-label="Filtrar por situação"
+              className="input !w-auto !py-1.5"
+            >
+              <option value="todos">Filtros: todas</option>
+              <option value="pendente">Pendentes</option>
+              <option value="andamento">Em andamento</option>
+              <option value="concluido">Concluídas</option>
+            </select>
+            <div className="min-w-[10rem]">
+              <p className="text-xs text-slate-500 mb-1">
+                {unidadesConcluidas} de {unidades.length} unidades concluídas
+              </p>
+              <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                <div className="h-full bg-brand-600 rounded-full" style={{ width: `${pctGeral}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-400 mb-4">
+          Dentro de cada unidade é um evento (coluna) por vez: conclua o atual para liberar o próximo. Os relatórios só
+          liberam depois que TODAS as unidades terminarem.
+        </p>
+
+        {unidadesVisiveis.length === 0 ? (
+          <p className="text-sm text-slate-400">Nenhuma unidade encontrada com esse filtro.</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {unidadesVisiveis.map(({ grupo, feitos, total, completo, status }) => (
+              <div
+                key={grupo.rotulo}
+                className={`rounded-2xl border p-4 ${
+                  completo ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200 bg-white"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span aria-hidden className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
+                      📍
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 break-words">{grupo.rotulo}</p>
+                      <p className="text-xs text-slate-500">
+                        {grupo.colaboradores.length} colaborador{grupo.colaboradores.length === 1 ? "" : "es"}
+                      </p>
+                    </div>
+                  </div>
+                  {completo && (
+                    <span aria-hidden className="text-emerald-600 font-bold">
+                      ✓
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-xs text-slate-500 mt-3 mb-1">
+                  {feitos}/{total}
+                </p>
+                <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${completo ? "bg-emerald-500" : "bg-brand-600"}`}
+                    style={{ width: `${total > 0 ? (feitos / total) * 100 : 0}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-2 mt-3">
+                  <span className={`badge ${STATUS_UNIDADE[status].classe}`}>{STATUS_UNIDADE[status].label}</span>
+                  <button
+                    type="button"
+                    onClick={() => setGrupoSelecionado(grupo.rotulo)}
+                    className="btn-primary !text-sm !py-1.5 !px-4"
+                  >
+                    {rotuloAcao} →
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <span aria-hidden className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center text-lg">
+              📋
+            </span>
+            <h2 className="font-semibold text-slate-900">Resumo das unidades</h2>
+          </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -199,47 +338,61 @@ export default function FolhaWizard({
             </button>
           </div>
         </div>
-        <p className="text-xs text-slate-400">
-          Escolha uma unidade pra lançar. Dentro dela, é um evento (coluna) por vez — conclua o atual pra liberar o
-          próximo. Só depois de terminar TODAS as unidades os relatórios liberam.
-        </p>
-      </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {grupos.map((g) => {
-          const tiposG = tiposDoGrupo(tipos, g.rotulo, gruposPorTipo);
-          const feitos = concluidos[g.rotulo]?.length ?? 0;
-          const total = tiposG.length;
-          const completo = grupoEstaCompleto(g.rotulo);
-          return (
-            <button
-              key={g.rotulo}
-              type="button"
-              onClick={() => setGrupoSelecionado(g.rotulo)}
-              className={`card text-left hover:border-brand-300 transition-colors ${
-                completo ? "!bg-emerald-50 !border-emerald-200" : ""
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-900">{g.rotulo}</span>
-                {completo && <span className="text-emerald-600 text-lg">✓</span>}
-              </div>
-              <p className="text-xs text-slate-400 mt-1">
-                {g.colaboradores.length} colaborador{g.colaboradores.length === 1 ? "" : "es"}
-              </p>
-              <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className={`h-full ${completo ? "bg-emerald-500" : "bg-brand-400"}`}
-                  style={{ width: `${total > 0 ? (feitos / total) * 100 : 0}%` }}
-                />
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                {feitos}/{total} eventos concluídos
-              </p>
-            </button>
-          );
-        })}
-      </div>
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr className="text-left text-xs font-semibold text-slate-500">
+                <th className="py-2.5 px-3">Unidade</th>
+                <th className="py-2.5 px-3">Colaboradores</th>
+                <th className="py-2.5 px-3 min-w-[10rem]">Progresso</th>
+                <th className="py-2.5 px-3">Eventos concluídos</th>
+                <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-3 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {unidadesVisiveis.map(({ grupo, feitos, total, completo, status }) => (
+                <tr key={grupo.rotulo}>
+                  <td className="py-2.5 px-3 font-medium text-slate-900">
+                    <span aria-hidden className="mr-1.5">
+                      📍
+                    </span>
+                    {grupo.rotulo}
+                  </td>
+                  <td className="py-2.5 px-3 text-slate-700">{grupo.colaboradores.length}</td>
+                  <td className="py-2.5 px-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${completo ? "bg-emerald-500" : "bg-brand-600"}`}
+                          style={{ width: `${total > 0 ? (feitos / total) * 100 : 0}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-slate-500 whitespace-nowrap">
+                        {feitos}/{total}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-3 text-slate-700">{feitos}</td>
+                  <td className="py-2.5 px-3">
+                    <span className={`badge ${STATUS_UNIDADE[status].classe}`}>{STATUS_UNIDADE[status].label}</span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setGrupoSelecionado(grupo.rotulo)}
+                      className="btn-primary !text-xs !py-1 !px-3.5"
+                    >
+                      {rotuloAcao}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

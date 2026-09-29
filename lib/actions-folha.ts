@@ -113,6 +113,19 @@ export async function removerTipoFolha(id: string) {
   revalidatePath(ROTA);
 }
 
+/** Liga/desliga várias colunas de uma vez (painel "Editar colunas"). Não
+ * apaga nada: os lançamentos já feitos continuam no histórico. */
+export async function salvarColunasAtivas(paraAtivar: string[], paraDesativar: string[]) {
+  const supabase = createClient();
+  if (paraAtivar.length > 0) {
+    await supabase.from("folha_tipos").update({ ativo: true }).in("id", paraAtivar);
+  }
+  if (paraDesativar.length > 0) {
+    await supabase.from("folha_tipos").update({ ativo: false }).in("id", paraDesativar);
+  }
+  revalidatePath(ROTA);
+}
+
 /** Define quais unidades/empresas usam uma coluna (tipo). Lista vazia =
  * volta a valer pra todo mundo (comportamento padrão). */
 export async function salvarGruposTipo(tipoId: string, grupos: string[]) {

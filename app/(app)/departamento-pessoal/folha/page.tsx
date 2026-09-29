@@ -44,7 +44,7 @@ export default async function FolhaPage({
     supabase.from("unidades").select("*"),
     supabase.from("colaboradores").select("*"),
     supabase.from("folha_competencias").select("*").order("competencia", { ascending: false }),
-    supabase.from("folha_tipos").select("*").eq("ativo", true).neq("categoria", "espelhamento").order("ordem"),
+    supabase.from("folha_tipos").select("*").neq("categoria", "espelhamento").order("ordem"),
     supabase.from("folha_tipos_grupos").select("*"),
   ]);
 
@@ -52,7 +52,10 @@ export default async function FolhaPage({
   const unidades = (unidadesData ?? []) as Unidade[];
   const todosColaboradores = ((colaboradoresData ?? []) as Colaborador[]).filter(colaboradorAtivoFolha);
   const competencias = (competenciasData ?? []) as FolhaCompetencia[];
-  const tipos = (tiposData ?? []) as FolhaTipo[];
+  // todas as colunas (inclusive as desligadas — o painel "Editar colunas"
+  // precisa delas pra poder religar) e só as ativas (as que entram na grade)
+  const tiposTodos = (tiposData ?? []) as FolhaTipo[];
+  const tipos = tiposTodos.filter((t) => t.ativo);
   const tiposGrupos = (tiposGruposData ?? []) as FolhaTipoGrupo[];
 
   // pra cada coluna (tipo), a lista de unidades/empresas que usam ela —
@@ -201,23 +204,41 @@ export default async function FolhaPage({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Departamento Pessoal · Controle de Folha</h1>
-          <p className="text-slate-500 text-sm">
-            Um evento (coluna) por vez, por unidade — igual à planilha que vai pra contabilidade.
-          </p>
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden
+            className="w-11 h-11 rounded-2xl bg-brand-600 text-white flex items-center justify-center text-xl"
+          >
+            🧾
+          </span>
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">Gestão de Folha</h1>
+            <p className="text-slate-500 text-sm">
+              Departamento Pessoal · lançamentos por unidade, igual à planilha que vai pra contabilidade
+            </p>
+          </div>
         </div>
-        <CompetenciaAcoesFolha competencia={competencia} fechado={mesFechado} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <form method="get" className="flex items-center gap-2">
+            <select
+              name="competencia"
+              defaultValue={competencia}
+              aria-label="Mês da folha"
+              className="input !w-auto !text-sm !py-1.5"
+            >
+              {opcoesCompetencia.map((comp) => (
+                <option key={comp} value={comp}>
+                  📅 {rotuloCompetencia(comp)}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="btn-secondary !text-sm !py-1.5">
+              Ver
+            </button>
+          </form>
+          <CompetenciaAcoesFolha competencia={competencia} fechado={mesFechado} />
+        </div>
       </div>
-
-      <form method="get" className="flex flex-wrap items-center gap-2">
-        <select name="competencia" defaultValue={competencia} className="input !w-auto !text-sm !py-1.5">
-          {opcoesCompetencia.map((comp) => (
-            <option key={comp} value={comp}>{rotuloCompetencia(comp)}</option>
-          ))}
-        </select>
-        <button type="submit" className="btn-secondary !text-sm !py-1.5">Ver</button>
-      </form>
 
       {mesFechado && (
         <div className="card bg-slate-50 border-slate-200">
@@ -227,7 +248,7 @@ export default async function FolhaPage({
         </div>
       )}
 
-      <TiposFolhaCadastro tipos={tipos} todosGrupos={todosGrupos} gruposPorTipo={gruposPorTipo} />
+      <TiposFolhaCadastro tipos={tiposTodos} todosGrupos={todosGrupos} gruposPorTipo={gruposPorTipo} />
 
       {tipos.length === 0 ? (
         <div className="card">
