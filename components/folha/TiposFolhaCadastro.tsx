@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { FolhaTipo } from "@/types/db";
 import { cadastrarTipoFolha, salvarColunasAtivas, salvarGruposTipo } from "@/lib/actions-folha";
-import { contarUsoTipoFolha, excluirTipoFolha, type UsoTipoFolha } from "@/lib/actions-folha-excluir";
+import { contarUsoTipoFolha, editarTipoFolha, excluirTipoFolha, type UsoTipoFolha } from "@/lib/actions-folha-excluir";
 
 const ROTULO_FORMATO: Record<string, string> = {
   moeda: "R$",
@@ -187,6 +187,12 @@ export default function TiposFolhaCadastro({
   const [usoExclusao, setUsoExclusao] = useState<UsoTipoFolha | null>(null);
   const [carregandoUso, setCarregandoUso] = useState(false);
   const [erroExclusao, setErroExclusao] = useState<string | null>(null);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [edNome, setEdNome] = useState("");
+  const [edCodigo, setEdCodigo] = useState("");
+  const [edCategoria, setEdCategoria] = useState<"provento" | "desconto">("provento");
+  const [edFormato, setEdFormato] = useState<"moeda" | "texto" | "sim_nao">("moeda");
+  const [erroEdicao, setErroEdicao] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const formNovaRef = useRef<HTMLFormElement | null>(null);
 
@@ -235,14 +241,50 @@ export default function TiposFolhaCadastro({
   }
 
   function pedirExclusao(id: string) {
+    cancelarEdicao();
     setErroExclusao(null);
     setUsoExclusao(null);
     setExcluindoId(id);
     setCarregandoUso(true);
     contarUsoTipoFolha(id)
-      .then((uso) => setUsoExclusao(uso))
+      .then((uso) => {
+        if (uso.erro) setErroExclusao(`Não consegui verificar os valores lançados: ${uso.erro}`);
+        else setUsoExclusao(uso);
+      })
       .catch(() => setErroExclusao("Não consegui verificar os valores lançados. Tente de novo."))
       .finally(() => setCarregandoUso(false));
+  }
+
+  // ----- editar coluna (nome, categoria, código e formato) -----
+  function cancelarEdicao() {
+    setEditandoId(null);
+    setErroEdicao(null);
+  }
+
+  function abrirEdicao(t: FolhaTipo) {
+    cancelarExclusao();
+    setErroEdicao(null);
+    setEdNome(t.nome);
+    setEdCodigo(t.codigo ?? "");
+    setEdCategoria(t.categoria === "desconto" ? "desconto" : "provento");
+    setEdFormato(t.formato === "texto" || t.formato === "sim_nao" ? t.formato : "moeda");
+    setEditandoId(t.id);
+  }
+
+  function salvarEdicao(id: string) {
+    startTransition(async () => {
+      const r = await editarTipoFolha(id, {
+        nome: edNome,
+        codigo: edCodigo,
+        categoria: edCategoria,
+        formato: edFormato,
+      });
+      if (!r.ok) {
+        setErroEdicao(r.erro ?? "Não foi possível salvar.");
+        return;
+      }
+      cancelarEdicao();
+    });
   }
 
   function confirmarExclusao(id: string) {
@@ -329,14 +371,81 @@ export default function TiposFolhaCadastro({
                       </button>
                     </div>
                   </div>
+                ) : editandoId === t.id ? (
+                  <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-slate-600">Editar coluna</p>
+                    <input
+                      value={edNome}
+                      onChange={(e) => setEdNome(e.target.value)}
+                      className="input"
+                      placeholder="Nome da coluna"
+                      aria-label="Nome da coluna"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={edCategoria}
+                        onChange={(e) => setEdCategoria(e.target.value as "provento" | "desconto")}
+                        className="input"
+                        aria-label="Categoria"
+                      >
+                        <option value="provento">Provento</option>
+                        <option value="desconto">Desconto</option>
+                      </select>
+                      <select
+                        value={edFormato}
+                        onChange={(e) => setEdFormato(e.target.value as "moeda" | "texto" | "sim_nao")}
+                        className="input"
+                        aria-label="Formato"
+                      >
+                        <option value="moeda">Valor em R$</option>
+                        <option value="texto">Texto livre</option>
+                        <option value="sim_nao">Sim/Não</option>
+                      </select>
+                    </div>
+                    <input
+                      value={edCodigo}
+                      onChange={(e) => setEdCodigo(e.target.value)}
+                      className="input"
+                      placeholder="Código (opcional)"
+                      aria-label="Código"
+                    />
+                    {erroEdicao && <p className="text-xs font-medium text-red-700">{erroEdicao}</p>}
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => salvarEdicao(t.id)}
+                        disabled={isPending || edNome.trim() === ""}
+                        className="btn-primary !text-xs !py-1.5 !px-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isPending ? "Salvando..." : "Salvar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelarEdicao}
+                        disabled={isPending}
+                        className="text-xs text-slate-600 hover:text-slate-800"
+                      >
+                        cancelar
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => pedirExclusao(t.id)}
-                    className="mt-1 text-xs text-red-700 hover:underline"
-                  >
-                    Excluir coluna
-                  </button>
+                  <div className="mt-1 flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => abrirEdicao(t)}
+                      className="text-xs text-brand-600 hover:text-brand-700 hover:underline"
+                    >
+                      Editar coluna
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => pedirExclusao(t.id)}
+                      className="text-xs text-red-700 hover:underline"
+                    >
+                      Excluir coluna
+                    </button>
+                  </div>
                 )}
               </li>
             ))}
