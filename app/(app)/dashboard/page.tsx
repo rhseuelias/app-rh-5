@@ -47,22 +47,22 @@ const STATUS_GERAL_ICONE: Record<string, string> = {
 // tema "Dark Analytics" — tons claros o bastante pra ler sobre o fundo navy
 // (ink-900/ink-800) do dashboard
 const STATUS_GERAL_COR: Record<string, string> = {
-  integracao: "text-slate-200",
-  experiencia: "text-blue-300",
-  efetivado: "text-emerald-300",
-  nao_efetivado: "text-slate-500",
+  integracao: "text-ink-800",
+  experiencia: "text-blue-700",
+  efetivado: "text-emerald-700",
+  nao_efetivado: "text-ink-500",
 };
 
 const FERIAS_STATUS_BADGE: Record<string, string> = {
-  planejada: "bg-blue-400/15 text-blue-300",
-  solicitado: "bg-white/10 text-slate-300",
-  aprovado: "bg-emerald-400/15 text-emerald-300",
-  concluido: "bg-emerald-400/15 text-emerald-300",
-  cancelado: "bg-white/5 text-slate-500",
+  planejada: "bg-blue-100 text-blue-800",
+  solicitado: "bg-ink-800/10 text-ink-800",
+  aprovado: "bg-emerald-100 text-emerald-800",
+  concluido: "bg-emerald-100 text-emerald-800",
+  cancelado: "bg-ink-800/5 text-ink-500",
 };
 
-const FONTE_TECH = "'Space Grotesk', sans-serif";
-const FONTE_MONO = "'JetBrains Mono', monospace";
+const FONTE_TECH = "'Oswald', 'Arial Narrow', sans-serif";
+const FONTE_MONO = "'Inter', sans-serif";
 
 /**
  * Gera uma série mensal "de exemplo" (12 pontos, do mês mais antigo pro mais
@@ -215,11 +215,6 @@ export default async function DashboardPage() {
   const nomeEmpresaPorId = Object.fromEntries(listaEmpresas.map((e) => [e.id, e.nome]));
 
   const custoTotalFolha = ativos.reduce((acc, c) => acc + custoMensalColaborador(c), 0);
-  const faturamentoTotal = listaEmpresas.reduce(
-    (acc, e) => acc + (e.faturamento_mensal || 0),
-    0
-  );
-  const pctFolha = percentualFolhaSobreFaturamento(custoTotalFolha, faturamentoTotal);
 
   // Absenteísmo médio — média simples dos valores cadastrados por empresa
   // (mesmo campo já usado na tabela "Visão por empresa").
@@ -334,37 +329,216 @@ export default async function DashboardPage() {
   const avaliacoesPendentesExemplo = Math.max(0, Math.round(ativos.length * 0.1));
   const pdisAtrasadosExemplo = Math.max(0, Math.round(pdiEmAndamentoExemplo * 0.2));
 
+  // ------------------------------------------------------------
+  // Destaques do topo e "Atenção esta semana"
+  // ------------------------------------------------------------
+  const emExperienciaAtivos = ativos.filter((c) => c.status === "experiencia");
+  const experienciaVencem7 = emExperienciaVencendo.filter(
+    (c) => diasParaFimExperiencia(c.data_fim_experiencia!) <= 7
+  ).length;
+
+  type Aviso = {
+    chave: string;
+    texto: string;
+    href: string;
+    etiqueta: string;
+    nivel: "urgente" | "atencao" | "info";
+    ordem: number;
+  };
+  const textoDias = (d: number) => (d <= 0 ? "Vence hoje" : `Vence em ${d} dia${d !== 1 ? "s" : ""}`);
+  const avisos: Aviso[] = [
+    ...(atrasadasPainel > 0
+      ? [{
+          chave: "integracao-atrasada",
+          texto: `${atrasadasPainel} etapa${atrasadasPainel !== 1 ? "s" : ""} de integração`,
+          href: "/onboarding",
+          etiqueta: "Atrasada",
+          nivel: "urgente" as const,
+          ordem: -1,
+        }]
+      : []),
+    ...emExperienciaVencendo.map((c) => {
+      const d = diasParaFimExperiencia(c.data_fim_experiencia!);
+      return {
+        chave: `exp-${c.id}`,
+        texto: `${c.nome} · fim da experiência`,
+        href: `/colaboradores/${c.id}`,
+        etiqueta: textoDias(d),
+        nivel: (d <= 7 ? "urgente" : "atencao") as "urgente" | "atencao",
+        ordem: d,
+      };
+    }),
+    ...contratosPJVencendo.map((c) => {
+      const d = diasParaFimExperiencia(c.contrato_fim!);
+      return {
+        chave: `pj-${c.id}`,
+        texto: `${c.nome} · contrato PJ`,
+        href: `/colaboradores/${c.id}`,
+        etiqueta: textoDias(d),
+        nivel: (d <= 15 ? "urgente" : "atencao") as "urgente" | "atencao",
+        ordem: d + 100,
+      };
+    }),
+    ...(periodosVencendo.length > 0
+      ? [{
+          chave: "periodos-ferias",
+          texto: "Períodos de férias vencendo",
+          href: "/ferias",
+          etiqueta: `${periodosVencendo.length} em até 30 dias`,
+          nivel: "atencao" as const,
+          ordem: 500,
+        }]
+      : []),
+    ...feriasProximasLista.map((f) => ({
+      chave: `ferias-${f.id}`,
+      texto: `${nomeColaboradorPorId[f.colaborador_id] ?? "—"} · férias`,
+      href: `/colaboradores/${f.colaborador_id}`,
+      etiqueta: `Férias dia ${formatarDataBR(f.data_inicio).slice(0, 5)}`,
+      nivel: "info" as const,
+      ordem: 1000 + differenceInCalendarDays(new Date(f.data_inicio), hoje),
+    })),
+  ]
+    .sort((a, b) => a.ordem - b.ordem)
+    .slice(0, 6);
+
+  const ETIQUETA_AVISO: Record<Aviso["nivel"], string> = {
+    urgente: "bg-red-700 text-white",
+    atencao: "bg-brand-400 text-ink-900",
+    info: "bg-brand-100 text-ink-800",
+  };
+
+  const empresasComPct = empresasDetalhado.filter((d) => d.custoFaturamentoPct !== null);
+
   return (
-    <div className="rounded-3xl bg-ink-900 p-6 md:p-10 space-y-7">
+    <div className="space-y-7">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 style={{ fontFamily: FONTE_TECH }} className="text-[26px] font-bold text-white">
-            Dashboard
+          <h1 style={{ fontFamily: FONTE_TECH }} className="text-4xl font-semibold text-ink-900">
+            Painel de RH
           </h1>
-          <p className="text-slate-400 text-[13px] mt-1">
-            Visão geral do RH ·{" "}
+          <p className="text-ink-600 text-[13px] mt-1">
+            Aqui você acompanha a equipe de todas as empresas ·{" "}
             {hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-ink-800 border border-white/10 rounded-lg px-3.5 py-2 text-[11px] text-brand-300">
+        <div className="flex items-center gap-2 bg-white border border-brand-200/70 rounded-lg px-3.5 py-2 text-[11px] text-brand-600">
           <span className="w-1.5 h-1.5 rounded-full bg-brand-400 inline-block" />
           dados atualizados agora
         </div>
       </div>
 
-      <div className="rounded-xl bg-gold-500/10 border border-gold-500/25 px-4 py-2.5 text-xs text-gold-300">
+      {/* Destaques do topo */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        <div className="rounded-xl bg-brand-400 text-ink-900 p-5">
+          <p className="text-sm">Colaboradores</p>
+          <p style={{ fontFamily: FONTE_TECH }} className="text-5xl font-semibold leading-tight">
+            {ativos.length}
+          </p>
+          <p className="text-sm">
+            CLT {clt.length} · PJ {pj.length}
+            {estagio.length > 0 && <> · Estágio {estagio.length}</>}
+            {" · "}
+            {deltaHeadcount >= 0 ? "+" : ""}
+            {deltaHeadcount} no mês
+          </p>
+        </div>
+        <div className="rounded-xl bg-ink-800 text-brand-50 p-5">
+          <p className="text-sm">Em experiência</p>
+          <p style={{ fontFamily: FONTE_TECH }} className="text-5xl font-semibold leading-tight">
+            {emExperienciaAtivos.length}
+          </p>
+          <p className="text-sm text-brand-400">
+            {experienciaVencem7} vence{experienciaVencem7 !== 1 ? "m" : ""} em 7 dias
+          </p>
+        </div>
+        <div className="rounded-xl bg-brand-100 text-ink-900 p-5">
+          <p className="text-sm">Aniversariantes</p>
+          <p style={{ fontFamily: FONTE_TECH }} className="text-5xl font-semibold leading-tight">
+            {aniversariantesMes.length}
+          </p>
+          <p className="text-sm">neste mês</p>
+        </div>
+      </div>
+
+      {/* Custo da folha sobre faturamento + atenção esta semana */}
+      <div className={`grid grid-cols-1 gap-4 ${ocultarFinanceiro ? "" : "md:grid-cols-2"}`}>
+        {!ocultarFinanceiro && (
+          <div className="card">
+            <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-3">
+              Custo da folha sobre faturamento
+            </h2>
+            {empresasComPct.length === 0 ? (
+              <p className="text-sm text-ink-600">
+                Cadastre o faturamento das empresas para ver este indicador.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {empresasComPct.map(({ empresa: e, custoFaturamentoPct }) => {
+                  const pct = custoFaturamentoPct as number;
+                  const saudavel = pct <= LIMITE_SAUDAVEL_FOLHA_PCT;
+                  return (
+                    <div key={e.id}>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-ink-800">{e.nome}</span>
+                        <span className={`font-medium ${saudavel ? "text-emerald-700" : "text-red-700"}`}>
+                          {pct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-brand-100 overflow-hidden mt-1">
+                        <div
+                          className={`h-full rounded-full ${saudavel ? "bg-emerald-700" : "bg-red-700"}`}
+                          style={{ width: `${Math.min(100, pct * 4)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex justify-between items-center mt-4 text-xs text-ink-600">
+              <span>Meta: até {LIMITE_SAUDAVEL_FOLHA_PCT}% do faturamento</span>
+              <Link href="/projecao-custo" className="text-sm text-brand-600 hover:text-brand-700 hover:underline">
+                Ver detalhamento →
+              </Link>
+            </div>
+          </div>
+        )}
+
+        <div className="card">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-3">
+            Atenção esta semana
+          </h2>
+          {avisos.length === 0 ? (
+            <p className="text-sm text-ink-600">Nada pedindo atenção agora.</p>
+          ) : (
+            <ul>
+              {avisos.map((a, idx) => (
+                <li
+                  key={a.chave}
+                  className={`flex justify-between items-center gap-3 py-2 text-sm ${
+                    idx < avisos.length - 1 ? "border-b border-brand-200/70" : ""
+                  }`}
+                >
+                  <Link href={a.href} className="text-ink-800 hover:underline truncate">
+                    {a.texto}
+                  </Link>
+                  <span className={`shrink-0 text-xs font-medium px-2.5 py-0.5 rounded-full ${ETIQUETA_AVISO[a.nivel]}`}>
+                    {a.etiqueta}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-brand-100 border border-brand-300 px-4 py-2.5 text-xs text-ink-800">
         🧪 Os itens marcados com esse ícone usam <strong>dados de exemplo</strong> — o sistema ainda não guarda
         esse histórico ou não tem esse módulo. O resto do dashboard usa dados reais do seu banco.
       </div>
 
       {/* KPIs principais */}
-      <div className={`grid grid-cols-2 md:grid-cols-3 gap-3.5 ${ocultarFinanceiro ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
-        <Indicador
-          label="Headcount"
-          valor={ativos.length.toString()}
-          delta={`${deltaHeadcount >= 0 ? "+" : ""}${deltaHeadcount}`}
-          deltaCor={deltaHeadcount >= 0 ? "teal" : "red"}
-        />
+      <div className={`grid grid-cols-2 gap-3.5 ${ocultarFinanceiro ? "md:grid-cols-3" : "md:grid-cols-4"}`}>
         <Indicador
           label="Turnover (mês)"
           valor={`${turnoverMensal.toFixed(1)}%`}
@@ -399,12 +573,12 @@ export default async function DashboardPage() {
       </div>
 
       {processosNoPainel.length > 0 && (
-        <div className="card-dark">
+        <div className="card">
           <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-            <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px]">
-              🧭 Painel de Integração
+            <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg">
+              Painel de Integração
             </h2>
-            <Link href="/onboarding" className="text-sm text-brand-300 hover:text-brand-200">
+            <Link href="/onboarding" className="text-sm text-brand-600 hover:text-brand-700">
               Ver painel completo →
             </Link>
           </div>
@@ -415,15 +589,15 @@ export default async function DashboardPage() {
                 <p style={{ fontFamily: FONTE_MONO }} className={`text-xl font-bold ${STATUS_GERAL_COR[status]}`}>
                   {total}
                 </p>
-                <p className="text-xs text-slate-400">{STATUS_GERAL_LABEL[status]}</p>
+                <p className="text-xs text-ink-600">{STATUS_GERAL_LABEL[status]}</p>
               </div>
             ))}
             <div>
               <p className="text-2xl">⏰</p>
-              <p style={{ fontFamily: FONTE_MONO }} className={`text-xl font-bold ${atrasadasPainel > 0 ? "text-red-400" : "text-white"}`}>
+              <p style={{ fontFamily: FONTE_MONO }} className={`text-xl font-bold ${atrasadasPainel > 0 ? "text-red-600" : "text-ink-900"}`}>
                 {atrasadasPainel}
               </p>
-              <p className="text-xs text-slate-400">Etapa{atrasadasPainel !== 1 ? "s" : ""} atrasada{atrasadasPainel !== 1 ? "s" : ""}</p>
+              <p className="text-xs text-ink-600">Etapa{atrasadasPainel !== 1 ? "s" : ""} atrasada{atrasadasPainel !== 1 ? "s" : ""}</p>
             </div>
           </div>
         </div>
@@ -431,59 +605,58 @@ export default async function DashboardPage() {
 
       {/* Evolução dos indicadores e distribuição por cargo */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4">
-        <div className="card-dark">
-          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-1">
-            📈 Evolução dos indicadores <span className="text-xs font-normal text-gold-400">🧪 exemplo</span>
+        <div className="card">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-1">
+            Evolução dos indicadores <span className="text-xs font-normal text-brand-600">🧪 exemplo</span>
           </h2>
           <EvolucaoIndicadores
             serieHeadcount={serieHeadcountExemplo}
             serieTurnover={serieTurnoverExemplo}
             serieAbsenteismo={serieAbsenteismoExemplo}
-            escuro
           />
         </div>
-        <div className="card-dark">
-          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-1">
-            👔 Distribuição por cargo
+        <div className="card">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-1">
+            Distribuição por cargo
           </h2>
-          <DonutCargo dados={dadosCargo} escuro />
+          <DonutCargo dados={dadosCargo} />
         </div>
       </div>
 
       {/* Desenvolvimento, pessoas e alertas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="card-dark">
-          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
-            🌱 Desenvolvimento <span className="text-xs font-normal text-gold-400">🧪 exemplo</span>
+        <div className="card">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-3">
+            Desenvolvimento <span className="text-xs font-normal text-brand-600">🧪 exemplo</span>
           </h2>
           <div className="space-y-4">
             <div>
-              <p style={{ fontFamily: FONTE_MONO }} className="text-2xl font-bold text-white">{pdiEmAndamentoExemplo}</p>
-              <p className="text-xs text-slate-400">PDI em andamento de {ativos.length} colaboradores</p>
+              <p style={{ fontFamily: FONTE_MONO }} className="text-2xl font-bold text-ink-900">{pdiEmAndamentoExemplo}</p>
+              <p className="text-xs text-ink-600">PDI em andamento de {ativos.length} colaboradores</p>
             </div>
             <div>
-              <p style={{ fontFamily: FONTE_MONO }} className="text-2xl font-bold text-white">{treinamentosRealizadosExemplo}</p>
-              <p className="text-xs text-slate-400">Treinamentos realizados no mês</p>
+              <p style={{ fontFamily: FONTE_MONO }} className="text-2xl font-bold text-ink-900">{treinamentosRealizadosExemplo}</p>
+              <p className="text-xs text-ink-600">Treinamentos realizados no mês</p>
             </div>
             <div>
               <div className="flex justify-between items-baseline mb-1">
-                <p className="text-xs text-slate-400">Avaliação de desempenho concluída</p>
-                <p style={{ fontFamily: FONTE_MONO }} className="text-sm font-semibold text-slate-200">{avaliacaoDesempenhoPctExemplo}%</p>
+                <p className="text-xs text-ink-600">Avaliação de desempenho concluída</p>
+                <p style={{ fontFamily: FONTE_MONO }} className="text-sm font-semibold text-ink-800">{avaliacaoDesempenhoPctExemplo}%</p>
               </div>
-              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-1.5 rounded-full bg-ink-800/10 overflow-hidden">
                 <div className="h-full bg-brand-400 rounded-full" style={{ width: `${avaliacaoDesempenhoPctExemplo}%` }} />
               </div>
             </div>
           </div>
         </div>
 
-        <div className="card-dark">
-          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
-            🧑‍🤝‍🧑 Pessoas
+        <div className="card">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-3">
+            Pessoas
           </h2>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <p className="text-xs text-slate-400 mb-1">Tipo de vínculo</p>
+              <p className="text-xs text-ink-600 mb-1">Tipo de vínculo</p>
               <DonutDuas
                 labelA="CLT"
                 valorA={clt.length}
@@ -491,62 +664,61 @@ export default async function DashboardPage() {
                 valorB={pj.length}
                 labelC="Estágio"
                 valorC={estagio.length}
-                escuro
               />
             </div>
             <div>
-              <p className="text-xs text-slate-400 mb-1">Tempo de empresa</p>
-              <BarrasTempoEmpresa dados={faixasTempoEmpresa} escuro />
+              <p className="text-xs text-ink-600 mb-1">Tempo de empresa</p>
+              <BarrasTempoEmpresa dados={faixasTempoEmpresa} />
             </div>
           </div>
         </div>
 
-        <div className="card-dark">
-          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
-            🔔 Alertas e Pendências
+        <div className="card">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-3">
+            Alertas e Pendências
           </h2>
           <ul className="space-y-2.5 text-sm">
             <li className="flex justify-between items-center gap-2">
-              <Link href="/colaboradores" className="text-slate-300 hover:underline">
+              <Link href="/colaboradores" className="text-ink-800 hover:underline">
                 Períodos de férias vencendo (≤30 dias)
               </Link>
-              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${periodosVencendo.length > 0 ? "text-red-400" : "text-slate-500"}`}>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${periodosVencendo.length > 0 ? "text-red-600" : "text-ink-500"}`}>
                 {periodosVencendo.length}
               </span>
             </li>
             <li className="flex justify-between items-center gap-2">
-              <Link href="/colaboradores" className="text-slate-300 hover:underline">
+              <Link href="/colaboradores" className="text-ink-800 hover:underline">
                 Experiências terminando (≤15 dias)
               </Link>
-              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${emExperienciaVencendo.length > 0 ? "text-gold-400" : "text-slate-500"}`}>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${emExperienciaVencendo.length > 0 ? "text-brand-600" : "text-ink-500"}`}>
                 {emExperienciaVencendo.length}
               </span>
             </li>
             <li className="flex justify-between items-center gap-2">
-              <Link href="/colaboradores" className="text-slate-300 hover:underline">
+              <Link href="/colaboradores" className="text-ink-800 hover:underline">
                 Contratos PJ vencendo (≤60 dias)
               </Link>
-              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${contratosPJVencendo.length > 0 ? "text-gold-400" : "text-slate-500"}`}>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${contratosPJVencendo.length > 0 ? "text-brand-600" : "text-ink-500"}`}>
                 {contratosPJVencendo.length}
               </span>
             </li>
             <li className="flex justify-between items-center gap-2">
-              <Link href="/onboarding" className="text-slate-300 hover:underline">
+              <Link href="/onboarding" className="text-ink-800 hover:underline">
                 Etapas de integração atrasadas
               </Link>
-              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${atrasadasPainel > 0 ? "text-red-400" : "text-slate-500"}`}>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${atrasadasPainel > 0 ? "text-red-600" : "text-ink-500"}`}>
                 {atrasadasPainel}
               </span>
             </li>
             <li className="flex justify-between items-center gap-2">
-              <span className="text-slate-300">Avaliações de desempenho pendentes <span className="text-gold-400">🧪</span></span>
-              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${avaliacoesPendentesExemplo > 0 ? "text-gold-400" : "text-slate-500"}`}>
+              <span className="text-ink-800">Avaliações de desempenho pendentes <span className="text-brand-600">🧪</span></span>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${avaliacoesPendentesExemplo > 0 ? "text-brand-600" : "text-ink-500"}`}>
                 {avaliacoesPendentesExemplo}
               </span>
             </li>
             <li className="flex justify-between items-center gap-2">
-              <span className="text-slate-300">PDIs atrasados <span className="text-gold-400">🧪</span></span>
-              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${pdisAtrasadosExemplo > 0 ? "text-red-400" : "text-slate-500"}`}>
+              <span className="text-ink-800">PDIs atrasados <span className="text-brand-600">🧪</span></span>
+              <span style={{ fontFamily: FONTE_MONO }} className={`font-semibold shrink-0 ${pdisAtrasadosExemplo > 0 ? "text-red-600" : "text-ink-500"}`}>
                 {pdisAtrasadosExemplo}
               </span>
             </li>
@@ -554,54 +726,24 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Custo × faturamento, experiência e aniversariantes */}
-      <div className={`grid grid-cols-1 gap-4 ${ocultarFinanceiro ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
-        {!ocultarFinanceiro && (
-          <div className="card-dark">
-            <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
-              💰 Custo de folha × Faturamento
-            </h2>
-            {pctFolha === null ? (
-              <p className="text-sm text-slate-400">
-                Cadastre o faturamento das empresas para ver este indicador.
-              </p>
-            ) : (
-              <div>
-                <p
-                  style={{ fontFamily: FONTE_MONO }}
-                  className={`text-3xl font-semibold ${
-                    pctFolha <= LIMITE_SAUDAVEL_FOLHA_PCT ? "text-brand-300" : "text-red-400"
-                  }`}
-                >
-                  {pctFolha.toFixed(1)}%
-                </p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Meta: até {LIMITE_SAUDAVEL_FOLHA_PCT}% do faturamento
-                </p>
-              </div>
-            )}
-            <Link href="/projecao-custo" className="text-sm text-brand-300 hover:text-brand-200 mt-3 inline-block">
-              Ver detalhamento →
-            </Link>
-          </div>
-        )}
-
-        <div className="card-dark">
-          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
-            ⚠️ Experiência terminando
+      {/* Experiência terminando e aniversariantes */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="card">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-3">
+            Experiência terminando
           </h2>
           {emExperienciaVencendo.length === 0 ? (
-            <p className="text-sm text-slate-400">Nenhum caso no momento.</p>
+            <p className="text-sm text-ink-600">Nenhum caso no momento.</p>
           ) : (
             <ul className="space-y-2">
               {emExperienciaVencendo.map((c) => {
                 const dias = diasParaFimExperiencia(c.data_fim_experiencia!);
                 return (
                   <li key={c.id} className="flex justify-between text-sm">
-                    <Link href={`/colaboradores/${c.id}`} className="text-slate-300 hover:underline truncate">
+                    <Link href={`/colaboradores/${c.id}`} className="text-ink-800 hover:underline truncate">
                       {c.nome}
                     </Link>
-                    <span style={{ fontFamily: FONTE_MONO }} className={dias <= 7 ? "text-red-400 font-medium shrink-0" : "text-gold-400 shrink-0"}>
+                    <span style={{ fontFamily: FONTE_MONO }} className={dias <= 7 ? "text-red-600 font-medium shrink-0" : "text-brand-600 shrink-0"}>
                       {dias} dia{dias !== 1 ? "s" : ""}
                     </span>
                   </li>
@@ -611,25 +753,25 @@ export default async function DashboardPage() {
           )}
         </div>
 
-        <div className="card-dark">
-          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
-            🎂 Aniversariantes do mês
+        <div className="card">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-3">
+            Aniversariantes do mês
           </h2>
           {aniversariantesMes.length === 0 ? (
-            <p className="text-sm text-slate-400">Nenhum aniversariante este mês.</p>
+            <p className="text-sm text-ink-600">Nenhum aniversariante este mês.</p>
           ) : (
             <ul className="space-y-2">
               {aniversariantesMes.map((c) => (
-                <li key={c.id} className="flex justify-between text-sm text-slate-300 gap-2">
+                <li key={c.id} className="flex justify-between text-sm text-ink-800 gap-2">
                   <span className="truncate">
                     <Link href={`/colaboradores/${c.id}`} className="hover:underline">
                       {c.nome}
                     </Link>
                     {c.empresa_id && nomeEmpresaPorId[c.empresa_id] && (
-                      <span className="text-slate-500"> · {nomeEmpresaPorId[c.empresa_id]}</span>
+                      <span className="text-ink-500"> · {nomeEmpresaPorId[c.empresa_id]}</span>
                     )}
                   </span>
-                  <span style={{ fontFamily: FONTE_MONO }} className="text-slate-400 shrink-0">
+                  <span style={{ fontFamily: FONTE_MONO }} className="text-ink-600 shrink-0">
                     {formatarDataBR(c.data_nascimento).slice(0, 5)}
                   </span>
                 </li>
@@ -641,14 +783,14 @@ export default async function DashboardPage() {
 
       {/* Tabela detalhada de empresas */}
       {empresasDetalhado.length > 0 && (
-        <div className="card-dark">
-          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
-            📋 Visão por empresa
+        <div className="card">
+          <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-3">
+            Visão por empresa
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-slate-400 border-b border-white/10">
+                <tr className="text-left text-ink-600 border-b border-ink-800/10">
                   <th className="py-2 pr-4 font-normal">Empresa</th>
                   <th className="py-2 pr-4 font-normal">Headcount</th>
                   <th className="py-2 pr-4 font-normal">Performance</th>
@@ -659,18 +801,18 @@ export default async function DashboardPage() {
               </thead>
               <tbody style={{ fontFamily: FONTE_MONO }}>
                 {empresasDetalhado.map(({ empresa: e, headcount, turnoverEmpresa, custoFaturamentoPct }) => (
-                  <tr key={e.id} className="border-b border-white/5">
-                    <td style={{ fontFamily: "'Inter', sans-serif" }} className="py-2 pr-4 font-medium text-slate-100">{e.nome}</td>
-                    <td className="py-2 pr-4 text-slate-300">{headcount}</td>
-                    <td className="py-2 pr-4 text-slate-300">{e.performance_pct ?? "—"}%</td>
-                    <td className="py-2 pr-4 text-slate-300">{turnoverEmpresa.toFixed(1)}%</td>
-                    <td className="py-2 pr-4 text-slate-300">{e.absenteismo_pct ?? "—"}%</td>
+                  <tr key={e.id} className="border-b border-ink-800/5 hover:bg-brand-50 transition-colors">
+                    <td style={{ fontFamily: "'Inter', sans-serif" }} className="py-2 pr-4 font-medium text-ink-900">{e.nome}</td>
+                    <td className="py-2 pr-4 text-ink-800">{headcount}</td>
+                    <td className="py-2 pr-4 text-ink-800">{e.performance_pct ?? "—"}%</td>
+                    <td className="py-2 pr-4 text-ink-800">{turnoverEmpresa.toFixed(1)}%</td>
+                    <td className="py-2 pr-4 text-ink-800">{e.absenteismo_pct ?? "—"}%</td>
                     {!ocultarFinanceiro && (
                       <td className="py-2 pr-4">
                         {custoFaturamentoPct === null ? (
-                          <span className="text-slate-500">—</span>
+                          <span className="text-ink-500">—</span>
                         ) : (
-                          <span className={custoFaturamentoPct <= LIMITE_SAUDAVEL_FOLHA_PCT ? "text-brand-300" : "text-red-400"}>
+                          <span className={custoFaturamentoPct <= LIMITE_SAUDAVEL_FOLHA_PCT ? "text-emerald-700" : "text-red-600"}>
                             {custoFaturamentoPct.toFixed(1)}%
                           </span>
                         )}
@@ -685,17 +827,17 @@ export default async function DashboardPage() {
       )}
 
       {/* Férias nos próximos 30 dias */}
-      <div className="card-dark">
-        <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-white text-[15px] mb-3">
-          🏖️ Férias — próximos 30 dias
+      <div className="card">
+        <h2 style={{ fontFamily: FONTE_TECH }} className="font-semibold text-ink-900 text-lg mb-3">
+          Férias — próximos 30 dias
         </h2>
         {feriasProximasLista.length === 0 ? (
-          <p className="text-sm text-slate-400">Nenhuma férias programada pros próximos 30 dias.</p>
+          <p className="text-sm text-ink-600">Nenhuma férias programada pros próximos 30 dias.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-slate-400 border-b border-white/10">
+                <tr className="text-left text-ink-600 border-b border-ink-800/10">
                   <th className="py-2 pr-4 font-normal">Colaborador</th>
                   <th className="py-2 pr-4 font-normal">Período</th>
                   <th className="py-2 pr-4 font-normal">Dias</th>
@@ -708,18 +850,18 @@ export default async function DashboardPage() {
                 {feriasProximasLista.map((f) => {
                   const seq = sequenciaDaFerias(f);
                   return (
-                    <tr key={f.id} className="border-b border-white/5">
-                      <td className="py-2 pr-4 font-medium text-slate-100">
+                    <tr key={f.id} className="border-b border-ink-800/5 hover:bg-brand-50 transition-colors">
+                      <td className="py-2 pr-4 font-medium text-ink-900">
                         <Link href={`/colaboradores/${f.colaborador_id}`} className="hover:underline">
                           {nomeColaboradorPorId[f.colaborador_id] ?? "—"}
                         </Link>
                       </td>
-                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-slate-400">{seq ? `${seq}º período` : "—"}</td>
-                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-slate-300">{f.dias}</td>
-                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-slate-300">{formatarDataBR(f.data_inicio)}</td>
-                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-slate-300">{formatarDataBR(f.data_fim)}</td>
+                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-ink-600">{seq ? `${seq}º período` : "—"}</td>
+                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-ink-800">{f.dias}</td>
+                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-ink-800">{formatarDataBR(f.data_inicio)}</td>
+                      <td style={{ fontFamily: FONTE_MONO }} className="py-2 pr-4 text-ink-800">{formatarDataBR(f.data_fim)}</td>
                       <td className="py-2 pr-4">
-                        <span className={`badge ${FERIAS_STATUS_BADGE[f.status] ?? "bg-white/10 text-slate-300"}`}>
+                        <span className={`badge ${FERIAS_STATUS_BADGE[f.status] ?? "bg-ink-800/10 text-ink-800"}`}>
                           {FERIAS_STATUS_LABEL[f.status] ?? f.status}
                         </span>
                       </td>
@@ -755,23 +897,23 @@ function Indicador({
   valorMenor?: boolean;
 }) {
   const corDelta =
-    deltaCor === "teal" ? "text-brand-300" : deltaCor === "red" ? "text-red-400" : "text-gold-400";
+    deltaCor === "teal" ? "text-emerald-700" : deltaCor === "red" ? "text-red-600" : "text-brand-600";
   return (
-    <div className="bg-ink-800 border border-white/10 rounded-2xl p-4">
-      <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
+    <div className="bg-white border border-brand-200/70 rounded-2xl p-4 shadow-card">
+      <p className="text-[11px] uppercase tracking-wide text-ink-600">{label}</p>
       <p
-        style={{ fontFamily: FONTE_MONO }}
-        className={`font-bold mt-2 ${valorMenor ? "text-xl" : "text-[26px]"} ${alerta ? "text-red-400" : "text-white"}`}
+        style={{ fontFamily: FONTE_TECH }}
+        className={`font-semibold mt-2 ${valorMenor ? "text-2xl" : "text-[32px]"} ${alerta ? "text-red-600" : "text-ink-900"}`}
       >
         {valor}
       </p>
       {delta && (
         <p style={{ fontFamily: FONTE_MONO }} className={`text-[11px] mt-1.5 ${corDelta}`}>
           {delta}
-          {deltaSimulado && <span className="text-gold-500/70"> 🧪</span>}
+          {deltaSimulado && <span className="text-brand-500"> 🧪</span>}
         </p>
       )}
-      {sublabel && <p className="text-[11px] text-slate-500 mt-0.5">{sublabel}</p>}
+      {sublabel && <p className="text-[11px] text-ink-500 mt-0.5">{sublabel}</p>}
     </div>
   );
 }
