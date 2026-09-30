@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { FolhaTipo } from "@/types/db";
 import { tiposDoGrupo } from "@/lib/folha-calculos";
+import type { ObservacaoUnidade } from "@/lib/actions-folha-observacoes";
 import FolhaEventoStep from "./FolhaEventoStep";
 import FolhaRelatorioFinal from "./FolhaRelatorioFinal";
 import FolhaRelatorioDinamico from "./FolhaRelatorioDinamico";
@@ -72,6 +73,7 @@ export default function FolhaWizard({
   valoresBase,
   notasIniciais,
   eventosConcluidosIniciais,
+  observacoesIniciais,
 }: {
   competencia: string;
   mesFechado: boolean;
@@ -83,6 +85,8 @@ export default function FolhaWizard({
   valoresBase: Record<string, Record<string, ValorCelula>>;
   notasIniciais: Record<string, string>;
   eventosConcluidosIniciais: Record<string, string[]>;
+  /** observações fixas de cada unidade, indexadas pelo rótulo da unidade */
+  observacoesIniciais: Record<string, ObservacaoUnidade[]>;
 }) {
   const [grupoSelecionado, setGrupoSelecionado] = useState<string | null>(null);
   const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
@@ -91,6 +95,8 @@ export default function FolhaWizard({
   const [concluidos, setConcluidos] = useState(eventosConcluidosIniciais);
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("todos");
+  const [observacoes, setObservacoes] = useState(observacoesIniciais);
+  const [avisoConcluida, setAvisoConcluida] = useState<string | null>(null);
   const [exportando, setExportando] = useState<string | null>(null);
   const [msgExport, setMsgExport] = useState<{
     tipo: "ok" | "aviso" | "erro";
@@ -222,6 +228,12 @@ export default function FolhaWizard({
         onConcluir={handleConcluir}
         onLimpar={handleLimpar}
         onVoltar={() => setGrupoSelecionado(null)}
+        observacoes={observacoes[grupo.rotulo] ?? []}
+        onObservacoesChange={(lista) => setObservacoes((prev) => ({ ...prev, [grupo.rotulo]: lista }))}
+        onFinalizar={(rotulo) => {
+          setAvisoConcluida(rotulo);
+          setGrupoSelecionado(null);
+        }}
       />
     );
   }
@@ -248,6 +260,20 @@ export default function FolhaWizard({
 
   return (
     <div className="space-y-4">
+      {avisoConcluida && (
+        <div
+          role="status"
+          className="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 px-4 py-3 text-sm flex items-start justify-between gap-3"
+        >
+          <p className="font-medium">
+            ✓ {avisoConcluida} concluída e salva. Não precisa avançar mais — é só seguir para a próxima unidade.
+          </p>
+          <button type="button" onClick={() => setAvisoConcluida(null)} className="text-xs underline shrink-0">
+            fechar
+          </button>
+        </div>
+      )}
+
       {msgExport && (
         <div
           role="status"
@@ -360,9 +386,17 @@ export default function FolhaWizard({
                   )}
                 </div>
 
-                <p className="text-xs text-slate-500 mt-3 mb-1">
-                  {feitos}/{total}
-                </p>
+                <div className="flex items-center justify-between gap-2 mt-3 mb-1">
+                  <p className="text-xs text-slate-500">
+                    {feitos}/{total}
+                  </p>
+                  {(observacoes[grupo.rotulo]?.length ?? 0) > 0 && (
+                    <p className="text-xs text-amber-700" title="Observações fixas desta unidade">
+                      📝 {observacoes[grupo.rotulo].length} observaç
+                      {observacoes[grupo.rotulo].length === 1 ? "ão" : "ões"}
+                    </p>
+                  )}
+                </div>
                 <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
                   <div
                     className={`h-full rounded-full ${completo ? "bg-emerald-500" : "bg-brand-600"}`}

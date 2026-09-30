@@ -4,7 +4,9 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import type { FolhaTipo } from "@/types/db";
 import { limparEventoFolha, salvarEventoFolha } from "@/lib/actions-folha";
 import { calcularQuebraCaixa } from "@/lib/folha-calculos";
+import type { ObservacaoUnidade } from "@/lib/actions-folha-observacoes";
 import CelulaLancamento from "./CelulaLancamento";
+import ObservacoesUnidade from "./ObservacoesUnidade";
 import type { ColaboradorFolha, GrupoFolha, ValorCelula } from "./FolhaWizard";
 
 const ROTULO_CATEGORIA: Record<string, string> = {
@@ -23,6 +25,9 @@ export default function FolhaEventoStep({
   onConcluir,
   onLimpar,
   onVoltar,
+  observacoes,
+  onObservacoesChange,
+  onFinalizar,
 }: {
   competencia: string;
   mesFechado: boolean;
@@ -34,6 +39,11 @@ export default function FolhaEventoStep({
   onConcluir: (grupo: string, tipoId: string, lancamentos: Record<string, ValorCelula>) => void;
   onLimpar: (grupo: string, tipoId: string) => void;
   onVoltar: () => void;
+  /** observações fixas da unidade (valem em todas as etapas e meses) */
+  observacoes: ObservacaoUnidade[];
+  onObservacoesChange: (lista: ObservacaoUnidade[]) => void;
+  /** chamado quando o ÚLTIMO evento pendente é concluído: a unidade fica salva e volta pra lista */
+  onFinalizar: (rotulo: string) => void;
 }) {
   const primeiroNaoFeito = tipos.findIndex((t) => !concluidosDoGrupo.includes(t.id));
   const indiceDesbloqueado = primeiroNaoFeito === -1 ? tipos.length - 1 : primeiroNaoFeito;
@@ -81,6 +91,8 @@ export default function FolhaEventoStep({
         })}
       </div>
 
+      <ObservacoesUnidade grupo={grupo.rotulo} observacoes={observacoes} onChange={onObservacoesChange} />
+
       {grupoCompleto ? (
         <div className="card !bg-emerald-50 !border-emerald-200">
           <p className="text-sm text-emerald-700 font-medium">
@@ -101,7 +113,15 @@ export default function FolhaEventoStep({
           valoresBase={valoresBase}
           jaConcluido={concluidosDoGrupo.includes(tipo.id)}
           onConcluido={(lancamentos) => {
+            // era o último evento que faltava? então a unidade fecha e volta pra lista
+            const eraUltimoPendente =
+              !concluidosDoGrupo.includes(tipo.id) &&
+              tipos.every((t) => t.id === tipo.id || concluidosDoGrupo.includes(t.id));
             onConcluir(grupo.rotulo, tipo.id, lancamentos);
+            if (eraUltimoPendente) {
+              onFinalizar(grupo.rotulo);
+              return;
+            }
             if (indice === indiceDesbloqueado && indice < tipos.length - 1) {
               setIndice(indice + 1);
             }

@@ -13,6 +13,7 @@ import type {
 } from "@/types/db";
 import { colaboradorAtivoFolha, compararGrupos, rotuloGrupoColaborador } from "@/lib/folha-calculos";
 import { competenciaAtual, rotuloCompetencia } from "@/lib/beneficios-calculos";
+import type { ObservacaoUnidade } from "@/lib/actions-folha-observacoes";
 import TiposFolhaCadastro from "@/components/folha/TiposFolhaCadastro";
 import CompetenciaAcoesFolha from "@/components/folha/CompetenciaAcoesFolha";
 import FolhaWizard, {
@@ -39,6 +40,7 @@ export default async function FolhaPage({
     { data: competenciasData },
     { data: tiposData },
     { data: tiposGruposData },
+    { data: observacoesData },
   ] = await Promise.all([
     supabase.from("empresas").select("*"),
     supabase.from("unidades").select("*"),
@@ -46,6 +48,8 @@ export default async function FolhaPage({
     supabase.from("folha_competencias").select("*").order("competencia", { ascending: false }),
     supabase.from("folha_tipos").select("*").neq("categoria", "espelhamento").order("ordem"),
     supabase.from("folha_tipos_grupos").select("*"),
+    // observações fixas por unidade (se a tabela ainda não existir, volta vazio)
+    supabase.from("folha_observacoes_unidade").select("*").order("created_at", { ascending: true }),
   ]);
 
   const empresas = (empresasData ?? []) as Empresa[];
@@ -81,6 +85,12 @@ export default async function FolhaPage({
         </div>
       </div>
     );
+  }
+
+  // observações fixas de cada unidade (não dependem do mês)
+  const observacoesIniciais: Record<string, ObservacaoUnidade[]> = {};
+  for (const o of (observacoesData ?? []) as ObservacaoUnidade[]) {
+    (observacoesIniciais[o.grupo] ??= []).push(o);
   }
 
   const empresasPorId: Record<string, Empresa> = {};
@@ -286,6 +296,7 @@ export default async function FolhaPage({
           valoresBase={valoresBase}
           notasIniciais={notasIniciais}
           eventosConcluidosIniciais={eventosConcluidosIniciais}
+          observacoesIniciais={observacoesIniciais}
         />
       )}
     </div>
