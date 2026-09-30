@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import type { FolhaTipo } from "@/types/db";
 import { tiposDoGrupo } from "@/lib/folha-calculos";
 import type { ObservacaoUnidade } from "@/lib/actions-folha-observacoes";
-import { revalidarFolha } from "@/lib/actions-folha-revalidar";
 import FolhaEventoStep from "./FolhaEventoStep";
 import FolhaRelatorioFinal from "./FolhaRelatorioFinal";
 import FolhaRelatorioDinamico from "./FolhaRelatorioDinamico";
@@ -90,7 +88,6 @@ export default function FolhaWizard({
   /** observações fixas de cada unidade, indexadas pelo rótulo da unidade */
   observacoesIniciais: Record<string, ObservacaoUnidade[]>;
 }) {
-  const router = useRouter();
   const [grupoSelecionado, setGrupoSelecionado] = useState<string | null>(null);
   const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
   const [mostrarRelatorioDinamico, setMostrarRelatorioDinamico] = useState(false);
@@ -154,33 +151,6 @@ export default function FolhaWizard({
     }
   }
 
-  // Toda vez que a tela abre (inclusive ao voltar de outra tela), busca de novo
-  // o estado verdadeiro no servidor — o navegador guarda uma cópia antiga da
-  // página, e sem isso as unidades concluídas apareceriam como pendentes.
-  useEffect(() => {
-    router.refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Quando chegam dados novos do servidor, a tela passa a mostrar esses dados.
-  useEffect(() => {
-    setValores(valoresIniciais);
-  }, [valoresIniciais]);
-  useEffect(() => {
-    setConcluidos(eventosConcluidosIniciais);
-  }, [eventosConcluidosIniciais]);
-  useEffect(() => {
-    setObservacoes(observacoesIniciais);
-  }, [observacoesIniciais]);
-
-  // Depois de salvar qualquer coisa, atualiza a cópia da página guardada pelo
-  // navegador — assim, ao sair da Gestão de Folha e voltar, as unidades
-  // continuam com o status certo (Concluído) em vez de voltarem a Pendente.
-  function atualizarPagina() {
-    void revalidarFolha();
-    router.refresh();
-  }
-
   function handleConcluir(grupo: string, tipoId: string, lancamentos: Record<string, ValorCelula>) {
     setValores((prev) => {
       const novo: typeof prev = { ...prev };
@@ -194,7 +164,6 @@ export default function FolhaWizard({
       if (atual.includes(tipoId)) return prev;
       return { ...prev, [grupo]: [...atual, tipoId] };
     });
-    atualizarPagina();
   }
 
   function handleLimpar(grupo: string, tipoId: string) {
@@ -215,7 +184,6 @@ export default function FolhaWizard({
       if (!atual.includes(tipoId)) return prev;
       return { ...prev, [grupo]: atual.filter((id) => id !== tipoId) };
     });
-    atualizarPagina();
   }
 
   if (mostrarRelatorioDinamico) {
@@ -261,10 +229,7 @@ export default function FolhaWizard({
         onLimpar={handleLimpar}
         onVoltar={() => setGrupoSelecionado(null)}
         observacoes={observacoes[grupo.rotulo] ?? []}
-        onObservacoesChange={(lista) => {
-          setObservacoes((prev) => ({ ...prev, [grupo.rotulo]: lista }));
-          atualizarPagina();
-        }}
+        onObservacoesChange={(lista) => setObservacoes((prev) => ({ ...prev, [grupo.rotulo]: lista }))}
         onFinalizar={(rotulo) => {
           setAvisoConcluida(rotulo);
           setGrupoSelecionado(null);
