@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { FolhaTipo } from "@/types/db";
 import { cadastrarTipoFolha, salvarColunasAtivas, salvarGruposTipo } from "@/lib/actions-folha";
+import { contarUsoTipoFolha, excluirTipoFolha, type UsoTipoFolha } from "@/lib/actions-folha-excluir";
 
 const ROTULO_FORMATO: Record<string, string> = {
   moeda: "R$",
@@ -182,6 +183,10 @@ export default function TiposFolhaCadastro({
   const [busca, setBusca] = useState("");
   const [ativos, setAtivos] = useState<Record<string, boolean>>({});
   const [restringirNova, setRestringirNova] = useState(false);
+  const [excluindoId, setExcluindoId] = useState<string | null>(null);
+  const [usoExclusao, setUsoExclusao] = useState<UsoTipoFolha | null>(null);
+  const [carregandoUso, setCarregandoUso] = useState(false);
+  const [erroExclusao, setErroExclusao] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const formNovaRef = useRef<HTMLFormElement | null>(null);
 
@@ -222,6 +227,35 @@ export default function TiposFolhaCadastro({
     });
   }
 
+  // ----- excluir coluna (pede confirmação e mostra quanto será apagado) -----
+  function cancelarExclusao() {
+    setExcluindoId(null);
+    setUsoExclusao(null);
+    setErroExclusao(null);
+  }
+
+  function pedirExclusao(id: string) {
+    setErroExclusao(null);
+    setUsoExclusao(null);
+    setExcluindoId(id);
+    setCarregandoUso(true);
+    contarUsoTipoFolha(id)
+      .then((uso) => setUsoExclusao(uso))
+      .catch(() => setErroExclusao("Não consegui verificar os valores lançados. Tente de novo."))
+      .finally(() => setCarregandoUso(false));
+  }
+
+  function confirmarExclusao(id: string) {
+    startTransition(async () => {
+      const r = await excluirTipoFolha(id);
+      if (!r.ok) {
+        setErroExclusao(r.erro ?? "Não foi possível excluir.");
+        return;
+      }
+      cancelarExclusao();
+    });
+  }
+
   // (função comum, não componente: assim o estado de "editar unidades" de cada
   // linha não é perdido quando um interruptor muda)
   function linhasCategoria(titulo: string, lista: FolhaTipo[]) {
@@ -258,6 +292,51 @@ export default function TiposFolhaCadastro({
                   <div className="mt-1">
                     <AbrangenciaTipo tipoId={t.id} todosGrupos={todosGrupos} gruposAtuais={gruposPorTipo[t.id] ?? []} />
                   </div>
+                )}
+                {t.calculo_automatico ? (
+                  <p className="mt-1 text-xs text-slate-400">coluna automática: só dá para desligar</p>
+                ) : excluindoId === t.id ? (
+                  <div className="mt-2 rounded-xl border border-red-200 bg-red-50 p-3 space-y-2">
+                    <p className="text-sm text-red-800">
+                      Excluir a coluna <strong>{t.nome}</strong>?
+                    </p>
+                    {carregandoUso && <p className="text-xs text-red-700">Verificando valores lançados...</p>}
+                    {usoExclusao && (
+                      <p className="text-xs text-red-700">
+                        {usoExclusao.lancamentos === 0
+                          ? "Esta coluna não tem valores lançados. "
+                          : `Isso também apaga ${usoExclusao.lancamentos} valor${usoExclusao.lancamentos !== 1 ? "es" : ""} lançado${usoExclusao.lancamentos !== 1 ? "s" : ""} em ${usoExclusao.meses} mês${usoExclusao.meses !== 1 ? "es" : ""}, inclusive de meses já fechados. `}
+                        Não dá para desfazer. Se só quiser esconder a coluna, use o interruptor.
+                      </p>
+                    )}
+                    {erroExclusao && <p className="text-xs font-medium text-red-800">{erroExclusao}</p>}
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => confirmarExclusao(t.id)}
+                        disabled={isPending || carregandoUso || !usoExclusao}
+                        className="rounded-md bg-red-700 text-white text-xs font-medium px-3 py-1.5 hover:bg-red-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isPending ? "Excluindo..." : "Excluir definitivamente"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelarExclusao}
+                        disabled={isPending}
+                        className="text-xs text-slate-600 hover:text-slate-800"
+                      >
+                        cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => pedirExclusao(t.id)}
+                    className="mt-1 text-xs text-red-700 hover:underline"
+                  >
+                    Excluir coluna
+                  </button>
                 )}
               </li>
             ))}
