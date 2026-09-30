@@ -87,6 +87,12 @@ export default function FolhaWizard({
   const [concluidos, setConcluidos] = useState(eventosConcluidosIniciais);
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("todos");
+  const [exportando, setExportando] = useState<string | null>(null);
+  const [msgExport, setMsgExport] = useState<{
+    tipo: "ok" | "aviso" | "erro";
+    texto: string;
+    detalhes: string[];
+  } | null>(null);
 
   function grupoEstaCompleto(rotulo: string): boolean {
     const tiposG = tiposDoGrupo(tipos, rotulo, gruposPorTipo);
@@ -94,6 +100,46 @@ export default function FolhaWizard({
   }
 
   const todosCompletos = grupos.length > 0 && grupos.every((g) => grupoEstaCompleto(g.rotulo));
+
+  // Baixa a planilha da contabilidade (modelo "Movimento Variável") da unidade.
+  async function exportarPlanilha(rotulo: string) {
+    setExportando(rotulo);
+    setMsgExport(null);
+    try {
+      const url = `/api/folha/exportar?competencia=${encodeURIComponent(competencia)}&unidade=${encodeURIComponent(rotulo)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const texto = (await res.text()).trim();
+        setMsgExport({ tipo: "erro", texto: texto || "Não foi possível gerar a planilha.", detalhes: [] });
+        return;
+      }
+      const nome = decodeURIComponent(res.headers.get("X-Nome-Arquivo") ?? "MovimentoVariavel.xlsx");
+      let avisos: string[] = [];
+      try {
+        avisos = JSON.parse(decodeURIComponent(res.headers.get("X-Avisos") ?? "%5B%5D")) as string[];
+      } catch {
+        avisos = [];
+      }
+      const blob = await res.blob();
+      const link = document.createElement("a");
+      const endereco = URL.createObjectURL(blob);
+      link.href = endereco;
+      link.download = nome;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(endereco);
+      setMsgExport({
+        tipo: avisos.length > 0 ? "aviso" : "ok",
+        texto: `Planilha "${nome}" gerada.`,
+        detalhes: avisos,
+      });
+    } catch {
+      setMsgExport({ tipo: "erro", texto: "Não foi possível gerar a planilha. Tente de novo.", detalhes: [] });
+    } finally {
+      setExportando(null);
+    }
+  }
 
   function handleConcluir(grupo: string, tipoId: string, lancamentos: Record<string, ValorCelula>) {
     setValores((prev) => {
@@ -198,6 +244,41 @@ export default function FolhaWizard({
 
   return (
     <div className="space-y-4">
+      {msgExport && (
+        <div
+          role="status"
+          className={`rounded-xl border px-4 py-3 text-sm flex items-start justify-between gap-3 ${
+            msgExport.tipo === "erro"
+              ? "border-red-200 bg-red-50 text-red-800"
+              : msgExport.tipo === "aviso"
+              ? "border-amber-200 bg-amber-50 text-amber-900"
+              : "border-emerald-200 bg-emerald-50 text-emerald-800"
+          }`}
+        >
+          <div className="space-y-1">
+            <p className="font-medium">{msgExport.texto}</p>
+            {msgExport.detalhes.length > 0 && (
+              <>
+                <p className="text-xs">Confira antes de enviar para a contabilidade:</p>
+                <ul className="list-disc pl-5 text-xs space-y-0.5">
+                  {msgExport.detalhes.map((d) => (
+                    <li key={d}>{d}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setMsgExport(null)}
+            aria-label="Fechar aviso"
+            className="text-xs underline shrink-0"
+          >
+            fechar
+          </button>
+        </div>
+      )}
+
       <section className="card">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div className="flex items-center gap-3">
@@ -295,6 +376,19 @@ export default function FolhaWizard({
                     {rotuloAcao} →
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => exportarPlanilha(grupo.rotulo)}
+                  disabled={!completo || exportando !== null}
+                  className="btn-secondary !text-xs !py-1.5 w-full mt-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={
+                    completo
+                      ? "Baixar a planilha no modelo da contabilidade"
+                      : "Conclua todos os eventos da unidade para exportar"
+                  }
+                >
+                  {exportando === grupo.rotulo ? "Gerando planilha..." : "⬇ Exportar planilha"}
+                </button>
               </div>
             ))}
           </div>
@@ -379,13 +473,28 @@ export default function FolhaWizard({
                     <span className={`badge ${STATUS_UNIDADE[status].classe}`}>{STATUS_UNIDADE[status].label}</span>
                   </td>
                   <td className="py-2.5 px-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setGrupoSelecionado(grupo.rotulo)}
-                      className="btn-primary !text-xs !py-1 !px-3.5"
-                    >
-                      {rotuloAcao}
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => exportarPlanilha(grupo.rotulo)}
+                        disabled={!completo || exportando !== null}
+                        className="btn-secondary !text-xs !py-1 !px-3 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={
+                          completo
+                            ? "Baixar a planilha no modelo da contabilidade"
+                            : "Conclua todos os eventos da unidade para exportar"
+                        }
+                      >
+                        {exportando === grupo.rotulo ? "Gerando..." : "⬇ Exportar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGrupoSelecionado(grupo.rotulo)}
+                        className="btn-primary !text-xs !py-1 !px-3.5"
+                      >
+                        {rotuloAcao}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
