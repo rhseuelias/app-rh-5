@@ -76,3 +76,77 @@ h2 {
 .icon-chip {
   @apply inline-flex items-center justify-center w-10 h-10 rounded-full bg-brand-100 text-ink-800 text-lg shrink-0;
 }
+
+/* ------------------------------------------------------------ */
+/* Interações visuais — valem para todas as telas do app          */
+/* ------------------------------------------------------------ */
+html {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: #fdc48a transparent;
+}
+
+::selection {
+  background: #fbb26e;
+  color: #262626;
+}
+
+/* Foco visível para quem navega pelo teclado */
+:focus-visible {
+  outline: 2px solid #f0913f;
+  outline-offset: 2px;
+}
+
+/* Transição suave em tudo que reage ao mouse ou ao toque */
+a,
+button,
+input,
+select,
+textarea {
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+/* Botões: leve "afundar" ao clicar e aparência clara quando desativados */
+.btn-primary:active,
+.btn-secondary:active,
+.btn-cta:active {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-cta:disabled,
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary:hover,
+.btn-secondary:hover,
+.btn-cta:hover {
+  box-shadow: 0 4px 10px rgba(61, 40, 20, 0.14);
+}
+
+/* Campos: a borda esquenta ao passar o mouse */
+.input:hover {
+  border-color: #fdc48a;
+}
+
+/* Cartões clicáveis */
+.card-hover {
+  cursor: pointer;
+}
+
+/* Quem prefere menos movimento no sistema não vê as animações */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
