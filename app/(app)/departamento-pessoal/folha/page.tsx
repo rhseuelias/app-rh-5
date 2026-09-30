@@ -50,7 +50,11 @@ export default async function FolhaPage({
 
   const empresas = (empresasData ?? []) as Empresa[];
   const unidades = (unidadesData ?? []) as Unidade[];
-  const todosColaboradores = ((colaboradoresData ?? []) as Colaborador[]).filter(colaboradorAtivoFolha);
+  // Base da folha: só quem é CLT ou estagiário. Colaboradores PJ não entram na
+  // folha de pagamento (nem na lista, nem nos lançamentos, nem nos relatórios).
+  const todosColaboradores = ((colaboradoresData ?? []) as Colaborador[]).filter(
+    (c) => colaboradorAtivoFolha(c) && c.tipo !== "PJ"
+  );
   const competencias = (competenciasData ?? []) as FolhaCompetencia[];
   // todas as colunas (inclusive as desligadas — o painel "Editar colunas"
   // precisa delas pra poder religar) e só as ativas (as que entram na grade)
