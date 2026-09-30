@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import type { Colaborador, DependenteColaborador, Empresa, HorarioDia, HorarioTrabalho, Unidade } from "@/types/db";
-import { salvarColaborador } from "@/lib/actions";
+import { salvarColaboradorComMatricula } from "@/lib/actions-colaborador-matricula";
 import {
   ESTADO_CIVIL_LABEL,
   GRAU_INSTRUCAO_LABEL,
@@ -67,7 +67,7 @@ export default function ColaboradorForm({
   function enviar(formData: FormData) {
     formData.set("dependentes_json", JSON.stringify(dependentes));
     formData.set("horario_trabalho_json", JSON.stringify(horario));
-    startTransition(() => salvarColaborador(formData));
+    startTransition(() => salvarColaboradorComMatricula(formData));
   }
 
   function atualizarDependente(i: number, campo: keyof Dependente, valor: string | boolean) {
@@ -118,6 +118,18 @@ export default function ColaboradorForm({
             tipo={tipo === "PJ" ? "cnpj" : "cpf"}
             defaultValue={colaborador?.cpf_cnpj ?? ""}
           />
+          {tipo !== "PJ" && (
+            <div>
+              <label className="label">Matrícula</label>
+              <input
+                name="matricula"
+                className="input"
+                inputMode="numeric"
+                placeholder="Ex.: 043"
+                defaultValue={colaborador?.matricula ?? ""}
+              />
+            </div>
+          )}
           <div>
             <label className="label">RG</label>
             <input name="rg" className="input" defaultValue={colaborador?.rg ?? ""} />

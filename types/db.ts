@@ -91,6 +91,8 @@ export interface Colaborador {
   tipo: TipoColaborador;
   nome: string;
   cpf_cnpj: string | null;
+  /** Matrícula do colaborador no sistema da contabilidade (texto, mantém o zero à esquerda). */
+  matricula?: string | null;
   cargo: string | null;
   departamento: string | null;
   lider: string | null;
