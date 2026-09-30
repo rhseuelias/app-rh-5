@@ -151,14 +151,26 @@ export default async function FolhaPage({
   // agrupa por unidade (ou empresa, quando não tem unidades separadas) —
   // estagiários sempre caem no grupo "ESTÁGIO", à parte da unidade deles
   const gruposMap = new Map<string, ColaboradorFolha[]>();
+  // empresa de cada grupo (null = grupo com colaboradores de empresas diferentes, como "ESTÁGIO")
+  const empresaDoGrupo = new Map<string, string | null>();
   for (const c of todosColaboradores) {
     const rotulo = rotuloGrupoColaborador(c, empresasPorId, unidadesPorId);
     if (!gruposMap.has(rotulo)) gruposMap.set(rotulo, []);
-    gruposMap.get(rotulo)!.push({ id: c.id, nome: c.nome, cargo: c.cargo, salario_base: c.salario_base });
+    gruposMap.get(rotulo)!.push({
+      id: c.id,
+      nome: c.nome,
+      cargo: c.cargo,
+      salario_base: c.salario_base,
+      matricula: (c as Colaborador & { matricula?: string | null }).matricula ?? null,
+    });
+    const nomeEmpresa = c.empresa_id ? empresasPorId[c.empresa_id]?.nome ?? null : null;
+    if (!empresaDoGrupo.has(rotulo)) empresaDoGrupo.set(rotulo, nomeEmpresa);
+    else if (empresaDoGrupo.get(rotulo) !== nomeEmpresa) empresaDoGrupo.set(rotulo, null);
   }
   const grupos: GrupoFolha[] = Array.from(gruposMap.entries())
     .map(([rotulo, colaboradores]) => ({
       rotulo,
+      empresaNome: empresaDoGrupo.get(rotulo) ?? undefined,
       colaboradores: colaboradores.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
     }))
     .sort((a, b) => compararGrupos(a.rotulo, b.rotulo));

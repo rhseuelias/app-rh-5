@@ -17,10 +17,14 @@ export interface ColaboradorFolha {
   nome: string;
   cargo: string | null;
   salario_base: number;
+  /** matrícula na contabilidade (aparece no Relatório de Conferência) */
+  matricula?: string | null;
 }
 
 export interface GrupoFolha {
   rotulo: string;
+  /** empresa da unidade (ex.: "BSE" para a unidade "SAVASSI") — só pro título do relatório */
+  empresaNome?: string;
   colaboradores: ColaboradorFolha[];
 }
 
