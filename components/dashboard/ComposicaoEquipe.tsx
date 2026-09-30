@@ -2,6 +2,8 @@
 // cartões por empresa e dois gráficos (barras CLT x PJ e participação).
 // Componente simples, sem bibliotecas de gráfico.
 
+import Link from "next/link";
+
 export type TemaCartao = "pessego" | "creme" | "grafite" | "branco" | "pedra";
 
 export interface CartaoEmpresa {
@@ -13,6 +15,7 @@ export interface CartaoEmpresa {
   estagio: number;
   tema: TemaCartao;
   nota?: string; // linha extra pequena (ex.: "Nenhuma franquia cadastrada")
+  link?: { href: string; texto: string }; // atalho no cartão (ex.: cadastro das franquias)
 }
 
 const COR_CLT = "#E8833A";
@@ -125,6 +128,11 @@ export default function ComposicaoEquipe({
               {c.estagio > 0 && <> – Estágio {c.estagio}</>}
             </p>
             {c.nota && <p className="text-[11px] opacity-80 mt-0.5">{c.nota}</p>}
+            {c.link && (
+              <Link href={c.link.href} className="inline-block text-[11px] underline mt-0.5 hover:opacity-80">
+                {c.link.texto}
+              </Link>
+            )}
           </div>
         ))}
       </div>
