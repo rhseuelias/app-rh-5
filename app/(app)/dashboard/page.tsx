@@ -278,6 +278,10 @@ export default async function DashboardPage() {
       pj: franqPj,
       estagio: 0,
       nota: listaFranquias.length === 0 ? "Nenhuma franquia cadastrada" : undefined,
+      link: {
+        href: "/projecao-custo#franquias",
+        texto: listaFranquias.length === 0 ? "Cadastrar franquias →" : "Editar franquias →",
+      },
     });
   }
   for (const o of outrasEmpresas) {
