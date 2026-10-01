@@ -13,16 +13,17 @@ const ITENS = [
   { href: "/departamento-pessoal", label: "Departamento Pessoal", icon: "🎁" },
   { href: "/aniversarios", label: "Aniversários", icon: "🎂" },
   { href: "/projecao-custo", label: "Projeção de Custo", icon: "💰" },
+  { href: "/relatorio-salarios", label: "Relatório de Salários", icon: "📄" },
 ];
 
 export default function Sidebar({ papel }: { papel?: string | null }) {
   const pathname = usePathname();
-  // perfil "assistente" (ex.: Francielle) não vê Projeção de Custo nem Departamento Pessoal
-  const ESCONDIDOS_ASSISTENTE = ["/projecao-custo", "/departamento-pessoal"];
+  // perfil "assistente" (ex.: Francielle) não vê Projeção de Custo, Departamento Pessoal nem Relatório de Salários
+  const ESCONDIDOS_ASSISTENTE = ["/projecao-custo", "/departamento-pessoal", "/relatorio-salarios"];
   const itens = papel === "assistente" ? ITENS.filter((i) => !ESCONDIDOS_ASSISTENTE.includes(i.href)) : ITENS;
 
   return (
-    <aside className="w-64 shrink-0 bg-ink-900 min-h-screen flex flex-col">
+    <aside className="w-64 shrink-0 bg-ink-900 min-h-screen flex flex-col print:hidden">
       <div className="px-5 py-6 border-b border-white/10">
         <h1 className="font-display font-bold text-white text-lg leading-tight">
           AppliQ RH

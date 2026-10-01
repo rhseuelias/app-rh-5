@@ -8,44 +8,45 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Verde-água — cor de destaque principal (links, foco, ícones, estado ativo)
+        // Pêssego — cor de destaque principal (links, foco, ícones, estado ativo)
+        // Tons 50–400 são o pêssego claro; 500–700 são laranja escuro, bons para texto sobre fundo branco
         brand: {
-          50: "#eefcfa",
-          100: "#d1f7ef",
-          200: "#a4eee1",
-          300: "#6fe0cf",
-          400: "#3fcab5",
-          500: "#20ab98",
-          600: "#178a7b",
-          700: "#146e64",
+          50: "#fff3e6",
+          100: "#ffe9d2",
+          200: "#ffd5aa",
+          300: "#fdc48a",
+          400: "#fbb26e",
+          500: "#f0913f",
+          600: "#b85c12",
+          700: "#93440c",
         },
-        // Navy — superfícies escuras (sidebar, cabeçalhos, seções de destaque)
+        // Grafite — superfícies escuras (sidebar, cabeçalhos, seções de destaque)
         ink: {
-          900: "#0e1330",
-          800: "#161c44",
-          700: "#202856",
-          600: "#2c3568",
-          500: "#3c4680",
+          900: "#262626",
+          800: "#3d3d3d",
+          700: "#4a4a4a",
+          600: "#5c5c5c",
+          500: "#737373",
         },
-        // Dourado — reservado para a ação de maior destaque de cada tela
+        // Pêssego vivo — reservado para a ação de maior destaque de cada tela
         gold: {
-          300: "#f7d476",
-          400: "#f3c34c",
-          500: "#ecac1f",
-          600: "#c98f13",
+          300: "#fdcb9a",
+          400: "#fbb26e",
+          500: "#f59e4a",
+          600: "#d97f27",
         },
       },
       fontFamily: {
-        display: ["'Baloo 2'", "ui-rounded", "sans-serif"],
+        display: ["Oswald", "'Arial Narrow'", "Impact", "sans-serif"],
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       borderRadius: {
-        xl: "0.875rem",
-        "2xl": "1.25rem",
+        xl: "0.5rem",
+        "2xl": "0.75rem",
       },
       boxShadow: {
-        card: "0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -12px rgba(15, 23, 42, 0.12)",
-        "card-hover": "0 4px 10px rgba(15, 23, 42, 0.06), 0 16px 32px -12px rgba(15, 23, 42, 0.16)",
+        card: "0 1px 2px rgba(61, 40, 20, 0.05), 0 8px 24px -12px rgba(61, 40, 20, 0.14)",
+        "card-hover": "0 4px 10px rgba(61, 40, 20, 0.07), 0 16px 32px -12px rgba(61, 40, 20, 0.18)",
       },
     },
   },
