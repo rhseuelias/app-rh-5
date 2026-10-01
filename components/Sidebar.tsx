@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { logout } from "@/lib/actions";
 
@@ -139,48 +140,108 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
   const ESCONDIDOS_ASSISTENTE = ["/projecao-custo", "/departamento-pessoal"];
   const itens = papel === "assistente" ? ITENS.filter((i) => !ESCONDIDOS_ASSISTENTE.includes(i.href)) : ITENS;
 
+  // menu recolhível: a escolha fica guardada neste navegador
+  const [recolhido, setRecolhido] = useState(false);
+  useEffect(() => {
+    try {
+      setRecolhido(localStorage.getItem("menu-recolhido") === "1");
+    } catch {
+      /* sem armazenamento: segue aberto */
+    }
+  }, []);
+  function alternarMenu() {
+    setRecolhido((v) => {
+      const novo = !v;
+      try {
+        localStorage.setItem("menu-recolhido", novo ? "1" : "0");
+      } catch {
+        /* ignora */
+      }
+      return novo;
+    });
+  }
+
   return (
-    <aside className="w-64 shrink-0 bg-brand-400 min-h-screen flex flex-col">
-      <div className="px-5 py-6 border-b border-ink-800/15">
-        <h1 className="font-display font-bold text-ink-900 text-2xl leading-tight uppercase">
-          AppliQ RH
-        </h1>
-        <p className="text-xs text-ink-800 mt-1">Gestão de pessoas que gera resultados</p>
+    <aside
+      className={`${recolhido ? "w-[68px]" : "w-64"} shrink-0 bg-brand-400 min-h-screen flex flex-col transition-[width] duration-200`}
+    >
+      <div className={`border-b border-ink-800/15 ${recolhido ? "px-2 py-4 flex justify-center" : "px-5 py-6"}`}>
+        {recolhido ? (
+          <button
+            type="button"
+            onClick={alternarMenu}
+            aria-label="Expandir menu"
+            title="Expandir menu"
+            className="w-9 h-9 rounded-lg border border-ink-800/25 bg-white/30 hover:bg-white/60 flex items-center justify-center text-ink-900 transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        ) : (
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p role="heading" aria-level={1} className="font-display font-bold text-ink-900 text-2xl leading-tight uppercase">
+                AppliQ RH
+              </p>
+              <p className="text-xs text-ink-800 mt-1">Gestão de pessoas que gera resultados</p>
+            </div>
+            <button
+              type="button"
+              onClick={alternarMenu}
+              aria-label="Recolher menu"
+              title="Recolher menu"
+              className="shrink-0 w-8 h-8 rounded-lg border border-ink-800/25 bg-white/30 hover:bg-white/60 flex items-center justify-center text-ink-900 transition-colors"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
-      <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
+      <nav className={`flex-1 py-4 space-y-1.5 overflow-y-auto ${recolhido ? "px-2" : "px-3"}`}>
         {itens.map((item) => {
           const ativo = pathname?.startsWith(item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                ativo
-                  ? "bg-ink-800 text-brand-50"
-                  : "text-ink-800 hover:bg-white/30"
-              }`}
+              title={recolhido ? item.label : undefined}
+              aria-label={recolhido ? item.label : undefined}
+              className={`flex items-center rounded-xl text-sm font-medium transition-colors ${
+                recolhido ? "justify-center py-2.5" : "gap-3 px-3.5 py-2.5"
+              } ${ativo ? "bg-ink-800 text-brand-50" : "text-ink-800 hover:bg-white/30"}`}
             >
               <span className="shrink-0">
                 <Icone nome={item.icon} />
               </span>
-              {item.label}
+              {!recolhido && item.label}
             </Link>
           );
         })}
       </nav>
-      <div className="px-3 pb-2">
+      <div className={`pb-2 ${recolhido ? "px-2" : "px-3"}`}>
         <a
           href="/api/backup"
+          title={recolhido ? "Exportar backup" : undefined}
+          aria-label={recolhido ? "Exportar backup" : undefined}
           className="flex items-center justify-center gap-2 text-xs text-ink-800 hover:bg-white/30 rounded-xl py-2.5 border border-ink-800/25 transition-colors"
         >
           <Icone nome="backup" />
-          Exportar backup
+          {!recolhido && "Exportar backup"}
         </a>
       </div>
-      <form action={logout} className="px-3 pb-5">
-        <button className="w-full flex items-center gap-3 text-left px-3.5 py-2.5 text-sm text-ink-800 hover:bg-white/30 rounded-xl transition-colors">
+      <form action={logout} className={`pb-5 ${recolhido ? "px-2" : "px-3"}`}>
+        <button
+          title={recolhido ? "Sair" : undefined}
+          aria-label={recolhido ? "Sair" : undefined}
+          className={`w-full flex items-center text-sm text-ink-800 hover:bg-white/30 rounded-xl transition-colors ${
+            recolhido ? "justify-center py-2.5" : "gap-3 text-left px-3.5 py-2.5"
+          }`}
+        >
           <Icone nome="sair" />
-          Sair
+          {!recolhido && "Sair"}
         </button>
       </form>
     </aside>

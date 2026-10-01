@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
-import type { Colaborador, Empresa, FolhaCompetencia, FolhaLancamento, FolhaNota, FolhaTipo } from "@/types/db";
+import type { Colaborador, Empresa, FolhaCompetencia, FolhaLancamento, FolhaNota, FolhaTipo, Unidade } from "@/types/db";
 import { colaboradorAtivoFolha } from "@/lib/folha-calculos";
 import { rotuloCompetencia } from "@/lib/beneficios-calculos";
 import LancamentosGrade, {
@@ -44,8 +44,9 @@ const ORDEM_GRUPO: Record<string, number> = { provento: 0, desconto: 1, espelham
 export default async function LancamentosFolhaPage({ searchParams }: { searchParams: { competencia?: string } }) {
   const supabase = createClient();
 
-  const [empresasRes, colaboradoresRes, competenciasRes, tiposRes] = await Promise.all([
+  const [empresasRes, unidadesRes, colaboradoresRes, competenciasRes, tiposRes] = await Promise.all([
     supabase.from("empresas").select("*"),
+    supabase.from("unidades").select("*"),
     supabase.from("colaboradores").select("*"),
     supabase.from("folha_competencias").select("*").order("competencia", { ascending: false }),
     supabase.from("folha_tipos").select("*").order("ordem"),
@@ -61,6 +62,7 @@ export default async function LancamentosFolhaPage({ searchParams }: { searchPar
   }
 
   const empresas = (empresasRes.data ?? []) as Empresa[];
+  const unidadePorId = new Map(((unidadesRes.data ?? []) as Unidade[]).map((u) => [u.id, u.nome]));
   const todos = (colaboradoresRes.data ?? []) as Colaborador[];
   const competencias = (competenciasRes.data ?? []) as FolhaCompetencia[];
   const tipos = ((tiposRes.data ?? []) as FolhaTipo[]).filter((t) => t.ativo);
@@ -85,8 +87,8 @@ export default async function LancamentosFolhaPage({ searchParams }: { searchPar
     .map((c) => ({
       id: c.id,
       nome: c.nome,
-      email: c.email ?? null,
       empresa: nomeEmpresa(c),
+      unidade: c.unidade_id ? unidadePorId.get(c.unidade_id) ?? null : null,
       regime: rotuloRegime(c),
       novo: !!c.data_admissao && c.data_admissao.slice(0, 10) >= periodo.iniISO && c.data_admissao.slice(0, 10) <= periodo.fimISO,
     }))
