@@ -4,7 +4,9 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import type { FolhaTipo } from "@/types/db";
 import { limparEventoFolha, salvarEventoFolha } from "@/lib/actions-folha";
 import { calcularQuebraCaixa } from "@/lib/folha-calculos";
+import type { ObservacaoUnidade } from "@/lib/actions-folha-observacoes";
 import CelulaLancamento from "./CelulaLancamento";
+import ObservacoesUnidade from "./ObservacoesUnidade";
 import type { ColaboradorFolha, GrupoFolha, ValorCelula } from "./FolhaWizard";
 
 const ROTULO_CATEGORIA: Record<string, string> = {
@@ -23,6 +25,9 @@ export default function FolhaEventoStep({
   onConcluir,
   onLimpar,
   onVoltar,
+  observacoes,
+  onObservacoesChange,
+  onFinalizar,
 }: {
   competencia: string;
   mesFechado: boolean;
@@ -34,6 +39,11 @@ export default function FolhaEventoStep({
   onConcluir: (grupo: string, tipoId: string, lancamentos: Record<string, ValorCelula>) => void;
   onLimpar: (grupo: string, tipoId: string) => void;
   onVoltar: () => void;
+  /** observações fixas da unidade (valem em todas as etapas e meses) */
+  observacoes: ObservacaoUnidade[];
+  onObservacoesChange: (lista: ObservacaoUnidade[]) => void;
+  /** chamado quando o ÚLTIMO evento pendente é concluído: a unidade fica salva e volta pra lista */
+  onFinalizar: (rotulo: string) => void;
 }) {
   const primeiroNaoFeito = tipos.findIndex((t) => !concluidosDoGrupo.includes(t.id));
   const indiceDesbloqueado = primeiroNaoFeito === -1 ? tipos.length - 1 : primeiroNaoFeito;
@@ -81,6 +91,8 @@ export default function FolhaEventoStep({
         })}
       </div>
 
+      <ObservacoesUnidade grupo={grupo.rotulo} observacoes={observacoes} onChange={onObservacoesChange} />
+
       {grupoCompleto ? (
         <div className="card !bg-emerald-50 !border-emerald-200">
           <p className="text-sm text-emerald-700 font-medium">
@@ -101,7 +113,15 @@ export default function FolhaEventoStep({
           valoresBase={valoresBase}
           jaConcluido={concluidosDoGrupo.includes(tipo.id)}
           onConcluido={(lancamentos) => {
+            // era o último evento que faltava? então a unidade fecha e volta pra lista
+            const eraUltimoPendente =
+              !concluidosDoGrupo.includes(tipo.id) &&
+              tipos.every((t) => t.id === tipo.id || concluidosDoGrupo.includes(t.id));
             onConcluir(grupo.rotulo, tipo.id, lancamentos);
+            if (eraUltimoPendente) {
+              onFinalizar(grupo.rotulo);
+              return;
+            }
             if (indice === indiceDesbloqueado && indice < tipos.length - 1) {
               setIndice(indice + 1);
             }
@@ -158,6 +178,26 @@ function EventoForm({
     return mapa;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grupo.rotulo, tipo.id]);
+
+  // Total da coluna: soma o que está digitado agora (ou o valor inicial, se
+  // a pessoa ainda não mexeu) e recalcula a cada valor digitado.
+  function calcularResumo() {
+    let soma = 0;
+    let preenchidos = 0;
+    for (const c of grupo.colaboradores) {
+      const v = draft.get(c.id) ?? iniciais.get(c.id);
+      const n = v?.valor ?? 0;
+      soma += n;
+      if (n !== 0) preenchidos += 1;
+    }
+    return { soma: Math.round(soma * 100) / 100, preenchidos };
+  }
+  const [resumo, setResumo] = useState(calcularResumo);
+  const mostrarTotal = tipo.formato === "moeda";
+  const ehReferencia = /refer[eê]ncia/i.test(tipo.nome); // coluna de horas, não de dinheiro
+  const totalFormatado = ehReferencia
+    ? resumo.soma.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : resumo.soma.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   function concluir() {
     setErro(null);
@@ -226,12 +266,30 @@ function EventoForm({
                 valorTextoInicial={inicial.valor_texto}
                 calculoAutomatico={tipo.calculo_automatico}
                 disabled={mesFechado || isPending}
-                onChange={(payload) => draft.set(c.id, payload)}
+                onChange={(payload) => {
+                  draft.set(c.id, payload);
+                  setResumo(calcularResumo());
+                }}
               />
             </div>
           );
         })}
       </div>
+
+      {mostrarTotal && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-brand-50 border-t border-brand-200">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-wide text-slate-800">Total da coluna</p>
+            <p className="text-xs text-slate-500">
+              {resumo.preenchidos} de {grupo.colaboradores.length} colaborador
+              {grupo.colaboradores.length === 1 ? "" : "es"} com valor
+            </p>
+          </div>
+          <span className="text-xl font-bold text-slate-900" aria-live="polite" aria-label={`Total da coluna: ${totalFormatado}`}>
+            {totalFormatado}
+          </span>
+        </div>
+      )}
 
       <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
         {erro && <span className="text-sm text-red-500">{erro}</span>}

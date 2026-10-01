@@ -9,21 +9,25 @@ import {
 import { corDaEmpresa } from "@/lib/empresa-cores";
 import EmpresaForm from "@/components/EmpresaForm";
 import UnidadesForm from "@/components/UnidadesForm";
+import FranquiasBSE, { type Franquia } from "@/components/projecao/FranquiasBSE";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProjecaoCustoPage() {
   const supabase = createClient();
 
-  const [{ data: colaboradores }, { data: empresas }, { data: unidades }] = await Promise.all([
+  const [{ data: colaboradores }, { data: empresas }, { data: unidades }, { data: franquias, error: erroFranquias }] =
+    await Promise.all([
     supabase.from("colaboradores").select("*").in("status", ["ativo", "experiencia"]),
     supabase.from("empresas").select("*"),
     supabase.from("unidades").select("*"),
+    supabase.from("franquias_bse").select("*").order("nome", { ascending: true }),
   ]);
 
   const listaColaboradores = (colaboradores ?? []) as Colaborador[];
   const listaEmpresas = (empresas ?? []) as Empresa[];
   const listaUnidades = (unidades ?? []) as Unidade[];
+  const listaFranquias = (franquias ?? []) as Franquia[];
 
   const porEmpresa = listaEmpresas.map((empresa) => {
     const colaboradoresDaEmpresa = listaColaboradores.filter((c) => c.empresa_id === empresa.id);
@@ -151,6 +155,8 @@ export default async function ProjecaoCustoPage() {
           </p>
         </div>
       )}
+
+      <FranquiasBSE franquias={listaFranquias} tabelaFaltando={Boolean(erroFranquias)} />
 
       <div className="card">
         <h2 className="font-medium text-slate-900 mb-3">Empresas / Unidades</h2>

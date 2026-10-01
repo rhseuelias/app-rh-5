@@ -1,29 +1,40 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { CategoriaFolha, FolhaTipo } from "@/types/db";
+import type { FolhaTipo } from "@/types/db";
 import { salvarFolhaLote } from "@/lib/actions-folha";
 import { tiposDoGrupo } from "@/lib/folha-calculos";
 import { formatarReais } from "@/lib/formatadores";
 import type { GrupoFolha, ValorCelula } from "./FolhaWizard";
 
-const COR_CATEGORIA: Record<CategoriaFolha, string> = {
-  provento: "bg-blue-50 text-blue-700",
-  desconto: "bg-emerald-50 text-emerald-700",
-  espelhamento: "bg-amber-50 text-amber-700",
-};
+const TODAS = "__todas__";
 
-const ROTULO_CATEGORIA: Record<CategoriaFolha, string> = {
-  provento: "PROVENTOS",
-  desconto: "DESCONTOS",
-  espelhamento: "ESPELHAMENTO",
-};
+// Colunas "de horas" (Referência) não são dinheiro: aparecem como número e
+// não entram nos totais de PROVENTOS / DESCONTOS em reais.
+function ehHoras(t: FolhaTipo): boolean {
+  return /refer[eê]ncia/i.test(t.nome);
+}
 
-/** Relatório de Conferência: a grade inteira, travada — cada unidade
- * com o cabeçalho das colunas repetido (igual à planilha), pronta pra
- * conferir antes de mandar pra contabilidade. Cada unidade mostra só
- * as colunas que valem pra ela (`gruposPorTipo`). Libera só quando
- * todas as unidades concluem todos os eventos. */
+function formatarHoras(n: number): string {
+  return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function mesAno(competencia: string): string {
+  const [ano, mes] = competencia.split("-");
+  return ano && mes ? `${mes}/${ano}` : competencia;
+}
+
+function tituloDoGrupo(g: GrupoFolha): string {
+  const emp = g.empresaNome?.trim();
+  const base = emp && emp.toUpperCase() !== g.rotulo.toUpperCase() ? `${emp} - ${g.rotulo}` : g.rotulo;
+  return base.toUpperCase();
+}
+
+/** Relatório de Conferência no modelo da contabilidade: uma tabela por
+ * unidade (Nome, Matrícula, PROVENTOS em verde, DESCONTOS em salmão), com o
+ * total de cada coluna e o quadro PROVENTOS / DESCONTOS. Dá para ver uma
+ * unidade só ou todas (com o TOTAL GERAL no fim). Libera só quando todas as
+ * unidades concluem todos os eventos. */
 export default function FolhaRelatorioFinal({
   competencia,
   tipos,
@@ -41,19 +52,41 @@ export default function FolhaRelatorioFinal({
   notasIniciais: Record<string, string>;
   onVoltar: () => void;
 }) {
-  function subtotalGrupo(colaboradores: { id: string }[], tipoId: string, formato: string): number | null {
-    if (formato !== "moeda") return null;
-    let soma = 0;
-    for (const c of colaboradores) soma += valores[c.id]?.[tipoId]?.valor ?? 0;
-    return soma;
+  const [selecao, setSelecao] = useState<string>(TODAS);
+
+  function soma(colaboradores: { id: string }[], tipoId: string): number {
+    let s = 0;
+    for (const c of colaboradores) s += valores[c.id]?.[tipoId]?.valor ?? 0;
+    return s;
   }
 
-  function totalGeral(tipoId: string, formato: string): number | null {
-    if (formato !== "moeda") return null;
-    let soma = 0;
-    for (const g of grupos) soma += subtotalGrupo(g.colaboradores, tipoId, formato) ?? 0;
-    return soma;
+  function resumoDoGrupo(g: GrupoFolha) {
+    const tiposG = tiposDoGrupo(tipos, g.rotulo, gruposPorTipo);
+    let proventos = 0;
+    let descontos = 0;
+    for (const t of tiposG) {
+      if (t.formato !== "moeda" || ehHoras(t)) continue;
+      const s = soma(g.colaboradores, t.id);
+      if (t.categoria === "provento") proventos += s;
+      else if (t.categoria === "desconto") descontos += s;
+    }
+    return { proventos, descontos };
   }
+
+  const visiveis = selecao === TODAS ? grupos : grupos.filter((g) => g.rotulo === selecao);
+
+  const geral = grupos.reduce(
+    (acc, g) => {
+      const r = resumoDoGrupo(g);
+      return { proventos: acc.proventos + r.proventos, descontos: acc.descontos + r.descontos };
+    },
+    { proventos: 0, descontos: 0 }
+  );
+
+  // total geral por coluna (todas as unidades somadas)
+  const colunasGeral = tipos
+    .filter((t) => t.formato === "moeda" && (t.categoria === "provento" || t.categoria === "desconto"))
+    .map((t) => ({ tipo: t, total: grupos.reduce((acc, g) => acc + soma(g.colaboradores, t.id), 0) }));
 
   return (
     <div className="space-y-4">
@@ -61,109 +94,182 @@ export default function FolhaRelatorioFinal({
         <button type="button" onClick={onVoltar} className="text-sm text-slate-400 hover:text-slate-600">
           ← voltar pras unidades
         </button>
-        <span className="text-sm font-bold text-slate-900">📋 Relatório de Conferência — {competencia}</span>
+        <span className="text-sm font-bold text-slate-900">📋 Relatório de Conferência — {mesAno(competencia)}</span>
       </div>
 
-      <div className="card !bg-slate-50 !border-slate-200">
+      <div className="card !bg-slate-50 !border-slate-200 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
           🔒 Essa tela é só pra conferir — pra corrigir algum valor, volte na unidade e revise o evento (a coluna).
         </p>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          Mostrar
+          <select
+            value={selecao}
+            onChange={(e) => setSelecao(e.target.value)}
+            aria-label="Escolher unidade do relatório"
+            className="input !w-auto !py-1.5 !text-sm"
+          >
+            <option value={TODAS}>Todas as unidades</option>
+            {grupos.map((g) => (
+              <option key={g.rotulo} value={g.rotulo}>
+                {tituloDoGrupo(g)}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      {grupos.map((g) => {
+      {visiveis.map((g) => {
         const tiposG = tiposDoGrupo(tipos, g.rotulo, gruposPorTipo);
-        const categoriasG = Array.from(new Set(tiposG.map((t) => t.categoria))) as CategoriaFolha[];
+        const provs = tiposG.filter((t) => t.categoria === "provento");
+        const descs = tiposG.filter((t) => t.categoria === "desconto");
+        const colunas = [...provs, ...descs];
+        const resumo = resumoDoGrupo(g);
+
         return (
-          <div key={g.rotulo} className="card !p-0 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-ink-900">
-                    <th colSpan={tiposG.length + 2} className="py-1.5 px-3 text-left text-white text-xs font-bold uppercase tracking-wide">
-                      {g.rotulo}
-                    </th>
-                  </tr>
-                  <tr>
-                    <th className="py-2 px-3 text-left text-slate-400 text-xs uppercase bg-white sticky left-0 z-10">Colaborador</th>
-                    {categoriasG.map((categoria) => {
-                      const doGrupo = tiposG.filter((t) => t.categoria === categoria);
-                      if (doGrupo.length === 0) return null;
-                      return (
-                        <th
-                          key={categoria}
-                          colSpan={doGrupo.length}
-                          className={`py-1.5 px-2 text-center text-[11px] font-bold uppercase tracking-wide ${COR_CATEGORIA[categoria]}`}
-                        >
-                          {ROTULO_CATEGORIA[categoria]}
-                        </th>
-                      );
-                    })}
-                    <th className="py-2 px-3 text-left text-slate-400 text-xs uppercase">Ponto</th>
-                  </tr>
-                  <tr>
-                    <th className="bg-white sticky left-0" />
-                    {tiposG.map((t) => (
-                      <th key={t.id} className="py-2 px-2 text-center text-slate-500 text-[11px] font-semibold whitespace-nowrap">
-                        {t.nome}
-                        {t.codigo && <div className="text-[10px] text-slate-300 font-normal">{t.codigo}</div>}
-                      </th>
-                    ))}
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {g.colaboradores.map((c) => (
-                    <LinhaColaborador
-                      key={c.id}
-                      competencia={competencia}
-                      colaboradorId={c.id}
-                      nome={c.nome}
-                      tipos={tiposG}
-                      valoresColaborador={valores[c.id] ?? {}}
-                      notaInicial={notasIniciais[c.id] ?? ""}
-                    />
-                  ))}
-                  <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold">
-                    <td className="py-1.5 px-3 text-slate-600 text-xs sticky left-0 bg-slate-50">
-                      Subtotal {g.rotulo}
-                    </td>
-                    {tiposG.map((t) => {
-                      const sub = subtotalGrupo(g.colaboradores, t.id, t.formato);
-                      return (
-                        <td key={t.id} className="py-1.5 px-2 text-center text-xs text-slate-700">
-                          {sub === null ? "—" : formatarReais(sub)}
-                        </td>
-                      );
-                    })}
-                    <td />
-                  </tr>
-                </tbody>
-              </table>
+          <section key={g.rotulo} className="card space-y-3">
+            <div className="flex items-baseline gap-4 flex-wrap">
+              <h2 className="text-xl font-bold text-slate-900">{tituloDoGrupo(g)}</h2>
+              <span className="text-sm font-semibold text-slate-700 border-l border-slate-400 pl-4">
+                MÊS: {mesAno(competencia)}
+              </span>
             </div>
-          </div>
+
+            {colunas.length === 0 ? (
+              <p className="text-sm text-slate-400">Nenhuma coluna ativa para esta unidade.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse min-w-[760px]">
+                  <thead>
+                    <tr>
+                      <th rowSpan={2} className="border border-stone-800 bg-stone-100 px-2 py-1.5 text-center font-semibold min-w-[220px]">
+                        Nome
+                      </th>
+                      <th rowSpan={2} className="border border-stone-800 bg-stone-100 px-2 py-1.5 text-center font-semibold w-20">
+                        Matrícula
+                      </th>
+                      {provs.length > 0 && (
+                        <th colSpan={provs.length} className="border border-stone-800 bg-[#DDF0D9] px-2 py-1.5 text-center font-semibold">
+                          PROVENTOS
+                        </th>
+                      )}
+                      {descs.length > 0 && (
+                        <th colSpan={descs.length} className="border border-stone-800 bg-[#FCE3D6] px-2 py-1.5 text-center font-semibold">
+                          DESCONTOS
+                        </th>
+                      )}
+                      <th rowSpan={2} className="border border-stone-800 bg-stone-100 px-2 py-1.5 text-center font-semibold">
+                        Ponto
+                      </th>
+                    </tr>
+                    <tr>
+                      {provs.map((t) => (
+                        <th key={t.id} className="border border-stone-800 bg-[#DDF0D9] px-2 py-1.5 text-center text-xs font-semibold leading-tight min-w-[110px]">
+                          {t.nome}
+                        </th>
+                      ))}
+                      {descs.map((t) => (
+                        <th key={t.id} className="border border-stone-800 bg-[#FCE3D6] px-2 py-1.5 text-center text-xs font-semibold leading-tight min-w-[110px]">
+                          {t.nome}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {g.colaboradores.map((c) => (
+                      <LinhaColaborador
+                        key={c.id}
+                        competencia={competencia}
+                        colaboradorId={c.id}
+                        nome={c.nome}
+                        matricula={c.matricula ?? ""}
+                        provs={provs}
+                        descs={descs}
+                        valoresColaborador={valores[c.id] ?? {}}
+                        notaInicial={notasIniciais[c.id] ?? ""}
+                      />
+                    ))}
+                    <tr className="font-bold">
+                      <td colSpan={2} className="border-t-2 border-stone-800 px-2 py-1.5" />
+                      {colunas.map((t) => {
+                        const cor = t.categoria === "provento" ? "bg-[#DDF0D9]" : "bg-[#FCE3D6]";
+                        const total = soma(g.colaboradores, t.id);
+                        return (
+                          <td key={t.id} className={`border border-stone-800 border-t-2 px-2 py-1.5 text-right whitespace-nowrap ${cor}`}>
+                            {t.formato !== "moeda" ? "" : ehHoras(t) ? formatarHoras(total) : formatarReais(total)}
+                          </td>
+                        );
+                      })}
+                      <td className="border-t-2 border-stone-800" />
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <table className="border-collapse text-sm">
+              <tbody>
+                <tr>
+                  <td className="border border-stone-500 bg-stone-100 px-3 py-1 font-semibold min-w-[130px]">PROVENTOS</td>
+                  <td className="border border-stone-500 px-3 py-1 text-right min-w-[120px]">{formatarReais(resumo.proventos)}</td>
+                </tr>
+                <tr>
+                  <td className="border border-stone-500 bg-stone-100 px-3 py-1 font-semibold">DESCONTOS</td>
+                  <td className="border border-stone-500 px-3 py-1 text-right">{formatarReais(resumo.descontos)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
         );
       })}
 
-      <div className="card !p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
+      {selecao === TODAS && (
+        <section className="card space-y-3">
+          <div className="flex items-baseline gap-4 flex-wrap">
+            <h2 className="text-xl font-bold text-slate-900">TOTAL GERAL — TODAS AS UNIDADES</h2>
+            <span className="text-sm font-semibold text-slate-700 border-l border-slate-400 pl-4">
+              MÊS: {mesAno(competencia)}
+            </span>
+          </div>
+
+          <table className="border-collapse text-sm">
             <tbody>
-              <tr className="bg-ink-900 text-white font-bold">
-                <td className="py-2 px-3 sticky left-0 bg-ink-900">TOTAL GERAL — TODAS AS UNIDADES</td>
-                {tipos.map((t) => {
-                  const tot = totalGeral(t.id, t.formato);
-                  return (
-                    <td key={t.id} className="py-2 px-2 text-center text-xs">
-                      {tot === null ? "—" : formatarReais(tot)}
-                    </td>
-                  );
-                })}
-                <td />
+              <tr>
+                <td className="border border-stone-500 bg-stone-100 px-3 py-1 font-semibold min-w-[130px]">PROVENTOS</td>
+                <td className="border border-stone-500 px-3 py-1 text-right min-w-[120px]">{formatarReais(geral.proventos)}</td>
+              </tr>
+              <tr>
+                <td className="border border-stone-500 bg-stone-100 px-3 py-1 font-semibold">DESCONTOS</td>
+                <td className="border border-stone-500 px-3 py-1 text-right">{formatarReais(geral.descontos)}</td>
               </tr>
             </tbody>
           </table>
-        </div>
-      </div>
+
+          <details>
+            <summary className="cursor-pointer text-sm text-brand-600 select-none">Ver o total geral de cada coluna</summary>
+            <div className="overflow-x-auto mt-2">
+              <table className="border-collapse text-sm">
+                <tbody>
+                  {colunasGeral.map(({ tipo, total }) => (
+                    <tr key={tipo.id}>
+                      <td
+                        className={`border border-stone-500 px-3 py-1 ${
+                          tipo.categoria === "provento" ? "bg-[#DDF0D9]" : "bg-[#FCE3D6]"
+                        }`}
+                      >
+                        {tipo.nome}
+                      </td>
+                      <td className="border border-stone-500 px-3 py-1 text-right min-w-[120px]">
+                        {ehHoras(tipo) ? formatarHoras(total) : formatarReais(total)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+      )}
     </div>
   );
 }
@@ -172,14 +278,18 @@ function LinhaColaborador({
   competencia,
   colaboradorId,
   nome,
-  tipos,
+  matricula,
+  provs,
+  descs,
   valoresColaborador,
   notaInicial,
 }: {
   competencia: string;
   colaboradorId: string;
   nome: string;
-  tipos: FolhaTipo[];
+  matricula: string;
+  provs: FolhaTipo[];
+  descs: FolhaTipo[];
   valoresColaborador: Record<string, ValorCelula>;
   notaInicial: string;
 }) {
@@ -192,19 +302,29 @@ function LinhaColaborador({
     });
   }
 
+  function celula(t: FolhaTipo, fundo: string) {
+    const v = valoresColaborador[t.id];
+    let texto = "";
+    if (t.formato === "moeda") {
+      const n = v?.valor ?? 0;
+      if (n !== 0) texto = ehHoras(t) ? formatarHoras(n) : formatarReais(n);
+    } else {
+      texto = v?.valor_texto ?? "";
+    }
+    return (
+      <td key={t.id} className={`border border-stone-800 px-2 py-1 text-right whitespace-nowrap text-xs ${fundo}`}>
+        {texto}
+      </td>
+    );
+  }
+
   return (
-    <tr className="border-b border-slate-100">
-      <td className="py-1.5 px-3 font-medium text-slate-800 whitespace-nowrap bg-white sticky left-0">{nome}</td>
-      {tipos.map((t) => {
-        const v = valoresColaborador[t.id];
-        const texto = t.formato === "moeda" ? formatarReais(v?.valor ?? 0) : v?.valor_texto || "—";
-        return (
-          <td key={t.id} className="py-1 px-2 text-center text-xs text-slate-600">
-            {texto}
-          </td>
-        );
-      })}
-      <td className="py-1 px-1">
+    <tr>
+      <td className="border border-stone-800 px-2 py-1 font-medium text-slate-800 whitespace-nowrap">{nome}</td>
+      <td className="border border-stone-800 px-2 py-1 text-center text-slate-700">{matricula}</td>
+      {provs.map((t) => celula(t, "bg-white"))}
+      {descs.map((t) => celula(t, "bg-[#FEF3EC]"))}
+      <td className="border border-stone-800 px-1 py-1">
         <input
           type="text"
           value={nota}

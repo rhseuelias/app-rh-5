@@ -13,6 +13,7 @@ import type {
 } from "@/types/db";
 import { colaboradorAtivoFolha, compararGrupos, rotuloGrupoColaborador } from "@/lib/folha-calculos";
 import { competenciaAtual, rotuloCompetencia } from "@/lib/beneficios-calculos";
+import type { ObservacaoUnidade } from "@/lib/actions-folha-observacoes";
 import TiposFolhaCadastro from "@/components/folha/TiposFolhaCadastro";
 import CompetenciaAcoesFolha from "@/components/folha/CompetenciaAcoesFolha";
 import FolhaWizard, {
@@ -39,6 +40,7 @@ export default async function FolhaPage({
     { data: competenciasData },
     { data: tiposData },
     { data: tiposGruposData },
+    { data: observacoesData },
   ] = await Promise.all([
     supabase.from("empresas").select("*"),
     supabase.from("unidades").select("*"),
@@ -46,11 +48,17 @@ export default async function FolhaPage({
     supabase.from("folha_competencias").select("*").order("competencia", { ascending: false }),
     supabase.from("folha_tipos").select("*").neq("categoria", "espelhamento").order("ordem"),
     supabase.from("folha_tipos_grupos").select("*"),
+    // observações fixas por unidade (se a tabela ainda não existir, volta vazio)
+    supabase.from("folha_observacoes_unidade").select("*").order("created_at", { ascending: true }),
   ]);
 
   const empresas = (empresasData ?? []) as Empresa[];
   const unidades = (unidadesData ?? []) as Unidade[];
-  const todosColaboradores = ((colaboradoresData ?? []) as Colaborador[]).filter(colaboradorAtivoFolha);
+  // Base da folha: só quem é CLT ou estagiário. Colaboradores PJ não entram na
+  // folha de pagamento (nem na lista, nem nos lançamentos, nem nos relatórios).
+  const todosColaboradores = ((colaboradoresData ?? []) as Colaborador[]).filter(
+    (c) => colaboradorAtivoFolha(c) && c.tipo !== "PJ"
+  );
   const competencias = (competenciasData ?? []) as FolhaCompetencia[];
   // todas as colunas (inclusive as desligadas — o painel "Editar colunas"
   // precisa delas pra poder religar) e só as ativas (as que entram na grade)
@@ -77,6 +85,12 @@ export default async function FolhaPage({
         </div>
       </div>
     );
+  }
+
+  // observações fixas de cada unidade (não dependem do mês)
+  const observacoesIniciais: Record<string, ObservacaoUnidade[]> = {};
+  for (const o of (observacoesData ?? []) as ObservacaoUnidade[]) {
+    (observacoesIniciais[o.grupo] ??= []).push(o);
   }
 
   const empresasPorId: Record<string, Empresa> = {};
@@ -147,14 +161,26 @@ export default async function FolhaPage({
   // agrupa por unidade (ou empresa, quando não tem unidades separadas) —
   // estagiários sempre caem no grupo "ESTÁGIO", à parte da unidade deles
   const gruposMap = new Map<string, ColaboradorFolha[]>();
+  // empresa de cada grupo (null = grupo com colaboradores de empresas diferentes, como "ESTÁGIO")
+  const empresaDoGrupo = new Map<string, string | null>();
   for (const c of todosColaboradores) {
     const rotulo = rotuloGrupoColaborador(c, empresasPorId, unidadesPorId);
     if (!gruposMap.has(rotulo)) gruposMap.set(rotulo, []);
-    gruposMap.get(rotulo)!.push({ id: c.id, nome: c.nome, cargo: c.cargo, salario_base: c.salario_base });
+    gruposMap.get(rotulo)!.push({
+      id: c.id,
+      nome: c.nome,
+      cargo: c.cargo,
+      salario_base: c.salario_base,
+      matricula: (c as Colaborador & { matricula?: string | null }).matricula ?? null,
+    });
+    const nomeEmpresa = c.empresa_id ? empresasPorId[c.empresa_id]?.nome ?? null : null;
+    if (!empresaDoGrupo.has(rotulo)) empresaDoGrupo.set(rotulo, nomeEmpresa);
+    else if (empresaDoGrupo.get(rotulo) !== nomeEmpresa) empresaDoGrupo.set(rotulo, null);
   }
   const grupos: GrupoFolha[] = Array.from(gruposMap.entries())
     .map(([rotulo, colaboradores]) => ({
       rotulo,
+      empresaNome: empresaDoGrupo.get(rotulo) ?? undefined,
       colaboradores: colaboradores.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
     }))
     .sort((a, b) => compararGrupos(a.rotulo, b.rotulo));
@@ -270,6 +296,7 @@ export default async function FolhaPage({
           valoresBase={valoresBase}
           notasIniciais={notasIniciais}
           eventosConcluidosIniciais={eventosConcluidosIniciais}
+          observacoesIniciais={observacoesIniciais}
         />
       )}
     </div>

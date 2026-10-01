@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { FolhaTipo } from "@/types/db";
 import { tiposDoGrupo } from "@/lib/folha-calculos";
+import type { ObservacaoUnidade } from "@/lib/actions-folha-observacoes";
 import FolhaEventoStep from "./FolhaEventoStep";
 import FolhaRelatorioFinal from "./FolhaRelatorioFinal";
 import FolhaRelatorioDinamico from "./FolhaRelatorioDinamico";
@@ -17,10 +18,14 @@ export interface ColaboradorFolha {
   nome: string;
   cargo: string | null;
   salario_base: number;
+  /** matrícula na contabilidade (aparece no Relatório de Conferência) */
+  matricula?: string | null;
 }
 
 export interface GrupoFolha {
   rotulo: string;
+  /** empresa da unidade (ex.: "BSE" para a unidade "SAVASSI") — só pro título do relatório */
+  empresaNome?: string;
   colaboradores: ColaboradorFolha[];
 }
 
@@ -68,6 +73,7 @@ export default function FolhaWizard({
   valoresBase,
   notasIniciais,
   eventosConcluidosIniciais,
+  observacoesIniciais,
 }: {
   competencia: string;
   mesFechado: boolean;
@@ -79,6 +85,8 @@ export default function FolhaWizard({
   valoresBase: Record<string, Record<string, ValorCelula>>;
   notasIniciais: Record<string, string>;
   eventosConcluidosIniciais: Record<string, string[]>;
+  /** observações fixas de cada unidade, indexadas pelo rótulo da unidade */
+  observacoesIniciais: Record<string, ObservacaoUnidade[]>;
 }) {
   const [grupoSelecionado, setGrupoSelecionado] = useState<string | null>(null);
   const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
@@ -87,6 +95,14 @@ export default function FolhaWizard({
   const [concluidos, setConcluidos] = useState(eventosConcluidosIniciais);
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("todos");
+  const [observacoes, setObservacoes] = useState(observacoesIniciais);
+  const [avisoConcluida, setAvisoConcluida] = useState<string | null>(null);
+  const [exportando, setExportando] = useState<string | null>(null);
+  const [msgExport, setMsgExport] = useState<{
+    tipo: "ok" | "aviso" | "erro";
+    texto: string;
+    detalhes: string[];
+  } | null>(null);
 
   function grupoEstaCompleto(rotulo: string): boolean {
     const tiposG = tiposDoGrupo(tipos, rotulo, gruposPorTipo);
@@ -94,6 +110,46 @@ export default function FolhaWizard({
   }
 
   const todosCompletos = grupos.length > 0 && grupos.every((g) => grupoEstaCompleto(g.rotulo));
+
+  // Baixa a planilha da contabilidade (modelo "Movimento Variável") da unidade.
+  async function exportarPlanilha(rotulo: string) {
+    setExportando(rotulo);
+    setMsgExport(null);
+    try {
+      const url = `/api/folha/exportar?competencia=${encodeURIComponent(competencia)}&unidade=${encodeURIComponent(rotulo)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const texto = (await res.text()).trim();
+        setMsgExport({ tipo: "erro", texto: texto || "Não foi possível gerar a planilha.", detalhes: [] });
+        return;
+      }
+      const nome = decodeURIComponent(res.headers.get("X-Nome-Arquivo") ?? "MovimentoVariavel.xlsx");
+      let avisos: string[] = [];
+      try {
+        avisos = JSON.parse(decodeURIComponent(res.headers.get("X-Avisos") ?? "%5B%5D")) as string[];
+      } catch {
+        avisos = [];
+      }
+      const blob = await res.blob();
+      const link = document.createElement("a");
+      const endereco = URL.createObjectURL(blob);
+      link.href = endereco;
+      link.download = nome;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(endereco);
+      setMsgExport({
+        tipo: avisos.length > 0 ? "aviso" : "ok",
+        texto: `Planilha "${nome}" gerada.`,
+        detalhes: avisos,
+      });
+    } catch {
+      setMsgExport({ tipo: "erro", texto: "Não foi possível gerar a planilha. Tente de novo.", detalhes: [] });
+    } finally {
+      setExportando(null);
+    }
+  }
 
   function handleConcluir(grupo: string, tipoId: string, lancamentos: Record<string, ValorCelula>) {
     setValores((prev) => {
@@ -172,6 +228,12 @@ export default function FolhaWizard({
         onConcluir={handleConcluir}
         onLimpar={handleLimpar}
         onVoltar={() => setGrupoSelecionado(null)}
+        observacoes={observacoes[grupo.rotulo] ?? []}
+        onObservacoesChange={(lista) => setObservacoes((prev) => ({ ...prev, [grupo.rotulo]: lista }))}
+        onFinalizar={(rotulo) => {
+          setAvisoConcluida(rotulo);
+          setGrupoSelecionado(null);
+        }}
       />
     );
   }
@@ -198,6 +260,55 @@ export default function FolhaWizard({
 
   return (
     <div className="space-y-4">
+      {avisoConcluida && (
+        <div
+          role="status"
+          className="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 px-4 py-3 text-sm flex items-start justify-between gap-3"
+        >
+          <p className="font-medium">
+            ✓ {avisoConcluida} concluída e salva. Não precisa avançar mais — é só seguir para a próxima unidade.
+          </p>
+          <button type="button" onClick={() => setAvisoConcluida(null)} className="text-xs underline shrink-0">
+            fechar
+          </button>
+        </div>
+      )}
+
+      {msgExport && (
+        <div
+          role="status"
+          className={`rounded-xl border px-4 py-3 text-sm flex items-start justify-between gap-3 ${
+            msgExport.tipo === "erro"
+              ? "border-red-200 bg-red-50 text-red-800"
+              : msgExport.tipo === "aviso"
+              ? "border-amber-200 bg-amber-50 text-amber-900"
+              : "border-emerald-200 bg-emerald-50 text-emerald-800"
+          }`}
+        >
+          <div className="space-y-1">
+            <p className="font-medium">{msgExport.texto}</p>
+            {msgExport.detalhes.length > 0 && (
+              <>
+                <p className="text-xs">Confira antes de enviar para a contabilidade:</p>
+                <ul className="list-disc pl-5 text-xs space-y-0.5">
+                  {msgExport.detalhes.map((d) => (
+                    <li key={d}>{d}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setMsgExport(null)}
+            aria-label="Fechar aviso"
+            className="text-xs underline shrink-0"
+          >
+            fechar
+          </button>
+        </div>
+      )}
+
       <section className="card">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div className="flex items-center gap-3">
@@ -275,9 +386,17 @@ export default function FolhaWizard({
                   )}
                 </div>
 
-                <p className="text-xs text-slate-500 mt-3 mb-1">
-                  {feitos}/{total}
-                </p>
+                <div className="flex items-center justify-between gap-2 mt-3 mb-1">
+                  <p className="text-xs text-slate-500">
+                    {feitos}/{total}
+                  </p>
+                  {(observacoes[grupo.rotulo]?.length ?? 0) > 0 && (
+                    <p className="text-xs text-amber-700" title="Observações fixas desta unidade">
+                      📝 {observacoes[grupo.rotulo].length} observaç
+                      {observacoes[grupo.rotulo].length === 1 ? "ão" : "ões"}
+                    </p>
+                  )}
+                </div>
                 <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
                   <div
                     className={`h-full rounded-full ${completo ? "bg-emerald-500" : "bg-brand-600"}`}
@@ -295,6 +414,19 @@ export default function FolhaWizard({
                     {rotuloAcao} →
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => exportarPlanilha(grupo.rotulo)}
+                  disabled={!completo || exportando !== null}
+                  className="btn-secondary !text-xs !py-1.5 w-full mt-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={
+                    completo
+                      ? "Baixar a planilha no modelo da contabilidade"
+                      : "Conclua todos os eventos da unidade para exportar"
+                  }
+                >
+                  {exportando === grupo.rotulo ? "Gerando planilha..." : "⬇ Exportar planilha"}
+                </button>
               </div>
             ))}
           </div>
@@ -379,13 +511,28 @@ export default function FolhaWizard({
                     <span className={`badge ${STATUS_UNIDADE[status].classe}`}>{STATUS_UNIDADE[status].label}</span>
                   </td>
                   <td className="py-2.5 px-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setGrupoSelecionado(grupo.rotulo)}
-                      className="btn-primary !text-xs !py-1 !px-3.5"
-                    >
-                      {rotuloAcao}
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => exportarPlanilha(grupo.rotulo)}
+                        disabled={!completo || exportando !== null}
+                        className="btn-secondary !text-xs !py-1 !px-3 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={
+                          completo
+                            ? "Baixar a planilha no modelo da contabilidade"
+                            : "Conclua todos os eventos da unidade para exportar"
+                        }
+                      >
+                        {exportando === grupo.rotulo ? "Gerando..." : "⬇ Exportar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGrupoSelecionado(grupo.rotulo)}
+                        className="btn-primary !text-xs !py-1 !px-3.5"
+                      >
+                        {rotuloAcao}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

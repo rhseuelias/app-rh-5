@@ -32,6 +32,18 @@ export default function DepartamentoPessoalPage() {
             A grade de Proventos, Descontos e Espelhamento — igual à planilha que você manda pra contabilidade, agora dentro do sistema.
           </span>
         </Link>
+
+        <Link
+          href="/departamento-pessoal/lancamentos"
+          className="card hover:border-brand-300 transition-colors flex flex-col gap-2"
+        >
+          <span className="text-2xl">📊</span>
+          <span className="text-lg font-bold text-slate-900">Lançamentos da Folha</span>
+          <span className="text-sm text-slate-500">
+            Uma grade única, estilo planilha, para lançar proventos, descontos e espelhamento de todos os funcionários de todas as
+            empresas, com colunas que você mesmo cria e reordena.
+          </span>
+        </Link>
       </div>
     </div>
   );
