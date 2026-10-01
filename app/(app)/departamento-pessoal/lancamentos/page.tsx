@@ -39,7 +39,7 @@ function periodoDaCompetencia(comp: string) {
   };
 }
 
-const ORDEM_GRUPO: Record<string, number> = { provento: 0, desconto: 1, espelhamento: 2 };
+const ORDEM_GRUPO: Record<string, number> = { provento: 0, desconto: 1 };
 
 export default async function LancamentosFolhaPage({ searchParams }: { searchParams: { competencia?: string } }) {
   const supabase = createClient();
@@ -65,7 +65,9 @@ export default async function LancamentosFolhaPage({ searchParams }: { searchPar
   const unidadePorId = new Map(((unidadesRes.data ?? []) as Unidade[]).map((u) => [u.id, u.nome]));
   const todos = (colaboradoresRes.data ?? []) as Colaborador[];
   const competencias = (competenciasRes.data ?? []) as FolhaCompetencia[];
-  const tipos = ((tiposRes.data ?? []) as FolhaTipo[]).filter((t) => t.ativo);
+  const tiposTodos = ((tiposRes.data ?? []) as FolhaTipo[]).filter((t) => t.categoria === "provento" || t.categoria === "desconto");
+  const tipos = tiposTodos.filter((t) => t.ativo);
+  const tiposDesligados = tiposTodos.filter((t) => !t.ativo);
 
   const competencia = /^\d{4}-\d{2}$/.test(searchParams.competencia ?? "") ? (searchParams.competencia as string) : competenciaAtualSP();
   const competenciaRow = competencias.find((c) => c.competencia === competencia);
@@ -111,18 +113,20 @@ export default async function LancamentosFolhaPage({ searchParams }: { searchPar
     .slice(0, 4)
     .map((e) => ({ sinal: e.sinal, nome: e.nome }));
 
-  // ---- colunas (rubricas) ----
+  // ---- colunas (rubricas): só proventos e descontos ----
+  const paraRubrica = (t: FolhaTipo): RubricaGrade => ({
+    id: t.id,
+    nome: t.nome,
+    codigo: t.codigo ?? null,
+    grupo: (t.categoria === "provento" ? "provento" : "desconto") as GrupoRubrica,
+    formato: (["moeda", "texto", "sim_nao"].includes(t.formato) ? t.formato : "texto") as FormatoRubrica,
+    automatico: t.calculo_automatico === true,
+  });
   const rubricas: RubricaGrade[] = tipos
     .map((t, i) => ({ t, i }))
     .sort((a, b) => (ORDEM_GRUPO[a.t.categoria] ?? 9) - (ORDEM_GRUPO[b.t.categoria] ?? 9) || a.i - b.i)
-    .map(({ t }) => ({
-      id: t.id,
-      nome: t.nome,
-      codigo: t.codigo ?? null,
-      grupo: (["provento", "desconto", "espelhamento"].includes(t.categoria) ? t.categoria : "desconto") as GrupoRubrica,
-      formato: (["moeda", "texto", "sim_nao"].includes(t.formato) ? t.formato : "texto") as FormatoRubrica,
-      automatico: t.calculo_automatico === true,
-    }));
+    .map(({ t }) => paraRubrica(t));
+  const desabilitadas: RubricaGrade[] = tiposDesligados.map(paraRubrica);
   const formatoPorId = new Map(rubricas.map((r) => [r.id, r.formato]));
 
   // ---- valores do mês e observações de ponto ----
@@ -158,6 +162,7 @@ export default async function LancamentosFolhaPage({ searchParams }: { searchPar
       mesFechado={competenciaRow?.fechado ?? false}
       opcoesMes={opcoesMes}
       rubricas={rubricas}
+      desabilitadas={desabilitadas}
       funcionarios={funcionarios}
       valoresIniciais={valoresIniciais}
       pontoIniciais={pontoIniciais}

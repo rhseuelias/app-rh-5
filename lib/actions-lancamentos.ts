@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase-server";
 type Resultado = { ok: true; aviso?: string } | { ok: false; erro: string };
 type ResultadoId = { ok: true; id: string } | { ok: false; erro: string };
 
-const CATEGORIAS = ["provento", "desconto", "espelhamento"];
+const CATEGORIAS = ["provento", "desconto"];
 const FORMATOS = ["moeda", "texto", "sim_nao"];
 
 function mensagem(m: string): string {
@@ -287,6 +287,17 @@ export async function moverColunaFolha(tipoId: string, direcao: number): Promise
       if (e) return { ok: false, erro: mensagem(e.message) };
     }
   }
+  atualizarTelas();
+  return { ok: true };
+}
+
+// Liga ou desliga uma coluna: desligada, ela some da planilha, mas os valores
+// já lançados continuam guardados. Vale também para o Controle de Folha.
+export async function alternarColunaFolha(tipoId: string, ativar: boolean): Promise<Resultado> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("folha_tipos").update({ ativo: ativar }).eq("id", tipoId).select("id");
+  if (error) return { ok: false, erro: mensagem(error.message) };
+  if (!data || data.length === 0) return { ok: false, erro: "O banco não permitiu alterar esta coluna (sem permissão)." };
   atualizarTelas();
   return { ok: true };
 }

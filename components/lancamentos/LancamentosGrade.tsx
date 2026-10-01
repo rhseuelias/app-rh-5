@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  alternarColunaFolha,
   contarUsoColunaFolha,
   criarColunaFolha,
   editarColunaFolha,
@@ -12,7 +14,7 @@ import {
   salvarPontoLancamento,
 } from "@/lib/actions-lancamentos";
 
-export type GrupoRubrica = "provento" | "desconto" | "espelhamento";
+export type GrupoRubrica = "provento" | "desconto";
 export type FormatoRubrica = "moeda" | "texto" | "sim_nao";
 
 export interface RubricaGrade {
@@ -46,16 +48,20 @@ export interface OpcaoMes {
 
 const COR_P = "#2F62B0";
 const COR_D = "#B04A3A";
-const COR_E = "#5F5C55";
+const COR_DESTAQUE = "#C62828"; // coluna 431 (desconto de vale avulso) em vermelho
 const COR_OK = "#2E7D4F";
 const MONO = "'JetBrains Mono', ui-monospace, monospace";
 
 const GRUPOS: Record<GrupoRubrica, { rotulo: string; curto: string; cor: string }> = {
   provento: { rotulo: "PROVENTOS", curto: "Provento", cor: COR_P },
   desconto: { rotulo: "DESCONTOS", curto: "Desconto", cor: COR_D },
-  espelhamento: { rotulo: "ESPELHAMENTO", curto: "Espelhamento", cor: COR_E },
 };
-const ORDEM_GRUPO: Record<GrupoRubrica, number> = { provento: 0, desconto: 1, espelhamento: 2 };
+const ORDEM_GRUPO: Record<GrupoRubrica, number> = { provento: 0, desconto: 1 };
+
+// A coluna 431 (desconto de vale avulso) fica sempre em vermelho, para chamar atenção.
+function destacada(r: RubricaGrade): boolean {
+  return (r.codigo ?? "").trim() === "431" || /^\s*431\s*-/.test(r.nome);
+}
 
 const FORMATOS: Record<FormatoRubrica, { rotulo: string; exemplo: string; largura: number }> = {
   moeda: { rotulo: "Valor R$", exemplo: "1.250,00", largura: 108 },
@@ -152,7 +158,8 @@ function casaFiltro(f: FuncionarioGrade, chave: string): boolean {
 
 type Selecao = { id: string; k: string | null; n: number } | null;
 type Rascunho = { id?: string; nome: string; cod: string; grupo: GrupoRubrica; formato: FormatoRubrica };
-type EstadoSalvar = { tipo: "parado" | "salvando" | "salvo" | "erro"; msg?: string };
+type Pendente = { timer: ReturnType<typeof setTimeout>; executar: () => void };
+type EstadoSalvar = { tipo: "parado" | "pendente" | "salvando" | "salvo" | "erro"; msg?: string };
 type Chip = { chave: string; rotulo: string; n: number; grupo?: boolean };
 
 export default function LancamentosGrade({
@@ -161,6 +168,7 @@ export default function LancamentosGrade({
   mesFechado,
   opcoesMes,
   rubricas,
+  desabilitadas,
   funcionarios,
   valoresIniciais,
   pontoIniciais,
@@ -171,6 +179,8 @@ export default function LancamentosGrade({
   mesFechado: boolean;
   opcoesMes: OpcaoMes[];
   rubricas: RubricaGrade[];
+  /** colunas desligadas (não aparecem na planilha, mas podem ser habilitadas de novo) */
+  desabilitadas: RubricaGrade[];
   funcionarios: FuncionarioGrade[];
   valoresIniciais: Record<string, Record<string, string>>;
   pontoIniciais: Record<string, string>;
@@ -296,18 +306,77 @@ export default function LancamentosGrade({
   }, [rubs]);
 
   // --------------------------------------------------------------- salvando
+  // Salva sozinho: 0,7 s depois de parar de digitar, ao sair da célula e antes de sair da tela.
+  const pendentes = useRef<Record<string, Pendente>>({});
+  const emVoo = useRef(0);
+  const ultimoErro = useRef<string | null>(null);
+  const fila = useRef<Record<string, Promise<void>>>({});
+
+  function recalcularEstado() {
+    if (emVoo.current > 0) setEstado({ tipo: "salvando" });
+    else if (Object.keys(pendentes.current).length > 0) setEstado({ tipo: "pendente" });
+    else if (ultimoErro.current) setEstado({ tipo: "erro", msg: ultimoErro.current });
+    else setEstado({ tipo: "salvo" });
+  }
+
+  // uma gravação por vez em cada célula, na ordem em que foram pedidas
+  function enfileirar(chave: string, trabalho: () => Promise<void>): Promise<void> {
+    const anterior = fila.current[chave] ?? Promise.resolve();
+    const proxima = anterior.then(trabalho, trabalho);
+    fila.current[chave] = proxima;
+    return proxima;
+  }
+
+  function limparPendente(chave: string) {
+    const p = pendentes.current[chave];
+    if (p) {
+      clearTimeout(p.timer);
+      delete pendentes.current[chave];
+    }
+  }
+
+  function agendar(chave: string, executar: () => void) {
+    limparPendente(chave);
+    const rodar = () => {
+      delete pendentes.current[chave];
+      executar();
+    };
+    pendentes.current[chave] = { timer: setTimeout(rodar, 700), executar: rodar };
+    recalcularEstado();
+  }
+
   async function salvarCelula(colabId: string, rub: RubricaGrade, valor: string) {
     const chave = `${colabId}:${rub.id}`;
-    if ((salvos.current[chave] ?? "") === valor) return;
-    setEstado({ tipo: "salvando" });
-    const r = await salvarCelulaLancamento(competencia, colabId, rub.id, rub.formato, valor);
-    if (r.ok) {
-      salvos.current[chave] = valor;
-      setEstado({ tipo: "salvo" });
-    } else {
-      setEstado({ tipo: "erro", msg: r.erro });
-      mostrarAviso(r.erro);
+    await enfileirar(`c:${chave}`, async () => {
+      if ((salvos.current[chave] ?? "") === valor) return;
+      emVoo.current++;
+      recalcularEstado();
+      const r = await salvarCelulaLancamento(competencia, colabId, rub.id, rub.formato, valor);
+      emVoo.current--;
+      if (r.ok) {
+        salvos.current[chave] = valor;
+        ultimoErro.current = null;
+      } else {
+        ultimoErro.current = r.erro;
+        mostrarAviso(r.erro);
+      }
+      recalcularEstado();
+    });
+  }
+
+  function agendarCelula(colabId: string, rub: RubricaGrade, valor: string) {
+    const limpo = valor.replace(/[R$\s]/g, "");
+    if (rub.formato === "moeda" && !/^-?[\d.,]*$/.test(limpo)) {
+      limparPendente(`c:${colabId}:${rub.id}`); // texto que ainda não é número: espera corrigir
+      recalcularEstado();
+      return;
     }
+    if ((salvos.current[`${colabId}:${rub.id}`] ?? "") === valor) {
+      limparPendente(`c:${colabId}:${rub.id}`);
+      recalcularEstado();
+      return;
+    }
+    agendar(`c:${colabId}:${rub.id}`, () => void salvarCelula(colabId, rub, valor));
   }
 
   function mudarValor(colabId: string, rubId: string, v: string) {
@@ -315,6 +384,7 @@ export default function LancamentosGrade({
   }
 
   function aoSair(colabId: string, rub: RubricaGrade, atual: string) {
+    limparPendente(`c:${colabId}:${rub.id}`);
     let v = atual;
     if (rub.formato === "moeda") {
       const t = atual.trim();
@@ -327,25 +397,62 @@ export default function LancamentosGrade({
   function alternar(colabId: string, rub: RubricaGrade, atual: string, n: number) {
     if (mesFechado) return;
     const novo = atual === "SIM" ? "" : "SIM";
+    limparPendente(`c:${colabId}:${rub.id}`);
     mudarValor(colabId, rub.id, novo);
     escolher(colabId, rub.id, n);
     void salvarCelula(colabId, rub, novo);
   }
 
-  function salvarPonto(colabId: string) {
-    const texto = ponto[colabId] ?? "";
-    if ((pontoSalvo.current[colabId] ?? "") === texto) return;
-    setEstado({ tipo: "salvando" });
-    void salvarPontoLancamento(competencia, colabId, texto).then((r) => {
+  async function gravarPonto(colabId: string, texto: string) {
+    await enfileirar(`p:${colabId}`, async () => {
+      if ((pontoSalvo.current[colabId] ?? "") === texto) return;
+      emVoo.current++;
+      recalcularEstado();
+      const r = await salvarPontoLancamento(competencia, colabId, texto);
+      emVoo.current--;
       if (r.ok) {
         pontoSalvo.current[colabId] = texto;
-        setEstado({ tipo: "salvo" });
+        ultimoErro.current = null;
       } else {
-        setEstado({ tipo: "erro", msg: r.erro });
+        ultimoErro.current = r.erro;
         mostrarAviso(r.erro);
       }
+      recalcularEstado();
     });
   }
+
+  function agendarPonto(colabId: string, texto: string) {
+    if ((pontoSalvo.current[colabId] ?? "") === texto) {
+      limparPendente(`p:${colabId}`);
+      recalcularEstado();
+      return;
+    }
+    agendar(`p:${colabId}`, () => void gravarPonto(colabId, texto));
+  }
+
+  function aoSairPonto(colabId: string, texto: string) {
+    limparPendente(`p:${colabId}`);
+    void gravarPonto(colabId, texto);
+  }
+
+  // ao sair da tela: salva o que estiver esperando e avisa se ainda há gravação em andamento
+  useEffect(() => {
+    const aoFechar = (e: BeforeUnloadEvent) => {
+      if (Object.keys(pendentes.current).length > 0 || emVoo.current > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", aoFechar);
+    return () => {
+      window.removeEventListener("beforeunload", aoFechar);
+      (Object.values(pendentes.current) as Pendente[]).forEach((p) => {
+        clearTimeout(p.timer);
+        p.executar();
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Enter na busca: pula direto para a primeira célula de valor do primeiro resultado
   function irParaPrimeiroResultado() {
@@ -457,6 +564,23 @@ export default function LancamentosGrade({
     });
   }
 
+  function alternarAtiva(r: RubricaGrade, ativar: boolean) {
+    startTransition(async () => {
+      const res = await alternarColunaFolha(r.id, ativar);
+      if (!res.ok) {
+        mostrarAviso(res.erro);
+        return;
+      }
+      mostrarAviso(
+        ativar
+          ? `Coluna "${r.nome}" habilitada: já aparece na planilha.`
+          : `Coluna "${r.nome}" desabilitada: some da planilha, mas os valores continuam guardados.`
+      );
+      setModal(null);
+      router.refresh();
+    });
+  }
+
   function mover(id: string, d: number) {
     startTransition(async () => {
       const r = await moverColunaFolha(id, d);
@@ -466,7 +590,15 @@ export default function LancamentosGrade({
   }
 
   const statusTexto =
-    estado.tipo === "salvando" ? "Salvando…" : estado.tipo === "salvo" ? "Tudo salvo ✓" : estado.tipo === "erro" ? "Erro ao salvar" : "";
+    estado.tipo === "pendente"
+      ? "Digitando… salva em instantes"
+      : estado.tipo === "salvando"
+      ? "Salvando…"
+      : estado.tipo === "salvo"
+      ? "Tudo salvo ✓"
+      : estado.tipo === "erro"
+      ? "Erro ao salvar — veja o aviso"
+      : "Salva sozinho enquanto você digita";
 
   return (
     <div className="space-y-2">
@@ -497,6 +629,12 @@ export default function LancamentosGrade({
         <span className="text-[12.5px] text-white/65">
           {empresas.length} empresa{empresas.length === 1 ? "" : "s"} · {funcionarios.length} funcionários · {rubs.length} colunas
         </span>
+        <Link
+          href={`/departamento-pessoal/lancamentos/relatorio?competencia=${competencia}&escopo=${encodeURIComponent(filtro)}`}
+          className="rounded-md border border-white/30 px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors hover:bg-white/10"
+        >
+          Relatório analítico
+        </Link>
         <button
           type="button"
           onClick={() => setGaveta(true)}
@@ -651,8 +789,11 @@ export default function LancamentosGrade({
                     textAlign: r.formato === "moeda" ? "right" : r.formato === "sim_nao" ? "center" : "left",
                   }}
                 >
-                  <span className="text-[10.5px] font-semibold leading-tight">
-                    <span style={{ fontFamily: MONO, color: GRUPOS[r.grupo].cor }}>{letra(i + 1)} </span>
+                  <span
+                    className="text-[10.5px] font-semibold leading-tight"
+                    style={destacada(r) ? { color: COR_DESTAQUE, fontWeight: 800 } : undefined}
+                  >
+                    <span style={{ fontFamily: MONO, color: destacada(r) ? COR_DESTAQUE : GRUPOS[r.grupo].cor }}>{letra(i + 1)} </span>
                     {r.nome}
                   </span>
                   <span className="text-[10px] text-stone-500" style={{ fontFamily: MONO }}>
@@ -688,7 +829,12 @@ export default function LancamentosGrade({
                       <div
                         key={r.id}
                         className="flex items-center px-2 text-[11.5px] font-semibold"
-                        style={{ justifyContent: r.formato === "moeda" ? "flex-end" : "center", color: GRUPOS[r.grupo].cor, fontFamily: MONO }}
+                        style={{
+                          justifyContent: r.formato === "moeda" ? "flex-end" : "center",
+                          color: destacada(r) ? COR_DESTAQUE : GRUPOS[r.grupo].cor,
+                          fontFamily: MONO,
+                          fontWeight: destacada(r) ? 800 : undefined,
+                        }}
                       >
                         {v}
                       </div>
@@ -738,8 +884,11 @@ export default function LancamentosGrade({
                           aria-label={`Ponto e observações de ${f.nome}`}
                           placeholder="observação do ponto…"
                           onFocus={() => escolher(f.id, "ponto", n)}
-                          onChange={(e) => setPonto((p) => ({ ...p, [f.id]: e.target.value }))}
-                          onBlur={() => salvarPonto(f.id)}
+                          onChange={(e) => {
+                            setPonto((p) => ({ ...p, [f.id]: e.target.value }));
+                            agendarPonto(f.id, e.target.value);
+                          }}
+                          onBlur={(e) => aoSairPonto(f.id, e.target.value)}
                           onKeyDown={(e) => teclar(e, n, 1)}
                           className="h-full w-full bg-transparent px-2 text-[12px] outline-none placeholder:text-stone-300 disabled:cursor-not-allowed"
                         />
@@ -783,7 +932,10 @@ export default function LancamentosGrade({
                               title={r.automatico ? "Coluna calculada pelo sistema (não dá para editar aqui)" : undefined}
                               aria-label={`${r.nome} de ${f.nome}`}
                               onFocus={() => escolher(f.id, r.id, n)}
-                              onChange={(e) => mudarValor(f.id, r.id, e.target.value)}
+                              onChange={(e) => {
+                                mudarValor(f.id, r.id, e.target.value);
+                                agendarCelula(f.id, r, e.target.value);
+                              }}
                               onBlur={(e) => aoSair(f.id, r, e.target.value)}
                               onKeyDown={(e) => teclar(e, n, ci)}
                               inputMode={r.formato === "moeda" ? "decimal" : "text"}
@@ -791,6 +943,8 @@ export default function LancamentosGrade({
                               style={{
                                 textAlign: r.formato === "moeda" ? "right" : "left",
                                 fontFamily: r.formato === "moeda" ? MONO : "Inter, sans-serif",
+                                color: destacada(r) ? COR_DESTAQUE : undefined,
+                                fontWeight: destacada(r) ? 700 : undefined,
                               }}
                             />
                           </div>
@@ -828,7 +982,7 @@ export default function LancamentosGrade({
                 ✕
               </button>
             </div>
-            {(["provento", "desconto", "espelhamento"] as GrupoRubrica[]).map((g) => {
+            {(["provento", "desconto"] as GrupoRubrica[]).map((g) => {
               const itens = rubs.map((r, i) => ({ r, i })).filter((x) => x.r.grupo === g);
               return (
                 <div key={g}>
@@ -875,12 +1029,59 @@ export default function LancamentosGrade({
                         <button type="button" onClick={() => abrirColuna(x.r)} className="text-xs text-blue-700 hover:underline">
                           Editar
                         </button>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={true}
+                          aria-label={`Desabilitar a coluna ${x.r.nome}`}
+                          title="Desabilitar coluna (some da planilha, os valores ficam guardados)"
+                          disabled={isPending}
+                          onClick={() => alternarAtiva(x.r, false)}
+                          className="relative h-5 w-9 shrink-0 rounded-full bg-emerald-600 transition-colors disabled:opacity-50"
+                        >
+                          <span className="absolute left-[18px] top-0.5 h-4 w-4 rounded-full bg-white shadow" />
+                        </button>
                       </li>
                     ))}
                   </ul>
                 </div>
               );
             })}
+
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[11px] font-bold tracking-[0.08em] text-stone-500">DESABILITADAS · {desabilitadas.length}</span>
+              </div>
+              <ul className="divide-y divide-stone-200 rounded-lg border border-dashed border-stone-300 bg-white">
+                {desabilitadas.length === 0 && <li className="px-3 py-2 text-xs text-stone-400">Nenhuma coluna desabilitada.</li>}
+                {desabilitadas.map((r) => (
+                  <li key={r.id} className="flex items-center gap-2 px-3 py-1.5">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-medium text-stone-500 line-through decoration-stone-300">{r.nome}</span>
+                      <span className="block text-[10.5px] text-stone-400" style={{ fontFamily: MONO }}>
+                        {GRUPOS[r.grupo].curto}
+                        {r.codigo ? ` · cód. ${r.codigo}` : ""}
+                      </span>
+                    </span>
+                    <button type="button" onClick={() => abrirColuna(r)} className="text-xs text-blue-700 hover:underline">
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={false}
+                      aria-label={`Habilitar a coluna ${r.nome}`}
+                      title="Habilitar coluna (volta para a planilha)"
+                      disabled={isPending}
+                      onClick={() => alternarAtiva(r, true)}
+                      className="relative h-5 w-9 shrink-0 rounded-full bg-stone-300 transition-colors disabled:opacity-50"
+                    >
+                      <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </aside>
         </div>
       )}
@@ -925,7 +1126,7 @@ export default function LancamentosGrade({
             <div>
               <p className="label">GRUPO</p>
               <div className="flex gap-2">
-                {(["provento", "desconto", "espelhamento"] as GrupoRubrica[]).map((g) => (
+                {(["provento", "desconto"] as GrupoRubrica[]).map((g) => (
                   <button
                     key={g}
                     type="button"
@@ -980,6 +1181,22 @@ export default function LancamentosGrade({
                   {modal.confirmar ? "Confirmar exclusão" : "Excluir coluna"}
                 </button>
               )}
+              {modal.d.id &&
+                (() => {
+                  const alvo = [...rubs, ...desabilitadas].find((x) => x.id === modal.d.id);
+                  if (!alvo) return null;
+                  const ativa = rubs.some((x) => x.id === alvo.id);
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => alternarAtiva(alvo, !ativa)}
+                      disabled={isPending}
+                      className="rounded-md border border-stone-300 px-3 py-1.5 text-[13px] font-medium text-ink-800 hover:bg-stone-50 disabled:opacity-50"
+                    >
+                      {ativa ? "Desabilitar" : "Habilitar"}
+                    </button>
+                  );
+                })()}
               <span className="flex-1" />
               <button type="button" onClick={() => setModal(null)} className="btn-secondary !text-[13px] !py-1.5">
                 Cancelar
