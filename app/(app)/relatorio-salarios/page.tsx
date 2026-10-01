@@ -2,49 +2,13 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, Unidade } from "@/types/db";
-import { custoDetalhado, custoMensalColaborador } from "@/lib/calculos";
+import { adicionaisDe, totalizar, SEM_UNIDADE, MESES } from "@/lib/relatorio-salarios";
 import { corDaEmpresa } from "@/lib/empresa-cores";
 import ImprimirBotao from "@/components/ImprimirBotao";
 
 export const dynamic = "force-dynamic";
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
-const MESES = [
-  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
-];
-
-/** Tudo que vem além do salário base: comissão, auxílios e benefícios. */
-function adicionaisDe(c: Colaborador) {
-  const comissaoAux = (c.comissao_media ?? 0) + (c.auxilio_outros ?? 0);
-  const beneficios =
-    (c.custo_vt ?? 0) + (c.custo_va_vr ?? 0) + (c.custo_assist_medica ?? 0) + (c.custo_assist_psicologica ?? 0);
-  return { comissaoAux, beneficios, total: comissaoAux + beneficios };
-}
-
-/** Soma os números de um grupo de colaboradores CLT (uma empresa). */
-function totalizar(lista: Colaborador[]) {
-  let salarios = 0;
-  let adicionais = 0;
-  let remuneracao = 0;
-  let tributos = 0;
-  let passivo = 0;
-  let custo = 0;
-  for (const c of lista) {
-    const ad = adicionaisDe(c);
-    const d = custoDetalhado(c);
-    salarios += c.salario_base ?? 0;
-    adicionais += ad.total;
-    remuneracao += d.remuneracao;
-    tributos += d.tributos;
-    passivo += d.passivoTrabalhista;
-    custo += custoMensalColaborador(c);
-  }
-  const inss = remuneracao * 0.2;
-  const fgts = remuneracao * 0.08;
-  return { salarios, adicionais, folha: salarios + adicionais, inss, fgts, tributos, passivo, custo };
-}
 
 export default async function RelatorioSalariosPage({
   searchParams,
@@ -77,6 +41,13 @@ export default async function RelatorioSalariosPage({
   const agora = new Date();
   const competencia = `${MESES[agora.getMonth()]}/${agora.getFullYear()}`;
 
+  // link do botão "Baixar Excel": baixa o mesmo que está na tela (empresa e unidade escolhidas)
+  const hrefExcel = modoGrupo
+    ? "/api/relatorio-salarios/excel?empresa=grupo"
+    : `/api/relatorio-salarios/excel?empresa=${empresaAtual?.id ?? ""}${
+        searchParams.unidade ? `&unidade=${encodeURIComponent(searchParams.unidade)}` : ""
+      }`;
+
   // ---------- abas ----------
   const abas = (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
@@ -104,7 +75,10 @@ export default async function RelatorioSalariosPage({
       >
         Resumo do Grupo
       </Link>
-      <div className="ml-auto">
+      <div className="ml-auto flex flex-wrap items-center gap-2">
+        <a href={hrefExcel} className="btn-secondary !text-sm !py-2 !px-5 print:hidden">
+          📊 Baixar Excel
+        </a>
         <ImprimirBotao />
       </div>
     </div>
@@ -182,7 +156,6 @@ export default async function RelatorioSalariosPage({
   const listaEmpresa = cltPorEmpresa(empresaAtual.id).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
   // ---------- unidades da empresa (ex.: as 7 unidades da BSE) ----------
-  const SEM_UNIDADE = "sem";
   const nomeUnidadePorId: Record<string, string> = Object.fromEntries(
     ((unidades ?? []) as Unidade[]).map((u) => [u.id, u.nome])
   );
