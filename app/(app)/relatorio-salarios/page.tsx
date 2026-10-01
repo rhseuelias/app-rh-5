@@ -1,6 +1,7 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
-import type { Colaborador, Empresa } from "@/types/db";
+import type { Colaborador, Empresa, Unidade } from "@/types/db";
 import { custoDetalhado, custoMensalColaborador } from "@/lib/calculos";
 import { corDaEmpresa } from "@/lib/empresa-cores";
 import ImprimirBotao from "@/components/ImprimirBotao";
@@ -48,16 +49,17 @@ function totalizar(lista: Colaborador[]) {
 export default async function RelatorioSalariosPage({
   searchParams,
 }: {
-  searchParams: { empresa?: string };
+  searchParams: { empresa?: string; unidade?: string };
 }) {
   const supabase = createClient();
-  const [{ data: colaboradores }, { data: empresas }] = await Promise.all([
+  const [{ data: colaboradores }, { data: empresas }, { data: unidades }] = await Promise.all([
     supabase
       .from("colaboradores")
       .select("*")
       .eq("tipo", "CLT")
       .in("status", ["ativo", "experiencia"]),
     supabase.from("empresas").select("*"),
+    supabase.from("unidades").select("*"),
   ]);
 
   const clt = (colaboradores ?? []) as Colaborador[];
@@ -120,7 +122,7 @@ export default async function RelatorioSalariosPage({
       <div className="space-y-5">
         <div className="print:hidden">
           <h1 className="text-2xl font-semibold text-slate-900">Relatório de Salários e Custo</h1>
-          <p className="text-slate-500 text-sm">Para apresentar à diretoria — colaboradores CLT, uma página por empresa.</p>
+          <p className="text-slate-500 text-sm">Para apresentar à diretoria — colaboradores CLT, por empresa e por unidade.</p>
         </div>
         {abas}
         <article className="card !p-0 overflow-hidden">
@@ -177,22 +179,85 @@ export default async function RelatorioSalariosPage({
     );
   }
 
-  const lista = cltPorEmpresa(empresaAtual.id).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const listaEmpresa = cltPorEmpresa(empresaAtual.id).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+
+  // ---------- unidades da empresa (ex.: as 7 unidades da BSE) ----------
+  const SEM_UNIDADE = "sem";
+  const nomeUnidadePorId: Record<string, string> = Object.fromEntries(
+    ((unidades ?? []) as Unidade[]).map((u) => [u.id, u.nome])
+  );
+  const opcoesUnidade = Array.from(new Set(listaEmpresa.map((c) => c.unidade_id ?? SEM_UNIDADE)))
+    .map((id) => ({ id, nome: id === SEM_UNIDADE ? "Sem unidade" : nomeUnidadePorId[id] ?? "Unidade" }))
+    .sort((a, b) =>
+      a.id === SEM_UNIDADE ? 1 : b.id === SEM_UNIDADE ? -1 : a.nome.localeCompare(b.nome, "pt-BR")
+    );
+  const temVariasUnidades = opcoesUnidade.length > 1;
+  // null = "todas as unidades" (o padrão): o relatório mostra todas, uma depois da outra
+  const unidadeEscolhida = temVariasUnidades
+    ? opcoesUnidade.find((o) => o.id === searchParams.unidade) ?? null
+    : null;
+  const mostrarGrupos = temVariasUnidades && !unidadeEscolhida;
+
+  const lista = unidadeEscolhida
+    ? listaEmpresa.filter((c) => (c.unidade_id ?? SEM_UNIDADE) === unidadeEscolhida.id)
+    : listaEmpresa;
+  const grupos = (unidadeEscolhida ? [unidadeEscolhida] : opcoesUnidade).map((o) => {
+    const doGrupo = lista.filter((c) => (c.unidade_id ?? SEM_UNIDADE) === o.id);
+    return { ...o, lista: doGrupo, t: totalizar(doGrupo) };
+  });
+  const titulo = unidadeEscolhida
+    ? `${empresaAtual.nome} — ${unidadeEscolhida.nome}`
+    : mostrarGrupos
+      ? `${empresaAtual.nome} — todas as unidades`
+      : empresaAtual.nome;
+
   const t = totalizar(lista);
   const pct = (v: number) => (t.custo > 0 ? (v / t.custo) * 100 : 0);
   const media = lista.length > 0 ? t.custo / lista.length : 0;
   const salMedio = lista.length > 0 ? t.salarios / lista.length : 0;
 
+  const hrefUnidade = (id?: string) =>
+    `/relatorio-salarios?empresa=${empresaAtual.id}${id ? `&unidade=${id}` : ""}`;
+
+  const chipsUnidade = temVariasUnidades ? (
+    <div className="flex flex-wrap items-center gap-2 print:hidden">
+      <span className="text-sm font-semibold text-slate-600 mr-1">Unidade:</span>
+      <Link
+        href={hrefUnidade()}
+        className={`rounded-full px-3.5 py-1.5 text-sm font-bold border-2 transition-colors ${
+          !unidadeEscolhida ? "bg-ink-900 text-white border-ink-900" : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+        }`}
+      >
+        Todas as unidades
+      </Link>
+      {opcoesUnidade.map((o) => {
+        const ativa = unidadeEscolhida?.id === o.id;
+        return (
+          <Link
+            key={o.id}
+            href={hrefUnidade(o.id)}
+            className={`rounded-full px-3.5 py-1.5 text-sm font-bold border-2 transition-colors ${
+              ativa ? "bg-brand-600 text-white border-brand-600" : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+            }`}
+          >
+            {o.nome}
+          </Link>
+        );
+      })}
+    </div>
+  ) : null;
+
   return (
     <div className="space-y-5">
       <div className="print:hidden">
         <h1 className="text-2xl font-semibold text-slate-900">Relatório de Salários e Custo</h1>
-        <p className="text-slate-500 text-sm">Para apresentar à diretoria — colaboradores CLT, uma página por empresa.</p>
+        <p className="text-slate-500 text-sm">Para apresentar à diretoria — colaboradores CLT, por empresa e por unidade.</p>
       </div>
       {abas}
+      {chipsUnidade}
 
       <article className="card !p-0 overflow-hidden">
-        <Cabecalho titulo={empresaAtual.nome} competencia={competencia} />
+        <Cabecalho titulo={titulo} competencia={competencia} />
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-5 sm:px-6 bg-brand-50 border-b border-slate-200">
           <Kpi rotulo="Colaboradores CLT" valor={String(lista.length)} />
@@ -202,6 +267,48 @@ export default async function RelatorioSalariosPage({
         </div>
 
         <div className="p-5 sm:p-6">
+          {mostrarGrupos && (
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold text-ink-800 mb-2">Resumo por unidade</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-ink-900 text-white text-left">
+                      <th className="py-3 px-3">Unidade</th>
+                      <th className="py-3 px-3 text-right">CLT</th>
+                      <th className="py-3 px-3 text-right">Salários</th>
+                      <th className="py-3 px-3 text-right">Adicionais</th>
+                      <th className="py-3 px-3 text-right">Custo total</th>
+                      <th className="py-3 px-3 text-right">% do custo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grupos.map((g) => (
+                      <tr key={g.id} className="border-b border-slate-100 even:bg-slate-50">
+                        <td className="py-2.5 px-3 font-bold text-slate-900">{g.nome}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums">{g.lista.length}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums">{brl(g.t.salarios)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums">{brl(g.t.adicionais)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums font-bold">{brl(g.t.custo)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums">{pct(g.t.custo).toFixed(0)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-brand-50 font-extrabold border-t-2 border-brand-600">
+                      <td className="py-3 px-3">TOTAL — {empresaAtual.nome}</td>
+                      <td className="py-3 px-3 text-right tabular-nums">{lista.length}</td>
+                      <td className="py-3 px-3 text-right tabular-nums">{brl(t.salarios)}</td>
+                      <td className="py-3 px-3 text-right tabular-nums">{brl(t.adicionais)}</td>
+                      <td className="py-3 px-3 text-right tabular-nums">{brl(t.custo)}</td>
+                      <td className="py-3 px-3 text-right tabular-nums">100%</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
           <h2 className="text-lg font-semibold text-ink-800 mb-2">Relação de colaboradores</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -215,25 +322,46 @@ export default async function RelatorioSalariosPage({
                 </tr>
               </thead>
               <tbody>
-                {lista.map((c) => {
-                  const ad = adicionaisDe(c);
-                  return (
-                    <tr key={c.id} className="border-b border-slate-100 even:bg-slate-50 align-top">
-                      <td className="py-2.5 px-3 font-bold text-slate-900">{c.nome}</td>
-                      <td className="py-2.5 px-3 text-slate-600">{c.cargo ?? "—"}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums">{brl(c.salario_base ?? 0)}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums">
-                        {brl(ad.total)}
-                        <span className="block text-xs text-slate-500">
-                          comissão/aux. {brl(ad.comissaoAux)} · benef. {brl(ad.beneficios)}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums font-bold">
-                        {brl((c.salario_base ?? 0) + ad.total)}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {grupos.map((g) => (
+                  <Fragment key={g.id}>
+                    {mostrarGrupos && g.lista.length > 0 && (
+                      <tr className="bg-brand-100">
+                        <td colSpan={5} className="py-2 px-3 font-extrabold text-brand-700">
+                          {g.nome} · {g.lista.length} colaborador{g.lista.length === 1 ? "" : "es"}
+                        </td>
+                      </tr>
+                    )}
+                    {g.lista.map((c) => {
+                      const ad = adicionaisDe(c);
+                      return (
+                        <tr key={c.id} className="border-b border-slate-100 even:bg-slate-50 align-top">
+                          <td className="py-2.5 px-3 font-bold text-slate-900">{c.nome}</td>
+                          <td className="py-2.5 px-3 text-slate-600">{c.cargo ?? "—"}</td>
+                          <td className="py-2.5 px-3 text-right tabular-nums">{brl(c.salario_base ?? 0)}</td>
+                          <td className="py-2.5 px-3 text-right tabular-nums">
+                            {brl(ad.total)}
+                            <span className="block text-xs text-slate-500">
+                              comissão/aux. {brl(ad.comissaoAux)} · benef. {brl(ad.beneficios)}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right tabular-nums font-bold">
+                            {brl((c.salario_base ?? 0) + ad.total)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {mostrarGrupos && g.lista.length > 0 && (
+                      <tr className="bg-slate-100 font-bold border-b-2 border-slate-300">
+                        <td className="py-2.5 px-3" colSpan={2}>
+                          Subtotal {g.nome}
+                        </td>
+                        <td className="py-2.5 px-3 text-right tabular-nums">{brl(g.t.salarios)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums">{brl(g.t.adicionais)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums">{brl(g.t.folha)}</td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
                 {lista.length === 0 && (
                   <tr>
                     <td colSpan={5} className="py-8 text-center text-slate-400">
