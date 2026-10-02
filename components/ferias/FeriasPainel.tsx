@@ -78,7 +78,7 @@ interface Amortizar {
   periodoId: string;
   edit: string | null; // id do registro sendo corrigido
   inicio: string;
-  fim: string;
+  dias: number | string;
   abono: boolean;
   confirmarExcluir: string | null;
 }
@@ -353,7 +353,7 @@ export default function FeriasPainel({
       periodoId,
       edit: null,
       inicio: "",
-      fim: "",
+      dias: Math.max(1, Math.min(30, saldoPeriodo(p, periodoId))),
       abono: p.per.some((x) => x.pid === periodoId && x.ab),
       confirmarExcluir: null,
     });
@@ -362,7 +362,7 @@ export default function FeriasPainel({
     setDr(null);
     const p = pid ? porId.get(pid) : undefined;
     if (!p) {
-      setAm({ pid: "", periodoId: "", edit: null, inicio: "", fim: "", abono: false, confirmarExcluir: null });
+      setAm({ pid: "", periodoId: "", edit: null, inicio: "", dias: 15, abono: false, confirmarExcluir: null });
       return;
     }
     escolherPeriodoAm(p, p.aq?.id ?? p.periodos[0]?.id ?? "");
@@ -373,18 +373,20 @@ export default function FeriasPainel({
   const pessoaAm = am?.pid ? porId.get(am.pid) : undefined;
   const periodoAm = pessoaAm?.periodos.find((x) => x.id === am?.periodoId);
   const itensAm = pessoaAm && periodoAm ? pessoaAm.per.filter((x) => x.pid === periodoAm.id) : [];
+  const diasAm = Math.round(Number(am?.dias) || 0);
+  const fimAm = am && am.inicio && diasAm >= 1 ? somarDias(am.inicio, diasAm - 1) : "";
   const validacaoAm = useMemo(() => {
     if (!am || !pessoaAm || !periodoAm) return null;
     return validarAmortizacao({
       hoje,
       inicio: am.inicio,
-      fim: am.fim,
+      fim: fimAm,
       outrosDias: itensAm.filter((x) => x.id !== am.edit).map((x) => x.d),
       abono: am.abono,
       outros: pessoaAm.per.filter((x) => x.id !== am.edit).map((x) => ({ i: x.i, f: fimDe(x) })),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [am, pessoaAm, periodoAm, hoje]);
+  }, [am, pessoaAm, periodoAm, hoje, fimAm]);
 
   function salvarAm() {
     if (!am || !pessoaAm || !validacaoAm || validacaoAm.erros.length > 0) return;
@@ -393,14 +395,14 @@ export default function FeriasPainel({
       periodoId: am.periodoId,
       feriasId: am.edit,
       inicio: am.inicio,
-      fim: am.fim,
+      fim: fimAm,
       abono: am.abono,
     };
     startTransition(async () => {
       const r = await amortizarFerias(entrada);
       avisar(r.mensagem);
       if (r.ok) {
-        setAm((a) => (a ? { ...a, edit: null, inicio: "", fim: "", confirmarExcluir: null } : a));
+        setAm((a) => (a ? { ...a, edit: null, inicio: "", confirmarExcluir: null } : a));
         router.refresh();
       }
     });
@@ -415,7 +417,7 @@ export default function FeriasPainel({
       const r = await excluirFeriasAmortizada(id);
       avisar(r.mensagem);
       if (r.ok) {
-        setAm((a) => (a ? { ...a, edit: a.edit === id ? null : a.edit, inicio: a.edit === id ? "" : a.inicio, fim: a.edit === id ? "" : a.fim, confirmarExcluir: null } : a));
+        setAm((a) => (a ? { ...a, edit: a.edit === id ? null : a.edit, inicio: a.edit === id ? "" : a.inicio, confirmarExcluir: null } : a));
         router.refresh();
       }
     });
@@ -1325,7 +1327,7 @@ export default function FeriasPainel({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-[1fr_110px] gap-3">
                     <label className="flex flex-col gap-1.5">
                       <span className={rotuloMini}>Início das férias</span>
                       <input
@@ -1337,22 +1339,41 @@ export default function FeriasPainel({
                       />
                     </label>
                     <label className="flex flex-col gap-1.5">
-                      <span className={rotuloMini}>Fim das férias</span>
+                      <span className={rotuloMini}>Quantos dias</span>
                       <input
-                        type="date"
-                        value={am.fim}
-                        min={am.inicio || undefined}
-                        max={somarDias(hoje, -1)}
-                        onChange={(e) => patchAm({ fim: e.target.value })}
-                        className="text-[14px] font-medium px-3 py-[9px] border border-[#e7ddd2] rounded-lg"
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={am.dias}
+                        onChange={(e) => patchAm({ dias: e.target.value })}
+                        className="text-[14px] font-medium px-3 py-[9px] border border-[#e7ddd2] rounded-lg w-full"
                       />
                     </label>
                   </div>
-                  {validacaoAm.dias > 0 && (
-                    <p className="text-[13px] -mt-3 text-[#3d3d3d]">
-                      Total: <b>{validacaoAm.dias} dia{validacaoAm.dias !== 1 ? "s" : ""}</b>
+                  <div className="flex gap-1.5 -mt-2">
+                    {[30, 20, 15, 14, 10, 5].map((n) => (
+                      <button
+                        type="button"
+                        key={n}
+                        onClick={() => patchAm({ dias: n })}
+                        className="flex-1 text-center text-[12px] font-semibold py-1.5 rounded-md"
+                        style={{
+                          background: diasAm === n ? "#262626" : "#f4ebe1",
+                          color: diasAm === n ? "#fff" : "#3d3d3d",
+                        }}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  {am.inicio && fimAm && (
+                    <p className="text-[13px] -mt-2 text-[#3d3d3d]">
+                      Período: <b>{fComSemana(am.inicio)}</b> a <b>{fComSemana(fimAm)}</b> · {diasAm} dia{diasAm !== 1 ? "s" : ""}
                     </p>
                   )}
+                  <p className="text-[12px] -mt-3 text-[#737373]">
+                    Se não souber a data exata, use uma data aproximada. O que vale para o saldo é a quantidade de dias.
+                  </p>
 
                   <button type="button" onClick={() => patchAm({ abono: !am.abono })} className="flex justify-between items-center gap-3 text-left">
                     <span className="flex flex-col gap-0.5">
@@ -1367,8 +1388,8 @@ export default function FeriasPainel({
                     </span>
                   </button>
 
-                  {(am.inicio || am.fim) && validacaoAm.erros.map((e) => <Mensagem key={e} icone="!" fg="#b42318" bg="#fdecea" t={e} />)}
-                  {(am.inicio || am.fim) && validacaoAm.erros.length === 0 && (
+                  {am.inicio && validacaoAm.erros.map((e) => <Mensagem key={e} icone="!" fg="#b42318" bg="#fdecea" t={e} />)}
+                  {am.inicio && validacaoAm.erros.length === 0 && (
                     <Mensagem icone="✓" fg="#1f7a52" bg="#e6f4ec" t={`Pronto para ${am.edit ? "salvar a correção" : "registrar"}: ${validacaoAm.dias} dias.`} />
                   )}
 
@@ -1397,7 +1418,7 @@ export default function FeriasPainel({
                                 <button
                                   type="button"
                                   disabled={pendente}
-                                  onClick={() => setAm({ ...am, edit: x.id, inicio: x.i, fim: fimDe(x), abono: itensAm.some((y) => y.ab), confirmarExcluir: null })}
+                                  onClick={() => setAm({ ...am, edit: x.id, inicio: x.i, dias: x.d, abono: itensAm.some((y) => y.ab), confirmarExcluir: null })}
                                   className="text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-[#e7ddd2] bg-white"
                                 >
                                   Editar
@@ -1433,7 +1454,7 @@ export default function FeriasPainel({
               {am.edit ? (
                 <button
                   type="button"
-                  onClick={() => patchAm({ edit: null, inicio: "", fim: "" })}
+                  onClick={() => patchAm({ edit: null, inicio: "" })}
                   className="flex-1 text-[13px] font-semibold py-[11px] rounded-lg border border-[#e7ddd2] bg-white"
                 >
                   Cancelar correção

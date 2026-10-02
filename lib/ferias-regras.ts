@@ -179,7 +179,7 @@ export function validarAmortizacao(e: EntradaAmortizacao): ResultadoAmortizacao 
   const disp = 30 - e.outrosDias.reduce((a, b) => a + b, 0) - (e.abono ? 10 : 0);
   let dias = 0;
   if (!e.inicio || !e.fim) {
-    erros.push("Escolha a data de início e a data de fim.");
+    erros.push("Escolha a data de início e quantos dias de férias.");
   } else if (e.fim < e.inicio) {
     erros.push("A data de fim não pode ser antes da data de início.");
   } else {
