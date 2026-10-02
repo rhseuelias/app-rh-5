@@ -13,10 +13,12 @@ import {
   proximoInicioValido,
   somarDias,
   sugerirInicio,
+  validarAmortizacao,
   validarLancamento,
   valorFeriasEstimado,
 } from "@/lib/ferias-regras";
 import { aprovarFeriasColaborador, excluirPeriodoFerias, lancarFeriasPainel } from "@/lib/actions-ferias-painel";
+import { amortizarFerias, excluirFeriasAmortizada } from "@/lib/actions-ferias-amortizar";
 
 // ------------------------------------------------------------
 // Tipos (o servidor monta isso em app/(app)/ferias/page.tsx)
@@ -28,6 +30,16 @@ export interface PeriodoFerias {
   st: "planejada" | "aprovado";
   /** período aquisitivo ao qual pertence (null = antigo, sem vínculo) */
   pid: string | null;
+  /** este registro carrega a marca de "vendeu 10 dias" (abono) do período */
+  ab: boolean;
+}
+
+export interface PeriodoAquisitivoLinha {
+  id: string;
+  ini: string;
+  fim: string;
+  limite: string;
+  status: string;
 }
 
 export interface PessoaFerias {
@@ -41,6 +53,8 @@ export interface PessoaFerias {
   aq: { id: string; ini: string; fim: string; limite: string } | null;
   abono: boolean;
   per: PeriodoFerias[];
+  /** todos os períodos aquisitivos dele (inclusive os já gozados) */
+  periodos: PeriodoAquisitivoLinha[];
 }
 
 export interface OpcaoSimples {
@@ -59,6 +73,15 @@ interface Props {
 }
 
 type Situacao = "vencida" | "vencendo" | "programar" | "programada" | "emdia";
+interface Amortizar {
+  pid: string;
+  periodoId: string;
+  edit: string | null; // id do registro sendo corrigido
+  inicio: string;
+  fim: string;
+  abono: boolean;
+  confirmarExcluir: string | null;
+}
 interface Rascunho {
   pid: string;
   edit: string | null; // id do período sendo remarcado
@@ -111,12 +134,16 @@ export default function FeriasPainel({
   const [ano, setAno] = useState(anoInicial);
   const [empresaSel, setEmpresaSel] = useState("");
   const [dr, setDr] = useState<Rascunho | null>(null);
+  const [am, setAm] = useState<Amortizar | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setDr(null);
+      if (e.key === "Escape") {
+        setDr(null);
+        setAm(null);
+      }
     };
     window.addEventListener("keydown", k);
     return () => {
@@ -282,6 +309,7 @@ export default function FeriasPainel({
   // Painel de lançamento
   // ------------------------------------------------------------
   function abrirNovo(pid?: string, inicio?: string) {
+    setAm(null);
     if (!pid) {
       setDr({ pid: "", edit: null, inicio: "", dias: 30, abono: false, st: "planejada", travado: false });
       return;
@@ -304,12 +332,94 @@ export default function FeriasPainel({
     }));
   }
   function abrirEdit(pid: string, feriasId: string) {
+    setAm(null);
     const p = porId.get(pid);
     const x = p?.per.find((y) => y.id === feriasId);
     if (!p || !x) return;
     setDr({ pid, edit: feriasId, inicio: x.i, dias: x.d, abono: p.abono, st: x.st, travado: true });
   }
   const patch = (parcial: Partial<Rascunho>) => setDr((a) => (a ? { ...a, ...parcial } : a));
+
+  // ------------------------------------------------------------
+  // Amortizar férias antigas (já tiradas e ainda não registradas)
+  // ------------------------------------------------------------
+  const saldoPeriodo = (p: PessoaFerias, periodoId: string) => {
+    const itens = p.per.filter((x) => x.pid === periodoId);
+    return 30 - itens.reduce((s, x) => s + x.d, 0) - (itens.some((x) => x.ab) ? 10 : 0);
+  };
+  function escolherPeriodoAm(p: PessoaFerias, periodoId: string) {
+    setAm({
+      pid: p.id,
+      periodoId,
+      edit: null,
+      inicio: "",
+      fim: "",
+      abono: p.per.some((x) => x.pid === periodoId && x.ab),
+      confirmarExcluir: null,
+    });
+  }
+  function abrirAmortizar(pid?: string) {
+    setDr(null);
+    const p = pid ? porId.get(pid) : undefined;
+    if (!p) {
+      setAm({ pid: "", periodoId: "", edit: null, inicio: "", fim: "", abono: false, confirmarExcluir: null });
+      return;
+    }
+    escolherPeriodoAm(p, p.aq?.id ?? p.periodos[0]?.id ?? "");
+  }
+  const patchAm = (parcial: Partial<Amortizar>) =>
+    setAm((a) => (a ? { ...a, ...parcial, confirmarExcluir: null } : a));
+
+  const pessoaAm = am?.pid ? porId.get(am.pid) : undefined;
+  const periodoAm = pessoaAm?.periodos.find((x) => x.id === am?.periodoId);
+  const itensAm = pessoaAm && periodoAm ? pessoaAm.per.filter((x) => x.pid === periodoAm.id) : [];
+  const validacaoAm = useMemo(() => {
+    if (!am || !pessoaAm || !periodoAm) return null;
+    return validarAmortizacao({
+      hoje,
+      inicio: am.inicio,
+      fim: am.fim,
+      outrosDias: itensAm.filter((x) => x.id !== am.edit).map((x) => x.d),
+      abono: am.abono,
+      outros: pessoaAm.per.filter((x) => x.id !== am.edit).map((x) => ({ i: x.i, f: fimDe(x) })),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [am, pessoaAm, periodoAm, hoje]);
+
+  function salvarAm() {
+    if (!am || !pessoaAm || !validacaoAm || validacaoAm.erros.length > 0) return;
+    const entrada = {
+      colaboradorId: pessoaAm.id,
+      periodoId: am.periodoId,
+      feriasId: am.edit,
+      inicio: am.inicio,
+      fim: am.fim,
+      abono: am.abono,
+    };
+    startTransition(async () => {
+      const r = await amortizarFerias(entrada);
+      avisar(r.mensagem);
+      if (r.ok) {
+        setAm((a) => (a ? { ...a, edit: null, inicio: "", fim: "", confirmarExcluir: null } : a));
+        router.refresh();
+      }
+    });
+  }
+  function excluirAm(id: string) {
+    if (!am) return;
+    if (am.confirmarExcluir !== id) {
+      setAm({ ...am, confirmarExcluir: id });
+      return;
+    }
+    startTransition(async () => {
+      const r = await excluirFeriasAmortizada(id);
+      avisar(r.mensagem);
+      if (r.ok) {
+        setAm((a) => (a ? { ...a, edit: a.edit === id ? null : a.edit, inicio: a.edit === id ? "" : a.inicio, fim: a.edit === id ? "" : a.fim, confirmarExcluir: null } : a));
+        router.refresh();
+      }
+    });
+  }
 
   const pessoaDr = dr?.pid ? porId.get(dr.pid) : undefined;
   const validacao = useMemo(() => {
@@ -411,7 +521,17 @@ export default function FeriasPainel({
   const opcoesPessoa = [...lista]
     .filter((p) => !!p.aq)
     .sort((a, b) => ordemUrg[situacaoDe(a)] - ordemUrg[situacaoDe(b)])
-    .map((p) => ({ id: p.id, label: `${p.nome} · ${Math.max(0, saldoDe(p))} dias a marcar` }));
+    .map((p) => ({
+      id: p.id,
+      nome: p.nome,
+      empresaId: p.empresaId,
+      label: `${p.nome} · ${Math.max(0, saldoDe(p))} dias a marcar`,
+    }));
+
+  const opcoesAm = [...lista]
+    .filter((p) => p.periodos.length > 0)
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+    .map((p) => ({ id: p.id, nome: p.nome, empresaId: p.empresaId, label: `${p.nome}${p.empresa ? ` · ${p.empresa}` : ""}` }));
 
   const emDia = dr && validacao && pessoaDr;
 
@@ -466,6 +586,9 @@ export default function FeriasPainel({
           <Link href="/ferias/simulacao" className={botaoClaro}>
             Simulação
           </Link>
+          <button type="button" onClick={() => abrirAmortizar()} className={botaoClaro}>
+            Amortizar férias antigas
+          </button>
           {mostrarValores && (
             <Link href="/ferias/importar-relatorio" className={botaoClaro}>
               Importar relatório
@@ -934,25 +1057,18 @@ export default function FeriasPainel({
             </div>
 
             <div className="flex-1 overflow-auto px-7 py-6 flex flex-col gap-5">
-              <label className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5">
                 <span className={rotuloMini}>Colaborador</span>
-                <select
-                  value={dr.pid}
-                  onChange={(e) => abrirNovo(e.target.value)}
-                  disabled={dr.travado}
-                  className="text-[14px] font-medium px-3 py-2.5 border border-[#e7ddd2] rounded-lg bg-white"
-                >
-                  <option value="">Escolha quem vai sair de férias</option>
-                  {opcoesPessoa.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.label}
-                    </option>
-                  ))}
-                  {dr.pid && !opcoesPessoa.some((o) => o.id === dr.pid) && pessoaDr && (
-                    <option value={dr.pid}>{pessoaDr.nome}</option>
-                  )}
-                </select>
-              </label>
+                <SeletorColaborador
+                  opcoes={opcoesPessoa}
+                  empresas={empresas}
+                  valor={dr.pid}
+                  nomeValor={pessoaDr?.nome ?? ""}
+                  bloqueado={dr.travado}
+                  vazio="Escolha quem vai sair de férias"
+                  onEscolher={(id) => abrirNovo(id)}
+                />
+              </div>
 
               {emDia && pessoaDr.aq && (
                 <div className="flex flex-col gap-5">
@@ -1130,6 +1246,225 @@ export default function FeriasPainel({
         </>
       )}
 
+      {/* Painel lateral: amortizar férias antigas */}
+      {am && (
+        <>
+          <div onClick={() => setAm(null)} className="fixed inset-0 z-20" style={{ background: "rgba(38,38,38,.18)" }} />
+          <div
+            className="fixed top-0 right-0 bottom-0 w-full sm:w-[440px] bg-white z-[21] flex flex-col"
+            style={{ boxShadow: "-20px 0 60px -20px rgba(61,40,20,.35)", fontFamily: INTER }}
+            role="dialog"
+            aria-label="Amortizar férias antigas"
+          >
+            <div className="flex justify-between items-center px-7 py-6 border-b border-[#f4ebe1]">
+              <div className="text-[22px] leading-none font-semibold uppercase" style={{ fontFamily: OSWALD, letterSpacing: "0.02em" }}>
+                {am.edit ? "Corrigir férias antigas" : "Amortizar férias antigas"}
+              </div>
+              <button
+                type="button"
+                onClick={() => setAm(null)}
+                aria-label="Fechar"
+                className="w-8 h-8 rounded-lg border border-[#e7ddd2] bg-white text-[18px] text-[#5c5c5c]"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto px-7 py-6 flex flex-col gap-5">
+              <p className="text-[12px] leading-[1.5] text-[#737373]">
+                Registre férias que o colaborador já tirou e que ainda não estão no sistema. Elas descontam dos dias a gozar do período
+                aquisitivo escolhido.
+              </p>
+
+              <div className="flex flex-col gap-1.5">
+                <span className={rotuloMini}>Colaborador</span>
+                <SeletorColaborador
+                  opcoes={opcoesAm}
+                  empresas={empresas}
+                  valor={am.pid}
+                  nomeValor={pessoaAm?.nome ?? ""}
+                  vazio="Escolha o colaborador"
+                  onEscolher={(id) => abrirAmortizar(id)}
+                />
+              </div>
+
+              {pessoaAm && periodoAm && validacaoAm && (
+                <div className="flex flex-col gap-5">
+                  <label className="flex flex-col gap-1.5">
+                    <span className={rotuloMini}>Período aquisitivo</span>
+                    <select
+                      value={am.periodoId}
+                      onChange={(e) => escolherPeriodoAm(pessoaAm, e.target.value)}
+                      className="text-[14px] font-medium px-3 py-2.5 border border-[#e7ddd2] rounded-lg bg-white"
+                    >
+                      {pessoaAm.periodos.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {fDMAcurto(p.ini)} a {fDMAcurto(p.fim)} · {Math.max(0, saldoPeriodo(pessoaAm, p.id))} dias a gozar
+                          {p.status === "gozado" ? " · gozado" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="bg-[#faf7f3] rounded-[10px] px-4 py-3.5 grid grid-cols-[1fr_auto] gap-3 items-center">
+                    <div className="flex flex-col gap-1 text-[12px] leading-[1.4] text-[#5c5c5c]">
+                      <span className="text-[13px] font-medium text-[#262626]">
+                        {pessoaAm.unidade}
+                        {pessoaAm.empresa ? ` · ${pessoaAm.empresa}` : ""}
+                      </span>
+                      <span>
+                        Aquisitivo {fDMA(periodoAm.ini)} a {fDMA(periodoAm.fim)}
+                      </span>
+                      <span>Limite {fDMA(periodoAm.limite)}</span>
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="text-[32px] leading-none font-semibold" style={{ fontFamily: OSWALD }}>
+                        {Math.max(0, validacaoAm.disp)}
+                      </span>
+                      <span className="text-[11px] text-[#737373]">dias a gozar</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="flex flex-col gap-1.5">
+                      <span className={rotuloMini}>Início das férias</span>
+                      <input
+                        type="date"
+                        value={am.inicio}
+                        max={somarDias(hoje, -1)}
+                        onChange={(e) => patchAm({ inicio: e.target.value })}
+                        className="text-[14px] font-medium px-3 py-[9px] border border-[#e7ddd2] rounded-lg"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className={rotuloMini}>Fim das férias</span>
+                      <input
+                        type="date"
+                        value={am.fim}
+                        min={am.inicio || undefined}
+                        max={somarDias(hoje, -1)}
+                        onChange={(e) => patchAm({ fim: e.target.value })}
+                        className="text-[14px] font-medium px-3 py-[9px] border border-[#e7ddd2] rounded-lg"
+                      />
+                    </label>
+                  </div>
+                  {validacaoAm.dias > 0 && (
+                    <p className="text-[13px] -mt-3 text-[#3d3d3d]">
+                      Total: <b>{validacaoAm.dias} dia{validacaoAm.dias !== 1 ? "s" : ""}</b>
+                    </p>
+                  )}
+
+                  <button type="button" onClick={() => patchAm({ abono: !am.abono })} className="flex justify-between items-center gap-3 text-left">
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-[13px] font-medium">Vendeu 10 dias (abono pecuniário)</span>
+                      <span className="text-[12px] text-[#737373]">Desconta 10 dias do saldo deste período</span>
+                    </span>
+                    <span
+                      className="w-[38px] h-[22px] rounded-[11px] p-[3px] box-border shrink-0"
+                      style={{ background: am.abono ? "#262626" : "#e7ddd2" }}
+                    >
+                      <span className="block w-4 h-4 rounded-full bg-white" style={{ marginLeft: am.abono ? 16 : 0 }} />
+                    </span>
+                  </button>
+
+                  {(am.inicio || am.fim) && validacaoAm.erros.map((e) => <Mensagem key={e} icone="!" fg="#b42318" bg="#fdecea" t={e} />)}
+                  {(am.inicio || am.fim) && validacaoAm.erros.length === 0 && (
+                    <Mensagem icone="✓" fg="#1f7a52" bg="#e6f4ec" t={`Pronto para ${am.edit ? "salvar a correção" : "registrar"}: ${validacaoAm.dias} dias.`} />
+                  )}
+
+                  <div className="flex flex-col gap-1.5">
+                    <span className={rotuloMini}>Férias já registradas neste período</span>
+                    {itensAm.length === 0 && <span className="text-[13px] text-[#737373]">Nada registrado ainda.</span>}
+                    {itensAm
+                      .slice()
+                      .sort((a, b) => (a.i < b.i ? -1 : 1))
+                      .map((x) => {
+                        const passada = fimDe(x) < hoje;
+                        const emEdicao = am.edit === x.id;
+                        return (
+                          <div
+                            key={x.id}
+                            className="flex items-center justify-between gap-2 py-2 border-t border-[#f4ebe1] text-[13px]"
+                            style={{ background: emEdicao ? "#fff3e6" : "transparent" }}
+                          >
+                            <span className="tabular-nums">
+                              {fDMA(x.i)} a {fDMA(fimDe(x))} · {x.d} dias
+                              {x.ab ? " · abono" : ""}
+                              {!passada && <span className="text-[#737373]"> · futura (use o mapa)</span>}
+                            </span>
+                            {passada && (
+                              <span className="flex gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={pendente}
+                                  onClick={() => setAm({ ...am, edit: x.id, inicio: x.i, fim: fimDe(x), abono: itensAm.some((y) => y.ab), confirmarExcluir: null })}
+                                  className="text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-[#e7ddd2] bg-white"
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={pendente}
+                                  onClick={() => excluirAm(x.id)}
+                                  className="text-[12px] font-semibold px-2.5 py-1.5 rounded-lg bg-white"
+                                  style={{
+                                    border: "1px solid #f3c6c0",
+                                    color: am.confirmarExcluir === x.id ? "#fff" : "#b42318",
+                                    background: am.confirmarExcluir === x.id ? "#b42318" : "#fff",
+                                  }}
+                                >
+                                  {am.confirmarExcluir === x.id ? "Confirmar" : "Excluir"}
+                                </button>
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {pessoaAm && !periodoAm && (
+                <Mensagem icone="!" fg="#93440c" bg="#fff3e6" t="Este colaborador ainda não tem período aquisitivo. Gere o período na ficha dele." />
+              )}
+            </div>
+
+            <div className="flex gap-2.5 px-7 py-5 border-t border-[#f4ebe1]">
+              {am.edit ? (
+                <button
+                  type="button"
+                  onClick={() => patchAm({ edit: null, inicio: "", fim: "" })}
+                  className="flex-1 text-[13px] font-semibold py-[11px] rounded-lg border border-[#e7ddd2] bg-white"
+                >
+                  Cancelar correção
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAm(null)}
+                  className="flex-1 text-[13px] font-semibold py-[11px] rounded-lg border border-[#e7ddd2] bg-white"
+                >
+                  Fechar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={salvarAm}
+                disabled={!validacaoAm || validacaoAm.erros.length > 0 || pendente}
+                className="flex-[2] text-[13px] font-semibold py-[11px] rounded-lg"
+                style={{
+                  background: validacaoAm && validacaoAm.erros.length === 0 && !pendente ? "#262626" : "#e7ddd2",
+                  color: validacaoAm && validacaoAm.erros.length === 0 && !pendente ? "#fff" : "#737373",
+                  cursor: validacaoAm && validacaoAm.erros.length === 0 && !pendente ? "pointer" : "not-allowed",
+                }}
+              >
+                {pendente ? "Salvando…" : am.edit ? "Salvar correção" : "Registrar férias"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {toast && (
         <div
           role="status"
@@ -1181,6 +1516,87 @@ function Mensagem({ icone, fg, bg, t }: { icone: string; fg: string; bg: string;
     <div className="grid grid-cols-[16px_1fr] gap-2 items-start px-3 py-2.5 rounded-lg text-[12px] leading-[1.45]" style={{ background: bg, color: fg }}>
       <b>{icone}</b>
       <span>{t}</span>
+    </div>
+  );
+}
+
+function semAcento(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/** Escolha rápida de colaborador: filtro por empresa + busca pelo nome, e uma lista clicável. */
+function SeletorColaborador({
+  opcoes,
+  empresas,
+  valor,
+  nomeValor,
+  bloqueado,
+  vazio,
+  onEscolher,
+}: {
+  opcoes: { id: string; nome: string; empresaId: string | null; label: string }[];
+  empresas: OpcaoSimples[];
+  valor: string;
+  nomeValor: string;
+  bloqueado?: boolean;
+  vazio: string;
+  onEscolher: (id: string) => void;
+}) {
+  const [emp, setEmp] = useState("");
+  const [busca, setBusca] = useState("");
+
+  if (valor) {
+    return (
+      <div className="flex items-center justify-between gap-3 border border-[#e7ddd2] rounded-lg px-3 py-2.5 bg-white">
+        <span className="text-[14px] font-medium truncate">{nomeValor}</span>
+        {!bloqueado && (
+          <button type="button" onClick={() => onEscolher("")} className="text-[12px] font-semibold text-[#b85c12] hover:text-[#93440c] shrink-0">
+            Trocar
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const termo = semAcento(busca.trim());
+  const filtradas = opcoes.filter((o) => (!emp || o.empresaId === emp) && (!termo || semAcento(o.nome).includes(termo)));
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-[1fr_1.3fr] gap-2">
+        <select
+          value={emp}
+          onChange={(e) => setEmp(e.target.value)}
+          aria-label="Filtrar por empresa"
+          className="text-[13px] font-medium px-2.5 py-2 border border-[#e7ddd2] rounded-lg bg-white"
+        >
+          <option value="">Empresa: todas</option>
+          {empresas.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.nome}
+            </option>
+          ))}
+        </select>
+        <input
+          type="search"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar pelo nome"
+          aria-label="Buscar pelo nome"
+          className="text-[13px] px-2.5 py-2 border border-[#e7ddd2] rounded-lg"
+        />
+      </div>
+      <p className="text-[12px] text-[#737373]">{vazio} ({filtradas.length})</p>
+      <ul className="max-h-[220px] overflow-auto border border-[#e7ddd2] rounded-lg divide-y divide-[#f4ebe1]">
+        {filtradas.map((o) => (
+          <li key={o.id}>
+            <button type="button" onClick={() => onEscolher(o.id)} className="w-full text-left text-[13px] px-3 py-2.5 hover:bg-[#fbf6f0]">
+              {o.label}
+            </button>
+          </li>
+        ))}
+        {filtradas.length === 0 && <li className="text-[13px] text-[#737373] px-3 py-3">Ninguém encontrado com esse filtro.</li>}
+      </ul>
     </div>
   );
 }

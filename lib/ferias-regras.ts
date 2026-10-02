@@ -153,3 +153,44 @@ export function validarLancamento(e: EntradaValidacao): ResultadoValidacao {
 
 /** Estimativa: salário ÷ 30 × dias + 1/3. */
 export const valorFeriasEstimado = (salario: number, dias: number): number => ((salario || 0) / 30) * dias * (4 / 3);
+
+// ------------------------------------------------------------
+// Amortizar férias antigas (já tiradas e não registradas)
+// ------------------------------------------------------------
+export interface EntradaAmortizacao {
+  hoje: string;
+  inicio: string;
+  fim: string;
+  /** dias dos OUTROS períodos já registrados no mesmo período aquisitivo */
+  outrosDias: number[];
+  abono: boolean;
+  /** todas as outras férias do colaborador (pra não registrar duas vezes o mesmo intervalo) */
+  outros: { i: string; f: string }[];
+}
+
+export interface ResultadoAmortizacao {
+  erros: string[];
+  dias: number;
+  disp: number;
+}
+
+export function validarAmortizacao(e: EntradaAmortizacao): ResultadoAmortizacao {
+  const erros: string[] = [];
+  const disp = 30 - e.outrosDias.reduce((a, b) => a + b, 0) - (e.abono ? 10 : 0);
+  let dias = 0;
+  if (!e.inicio || !e.fim) {
+    erros.push("Escolha a data de início e a data de fim.");
+  } else if (e.fim < e.inicio) {
+    erros.push("A data de fim não pode ser antes da data de início.");
+  } else {
+    dias = difDias(e.inicio, e.fim) + 1;
+    if (e.fim >= e.hoje) erros.push("Essas datas ainda não passaram. Para férias futuras, use “Lançar férias”.");
+    if (dias > 30) erros.push("Um período de férias não pode passar de 30 dias.");
+    if (dias > disp) {
+      erros.push(disp > 0 ? `O saldo deste período aquisitivo é de ${disp} dias.` : "Este período aquisitivo não tem mais saldo.");
+    }
+    const choque = e.outros.find((o) => o.i <= e.fim && o.f >= e.inicio);
+    if (choque) erros.push(`Já existem férias registradas de ${fDM(choque.i)} a ${fDM(choque.f)} neste intervalo.`);
+  }
+  return { erros, dias, disp };
+}

@@ -32,7 +32,7 @@ export default async function FeriasPage({
     supabase.from("empresas").select("*"),
     supabase.from("unidades").select("*"),
     supabase.from("ferias").select("*").neq("status", "cancelado").eq("simulacao", false),
-    supabase.from("periodos_aquisitivos").select("*").in("status", ["aberto", "vencido"]),
+    supabase.from("periodos_aquisitivos").select("*"),
     supabase.from("feriados").select("*"),
   ]);
 
@@ -66,7 +66,10 @@ export default async function FeriasPage({
   }
   const abertoPor = new Map<string, PeriodoAquisitivo>();
   for (const [colabId, lista] of periodosPor) {
-    const ordenados = lista.slice().sort((a, b) => (a.limite_concessao < b.limite_concessao ? -1 : 1));
+    const ordenados = lista
+      .filter((p) => p.status !== "gozado")
+      .sort((a, b) => (a.limite_concessao < b.limite_concessao ? -1 : 1));
+    if (ordenados.length === 0) continue;
     const comSaldo = ordenados.find((p) => saldoDoPeriodo(p.id, colabId) > 0);
     abertoPor.set(colabId, comSaldo ?? ordenados[ordenados.length - 1]);
   }
@@ -93,6 +96,16 @@ export default async function FeriasPage({
               limite: String(aq.limite_concessao).slice(0, 10),
             }
           : null,
+        periodos: (periodosPor.get(c.id) ?? [])
+          .slice()
+          .sort((a, b) => (a.inicio < b.inicio ? 1 : -1))
+          .map((p) => ({
+            id: p.id,
+            ini: String(p.inicio).slice(0, 10),
+            fim: String(p.fim).slice(0, 10),
+            limite: String(p.limite_concessao).slice(0, 10),
+            status: p.status,
+          })),
         abono: fs.some((f) => f.vendeu_abono && doAberto(f)),
         per: fs.map((f) => ({
           id: f.id,
@@ -100,6 +113,7 @@ export default async function FeriasPage({
           d: f.dias,
           st: f.status === "planejada" || f.status === "solicitado" ? ("planejada" as const) : ("aprovado" as const),
           pid: f.periodo_aquisitivo_id,
+          ab: !!f.vendeu_abono,
         })),
       };
     });
