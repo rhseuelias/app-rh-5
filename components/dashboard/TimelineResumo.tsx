@@ -2,6 +2,7 @@ import Link from "next/link";
 import { differenceInCalendarDays } from "date-fns";
 import type { Colaborador, Empresa, EtapaProcesso, ProcessoIntegracao } from "@/types/db";
 import { etapaAtrasada } from "@/lib/calculos";
+import { Cartao, TituloCartao, Pilula, Vazio, CABECALHO_TABELA, LINK_SUTIL, INTER, type Tom } from "./Blocos";
 
 // Versão resumida do Painel de Integração para o Dashboard.
 // Usa o mesmo agrupamento das 11 etapas em 6 colunas do painel completo.
@@ -10,24 +11,27 @@ const GRUPOS = ["Cadastro", "Exame", "Documentação", "Treinamento", "Integraç
 type Estado = "done" | "progress" | "late" | "attention" | "pending" | "na";
 type Status = "atrasado" | "atencao" | "andamento" | "dentro" | "naoiniciado";
 
-const STATUS_INFO: Record<Status, { label: string; classe: string; barra: string; prioridade: number }> = {
-  atrasado: { label: "Atrasado", classe: "bg-red-100 text-red-800", barra: "bg-red-600", prioridade: 0 },
-  atencao: { label: "Atenção", classe: "bg-amber-100 text-amber-800", barra: "bg-amber-500", prioridade: 1 },
-  andamento: { label: "Em andamento", classe: "bg-blue-100 text-blue-800", barra: "bg-blue-600", prioridade: 2 },
-  dentro: { label: "Dentro do prazo", classe: "bg-emerald-100 text-emerald-800", barra: "bg-emerald-600", prioridade: 3 },
-  naoiniciado: { label: "Não iniciado", classe: "bg-stone-200 text-stone-700", barra: "bg-stone-400", prioridade: 4 },
+const STATUS_INFO: Record<Status, { label: string; tom: Tom; prioridade: number }> = {
+  atrasado: { label: "Atrasado", tom: "red", prioridade: 0 },
+  atencao: { label: "Atenção", tom: "orange", prioridade: 1 },
+  andamento: { label: "No prazo", tom: "green", prioridade: 2 },
+  dentro: { label: "No prazo", tom: "green", prioridade: 3 },
+  naoiniciado: { label: "Não iniciado", tom: "off", prioridade: 4 },
 };
 
-const NO_CLASSE: Record<Estado, string> = {
-  done: "bg-emerald-600 border-emerald-600 text-white",
-  progress: "bg-white border-blue-600",
-  late: "bg-red-600 border-red-600 text-white",
-  attention: "bg-amber-500 border-amber-500 text-white",
-  pending: "bg-white border-brand-200",
-  na: "bg-white border-dashed border-stone-300 text-stone-400",
+// bolinha de cada etapa: cores do guia de design
+const NO_ESTILO: Record<Estado, { background: string; borderColor: string; borderStyle?: string }> = {
+  done: { background: "#2f9e6b", borderColor: "#2f9e6b" },
+  progress: { background: "#fff", borderColor: "#3d3d3d" },
+  late: { background: "#d92d20", borderColor: "#d92d20" },
+  attention: { background: "#f0913f", borderColor: "#f0913f" },
+  pending: { background: "#fff", borderColor: "#e7ddd2" },
+  na: { background: "#fff", borderColor: "#e7ddd2", borderStyle: "dashed" },
 };
+const COR_LINHA_FEITA = "#2f9e6b";
+const COR_LINHA = "#f0e8df";
 
-const COLUNAS = "minmax(150px,1.3fr) repeat(6,minmax(58px,1fr)) 64px 116px";
+const COLUNAS = "220px repeat(6,minmax(76px,1fr)) 110px";
 
 function normalizar(s: string) {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -69,14 +73,12 @@ export default function TimelineResumo({
   colaboradores,
   empresas,
   maximo = 5,
-  fonteDisplay,
 }: {
   processos: ProcessoIntegracao[];
   etapas: EtapaProcesso[];
   colaboradores: Colaborador[];
   empresas: Empresa[];
   maximo?: number;
-  fonteDisplay: string;
 }) {
   const hoje = new Date();
   const hojeLocal = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
@@ -172,33 +174,33 @@ export default function TimelineResumo({
   const restantes = linhas.length - visiveis.length;
 
   return (
-    <div className="card">
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-        <h2 style={{ fontFamily: fonteDisplay }} className="font-semibold text-ink-900 text-lg">
-          Painel de Integração
-        </h2>
-        <Link href="/onboarding" className="text-sm text-brand-600 hover:text-brand-700 hover:underline">
-          Ver painel completo{restantes > 0 ? ` (+${restantes})` : ""} →
-        </Link>
-      </div>
+    <Cartao>
+      <TituloCartao
+        direita={
+          <Link href="/onboarding" className={LINK_SUTIL}>
+            Ver painel completo{restantes > 0 ? ` (+${restantes})` : ""}
+          </Link>
+        }
+      >
+        Integração de novos colaboradores
+      </TituloCartao>
 
       {visiveis.length === 0 ? (
-        <p className="text-sm text-ink-600">Ninguém em processo de integração no momento.</p>
+        <Vazio>Ninguém em processo de integração no momento.</Vazio>
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[760px]">
+          <div className="min-w-[860px]">
             <div
-              className="grid items-center bg-brand-50 rounded-md text-[11px] font-medium text-ink-600 mb-0.5"
+              className={`grid items-center border-b border-[#f4ebe1] pb-2 ${CABECALHO_TABELA}`}
               style={{ gridTemplateColumns: COLUNAS }}
             >
-              <div className="py-1.5 pl-2">Colaborador</div>
+              <div>Colaborador</div>
               {GRUPOS.map((g) => (
-                <div key={g} className="py-1.5 text-center">
+                <div key={g} className="text-center">
                   {g}
                 </div>
               ))}
-              <div className="py-1.5 text-center">Progresso</div>
-              <div className="py-1.5 text-center">Status</div>
+              <div className="text-right">Status</div>
             </div>
 
             {visiveis.map((l) => {
@@ -206,60 +208,56 @@ export default function TimelineResumo({
               return (
                 <div
                   key={l.id}
-                  className="grid items-center border-b border-brand-200/70 last:border-b-0 hover:bg-brand-50 transition-colors"
+                  className="grid items-center border-b border-[#f4ebe1] last:border-b-0"
                   style={{ gridTemplateColumns: COLUNAS }}
                 >
-                  <div className="min-w-0 pl-2 py-1.5">
+                  <div className="min-w-0 py-3 pr-3">
                     <Link
                       href={`/onboarding/${l.colaboradorId}`}
-                      className="block text-sm font-medium text-ink-900 truncate hover:underline"
+                      className="block text-[13px] font-semibold text-[#262626] truncate hover:underline"
                     >
                       {l.nome}
                     </Link>
-                    <p className="text-[11px] text-ink-600 truncate">{l.detalhe}</p>
+                    <p className="text-[12px] text-[#737373] truncate">{l.detalhe}</p>
                   </div>
 
                   {l.grupos.map((g, i) => (
-                    <div key={g.nome} className="relative flex flex-col items-center pt-2 pb-1.5" title={`${g.nome}: ${g.estado}`}>
+                    <div
+                      key={g.nome}
+                      className="relative flex flex-col items-center pt-3 pb-2"
+                      title={`${g.nome}: ${g.estado}`}
+                    >
                       {i > 0 && (
                         <span
-                          className={`absolute left-0 top-[17px] h-0.5 w-1/2 ${
-                            l.grupos[i - 1].estado === "done" ? "bg-emerald-600" : "bg-brand-200"
-                          }`}
+                          className="absolute left-0 top-[19px] h-[2px] w-1/2"
+                          style={{ background: l.grupos[i - 1].estado === "done" ? COR_LINHA_FEITA : COR_LINHA }}
                         />
                       )}
                       {i < l.grupos.length - 1 && (
                         <span
-                          className={`absolute right-0 top-[17px] h-0.5 w-1/2 ${
-                            g.estado === "done" ? "bg-emerald-600" : "bg-brand-200"
-                          }`}
+                          className="absolute right-0 top-[19px] h-[2px] w-1/2"
+                          style={{ background: g.estado === "done" ? COR_LINHA_FEITA : COR_LINHA }}
                         />
                       )}
                       <span
-                        className={`relative z-[1] w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center text-[10px] font-semibold ${NO_CLASSE[g.estado]}`}
+                        className="relative z-[1] w-4 h-4 rounded-full border-2"
+                        style={NO_ESTILO[g.estado]}
+                      />
+                      <span
+                        className="mt-1 text-[12px] min-h-[16px] tabular-nums"
+                        style={{
+                          color: g.estado === "late" ? "#b42318" : g.estado === "progress" ? "#262626" : "#737373",
+                          fontFamily: INTER,
+                          fontWeight: g.estado === "late" ? 600 : 500,
+                        }}
                       >
-                        {g.estado === "done" && "✓"}
-                        {g.estado === "progress" && <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
-                        {(g.estado === "late" || g.estado === "attention") && "!"}
-                        {g.estado === "na" && "–"}
-                      </span>
-                      <span className={`text-[10px] min-h-[13px] ${g.estado === "late" ? "text-red-600 font-medium" : "text-ink-600"}`}>
-                        {g.sub}
+                        {g.sub || (g.estado === "progress" ? "em curso" : "")}
                       </span>
                     </div>
                   ))}
 
-                  <div className="px-1.5">
-                    <p className="text-[11px] text-ink-800 text-center">{l.concluidas}/6</p>
-                    <span className="block h-1 rounded-full bg-stone-200 overflow-hidden mt-0.5">
-                      <span className={`block h-full rounded-full ${st.barra}`} style={{ width: `${Math.round((l.concluidas / 6) * 100)}%` }} />
-                    </span>
-                  </div>
-
-                  <div className="flex justify-center px-1">
-                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap ${st.classe}`}>
-                      {st.label}
-                    </span>
+                  <div className="flex justify-end">
+                    <Pilula tom={st.tom}>{st.label}</Pilula>
                   </div>
                 </div>
               );
@@ -267,6 +265,6 @@ export default function TimelineResumo({
           </div>
         </div>
       )}
-    </div>
+    </Cartao>
   );
 }
