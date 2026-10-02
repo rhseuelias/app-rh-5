@@ -32,7 +32,7 @@ export default async function FeriasPage({
     supabase.from("empresas").select("*"),
     supabase.from("unidades").select("*"),
     supabase.from("ferias").select("*").neq("status", "cancelado").eq("simulacao", false),
-    supabase.from("periodos_aquisitivos").select("*").eq("status", "aberto"),
+    supabase.from("periodos_aquisitivos").select("*").in("status", ["aberto", "vencido"]),
     supabase.from("feriados").select("*"),
   ]);
 
@@ -46,17 +46,29 @@ export default async function FeriasPage({
   const nomeEmpresa = new Map(empresas.map((e) => [e.id, e.nome]));
   const nomeUnidade = new Map(unidades.map((u) => [u.id, u.nome]));
 
-  // período aquisitivo aberto de cada colaborador (o que vence primeiro)
-  const abertoPor = new Map<string, PeriodoAquisitivo>();
-  for (const p of aquisitivos) {
-    const atual = abertoPor.get(p.colaborador_id);
-    if (!atual || p.limite_concessao < atual.limite_concessao) abertoPor.set(p.colaborador_id, p);
-  }
-
   const feriasPor = new Map<string, Ferias[]>();
   for (const f of todasFerias) {
     if (!feriasPor.has(f.colaborador_id)) feriasPor.set(f.colaborador_id, []);
     feriasPor.get(f.colaborador_id)!.push(f);
+  }
+
+  // Período "em foco" de cada colaborador: o que vence primeiro entre os que ainda
+  // têm dias a gozar (abertos ou já encerrados mas não gozados). Se nenhum tiver
+  // saldo, vale o mais recente.
+  const saldoDoPeriodo = (periodoId: string, colaboradorId: string) => {
+    const doPeriodo = (feriasPor.get(colaboradorId) ?? []).filter((f) => f.periodo_aquisitivo_id === periodoId);
+    return 30 - doPeriodo.reduce((s, f) => s + f.dias, 0) - (doPeriodo.some((f) => f.vendeu_abono) ? 10 : 0);
+  };
+  const periodosPor = new Map<string, PeriodoAquisitivo[]>();
+  for (const p of aquisitivos) {
+    if (!periodosPor.has(p.colaborador_id)) periodosPor.set(p.colaborador_id, []);
+    periodosPor.get(p.colaborador_id)!.push(p);
+  }
+  const abertoPor = new Map<string, PeriodoAquisitivo>();
+  for (const [colabId, lista] of periodosPor) {
+    const ordenados = lista.slice().sort((a, b) => (a.limite_concessao < b.limite_concessao ? -1 : 1));
+    const comSaldo = ordenados.find((p) => saldoDoPeriodo(p.id, colabId) > 0);
+    abertoPor.set(colabId, comSaldo ?? ordenados[ordenados.length - 1]);
   }
 
   const pessoas: PessoaFerias[] = colaboradores

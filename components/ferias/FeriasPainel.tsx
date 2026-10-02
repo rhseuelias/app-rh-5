@@ -466,6 +466,11 @@ export default function FeriasPainel({
           <Link href="/ferias/simulacao" className={botaoClaro}>
             Simulação
           </Link>
+          {mostrarValores && (
+            <Link href="/ferias/importar-relatorio" className={botaoClaro}>
+              Importar relatório
+            </Link>
+          )}
           <button type="button" onClick={() => abrirNovo()} className="rounded-lg bg-[#262626] hover:bg-[#3d3d3d] text-white text-[13px] font-semibold px-4 py-2.5">
             + Lançar férias
           </button>
