@@ -158,7 +158,7 @@ export default function AjustarLeitura({ linhas, layout, mensagem, erro, abas, a
       </div>
 
       <div>
-        <p className={`${TXT} mb-1 font-medium`}>Colunas com os valores em dinheiro (marque todas que devem ser lançadas)</p>
+        <p className={`${TXT} mb-1 font-medium`}>Colunas com os valores, em dinheiro ou horas (marque todas que devem ser lançadas)</p>
         {colunas.filter((c) => c !== layout.colNome && c !== layout.colCpf && c !== layout.colMat && c !== layout.colEvento).length === 0 && (
           <p className="mb-1 text-[12px] text-slate-500">Não sobrou nenhuma coluna para ser de valores: todas estão marcadas como nome, CPF, matrícula ou verba.</p>
         )}

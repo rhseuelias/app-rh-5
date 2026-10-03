@@ -11,7 +11,10 @@ import {
   norm,
   csvParaLinhas,
   ehSim,
+  formatarHoras,
   formatarValor,
+  minutosDeHora,
+  nomeEhDeHoras,
   detectarLayout,
   diagnosticoArquivo,
   lerAutomatico,
@@ -98,6 +101,17 @@ function gravarMemoria(m: Memoria) {
 
 type OrigemSugestao = "ia" | "parecida" | "lembrada";
 
+/** a coluna da folha aceita horas? Texto aceita; dinheiro só se for coluna de horas (ex.: "Referência"), que guarda horas em decimal */
+function aceitaHoras(r: { formato: string; nome: string }): boolean {
+  return r.formato !== "moeda" || nomeEhDeHoras(r.nome);
+}
+
+/** todas as células dessa coluna do arquivo são horas ("04:15")? */
+function ehColunaHoras(itens: ItemLido[], rotulo: string): boolean {
+  const its = itens.filter((i) => i.rotulo === rotulo);
+  return its.length > 0 && its.every((i) => i.minutos !== undefined);
+}
+
 function agruparPessoas(itens: ItemLido[], funcionarios: ColaboradorRef[]): PessoaLida[] {
   const mapaPessoas = new Map<string, PessoaLida>();
   for (const it of itens) {
@@ -120,8 +134,9 @@ function leituraDaIA(itensIA: ItemIA[], avisos: string[]): LeituraTabela {
     cpf: x.cpf,
     matricula: x.matricula,
     rotulo: x.rotulo,
-    bruto: formatarValor(x.valor),
+    bruto: x.minutos !== undefined ? formatarHoras(x.minutos) : formatarValor(x.valor),
     valor: x.valor,
+    ...(x.minutos !== undefined ? { minutos: x.minutos } : {}),
   }));
   const rotulos: string[] = [];
   for (const it of itens) if (!rotulos.includes(it.rotulo)) rotulos.push(it.rotulo);
@@ -187,7 +202,7 @@ export default function ImportarArquivoFolha({
       } else if (exata) {
         novoMapa[rot] = exata.id;
       } else {
-        const parecida = acharRubricaParecida(rot, rubricasUsaveis);
+        const parecida = acharRubricaParecida(rot, rubricasUsaveis, { horas: ehColunaHoras(r.itens, rot) });
         novoMapa[rot] = parecida?.rubrica.id ?? "";
         if (parecida) sug[rot] = { id: parecida.rubrica.id, origem: "parecida" };
       }
@@ -198,6 +213,14 @@ export default function ImportarArquivoFolha({
       const exato = p.match.nivel === "cpf" || p.match.nivel === "matricula" || p.match.nivel === "nome";
       const id = memoria.pessoas[norm(p.nome)];
       if (!exato && id && funcPorId.has(id)) lemb[p.chave] = id;
+    }
+    for (const rot of r.rotulos) {
+      // horas só cabem em coluna do tipo Texto: não sugere coluna de dinheiro
+      const rubM = novoMapa[rot] ? rubricaPorId.get(novoMapa[rot]) : undefined;
+      if (rubM && ehColunaHoras(r.itens, rot) && !aceitaHoras(rubM)) {
+        novoMapa[rot] = "";
+        delete sug[rot];
+      }
     }
     setMapa(novoMapa);
     setEscolha({});
@@ -283,7 +306,11 @@ export default function ImportarArquivoFolha({
       if (Object.keys(resp.colunas).length) {
         setMapa((m) => {
           const novo = { ...m };
-          for (const [rot, v] of Object.entries(resp.colunas)) if (!novo[rot]) novo[rot] = v.rubricaId;
+          for (const [rot, v] of Object.entries(resp.colunas)) {
+            const rubV = rubricaPorId.get(v.rubricaId);
+            const horasEmDinheiro = ehColunaHoras(r.itens, rot) && !!rubV && !aceitaHoras(rubV);
+            if (!novo[rot] && !horasEmDinheiro) novo[rot] = v.rubricaId;
+          }
           return novo;
         });
         setSugColunas((x) => ({ ...x, ...Object.fromEntries(Object.entries(resp.colunas).map(([rot, v]) => [rot, { id: v.rubricaId, origem: "ia" as OrigemSugestao }])) }));
@@ -438,7 +465,7 @@ export default function ImportarArquivoFolha({
   const lancamentos = useMemo(() => {
     const acum = new Map<
       string,
-      { colaboradorId: string; tipoId: string; valor: number; valorTexto: string | null; atual: string; nomeLido: string }
+      { colaboradorId: string; tipoId: string; valor: number; minutos: number; temHoras: boolean; valorTexto: string | null; atual: string; nomeLido: string }
     >();
     for (const p of pessoas) {
       if (excluir[p.chave]) continue;
@@ -449,17 +476,26 @@ export default function ImportarArquivoFolha({
         if (!rubId) continue;
         const rub = rubricaPorId.get(rubId);
         if (!rub) continue;
+        const horas = it.minutos !== undefined;
+        if (horas && !aceitaHoras(rub)) continue; // horas não entram em coluna de dinheiro
         const chave = `${colabId}:${rubId}`;
         const atual = valoresAtuais[colabId]?.[rubId] ?? "";
         let item = acum.get(chave);
         if (!item) {
-          item = { colaboradorId: colabId, tipoId: rubId, valor: 0, valorTexto: null, atual, nomeLido: p.nome };
+          item = { colaboradorId: colabId, tipoId: rubId, valor: 0, minutos: 0, temHoras: false, valorTexto: null, atual, nomeLido: p.nome };
           acum.set(chave, item);
         }
-        if (rub.formato === "moeda") {
+        if (rub.formato === "moeda" && horas) {
+          item.minutos += it.minutos ?? 0; // coluna de horas (Referência): vira horas em decimal
+          item.temHoras = true;
+        } else if (rub.formato === "moeda") {
           item.valor += it.valor ?? 0;
         } else if (rub.formato === "sim_nao") {
-          item.valorTexto = ehSim(it.bruto) ? "SIM" : item.valorTexto;
+          const sim = horas ? (it.minutos ?? 0) > 0 : ehSim(it.bruto);
+          item.valorTexto = sim ? "SIM" : item.valorTexto;
+        } else if (horas) {
+          item.minutos += it.minutos ?? 0;
+          item.temHoras = true;
         } else {
           item.valorTexto = item.valorTexto ? `${item.valorTexto} ${it.bruto}` : it.bruto;
         }
@@ -469,8 +505,14 @@ export default function ImportarArquivoFolha({
       const rub = rubricaPorId.get(x.tipoId)!;
       if (rub.formato === "moeda") {
         const antes = valorBR(x.atual) ?? 0;
-        const valor = modo === "somar" ? antes + x.valor : x.valor;
+        const novo = x.temHoras ? x.minutos / 60 : x.valor;
+        const valor = modo === "somar" ? antes + novo : novo;
         return { ...x, valor: Math.round(valor * 100) / 100, antes };
+      }
+      if (x.temHoras) {
+        const anterior = modo === "somar" ? minutosDeHora(x.atual) ?? 0 : 0;
+        const total = formatarHoras(x.minutos + anterior);
+        return { ...x, valorTexto: x.valorTexto ? `${x.valorTexto} ${total}` : total, antes: 0 };
       }
       return { ...x, antes: 0 };
     });
@@ -481,7 +523,16 @@ export default function ImportarArquivoFolha({
   const semColaborador = pessoas.filter((p) => !colaboradorDe(p) && !excluir[p.chave]);
   const provaveis = pessoas.filter((p) => !escolha[p.chave] && !soLembrada(p) && (p.match.nivel === "provavel" || soIA(p)));
   const rotulosSemColuna = (leitura?.rotulos ?? []).filter((r) => !mapa[r]);
-  const substituidos = lancamentos.filter((l) => l.atual && modo === "substituir" && (valorBR(l.atual) ?? 0) !== l.valor && l.atual !== "").length;
+  const substituidos = lancamentos.filter((l) => {
+    if (!l.atual || modo !== "substituir") return false;
+    const rub = rubricaPorId.get(l.tipoId);
+    return rub?.formato === "moeda" ? (valorBR(l.atual) ?? 0) !== l.valor : l.atual.trim() !== (l.valorTexto ?? "");
+  }).length;
+  /** colunas do arquivo em horas que estão ligadas a uma coluna de dinheiro (não dá para lançar) */
+  const horasEmDinheiro = (leitura?.rotulos ?? []).filter((rot) => {
+    const r = mapa[rot] ? rubricaPorId.get(mapa[rot]) : undefined;
+    return !!r && ehColunaHoras(leitura?.itens ?? [], rot) && !aceitaHoras(r);
+  });
 
   // ------------------------------------------------------------------
   // 4. gravar
@@ -686,13 +737,15 @@ export default function ImportarArquivoFolha({
                     <tbody>
                       {leitura.rotulos.map((rot) => {
                         const itensRot = leitura.itens.filter((i) => i.rotulo === rot);
+                        const emHoras = ehColunaHoras(leitura.itens, rot);
                         const soma = itensRot.reduce((s, i) => s + (i.valor ?? 0), 0);
+                        const somaHoras = itensRot.reduce((s, i) => s + (i.minutos ?? 0), 0);
                         const rubSel = mapa[rot] ? rubricaPorId.get(mapa[rot]) : null;
                         return (
                           <tr key={rot || "_unica"} className="border-t border-slate-100">
                             <td className="px-3 py-2">{rot || <i className="text-slate-500">(arquivo inteiro)</i>}</td>
                             <td className="px-3 py-2 text-right tabular-nums">{itensRot.length}</td>
-                            <td className="px-3 py-2 text-right tabular-nums">{formatarValor(soma)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{emHoras ? `${formatarHoras(somaHoras)} h` : formatarValor(soma)}</td>
                             <td className="px-3 py-2">
                               <select
                                 aria-label={`Coluna da folha para ${rot || "o arquivo"}`}
@@ -705,8 +758,9 @@ export default function ImportarArquivoFolha({
                                   {rubricasUsaveis
                                     .filter((r) => r.grupo === "provento")
                                     .map((r) => (
-                                      <option key={r.id} value={r.id}>
+                                      <option key={r.id} value={r.id} disabled={emHoras && !aceitaHoras(r)}>
                                         {r.nome}
+                                        {emHoras && !aceitaHoras(r) ? " (dinheiro — não aceita horas)" : ""}
                                       </option>
                                     ))}
                                 </optgroup>
@@ -714,12 +768,21 @@ export default function ImportarArquivoFolha({
                                   {rubricasUsaveis
                                     .filter((r) => r.grupo === "desconto")
                                     .map((r) => (
-                                      <option key={r.id} value={r.id}>
+                                      <option key={r.id} value={r.id} disabled={emHoras && !aceitaHoras(r)}>
                                         {r.nome}
+                                        {emHoras && !aceitaHoras(r) ? " (dinheiro — não aceita horas)" : ""}
                                       </option>
                                     ))}
                                 </optgroup>
                               </select>
+                              {emHoras && (
+                                <span className="mt-1 block text-[11px] text-slate-600">
+                                  Esta coluna está em <b>horas</b>.{" "}
+                                  {rubSel && rubSel.formato === "moeda" && aceitaHoras(rubSel)
+                                    ? "Vai como horas em decimal (04:15 = 4,25), igual às outras colunas de Referência."
+                                    : "Escolha uma coluna de horas (Referência) ou do tipo Texto; se não houver, crie uma em \"Colunas da folha\"."}
+                                </span>
+                              )}
                               {mapa[rot] && sugColunas[rot]?.id === mapa[rot] && (
                                 <span className={`mt-1 block text-[11px] ${sugColunas[rot].origem === "lembrada" ? "text-slate-500" : "text-amber-800"}`}>
                                   {sugColunas[rot].origem === "ia"
@@ -729,9 +792,9 @@ export default function ImportarArquivoFolha({
                                     : "Lembrei da última importação."}
                                 </span>
                               )}
-                              {!mapa[rot] && rubricasMaisParecidas(rot, rubricasUsaveis).length > 0 && (
+                              {!mapa[rot] && rubricasMaisParecidas(rot, rubricasUsaveis, 3, emHoras).length > 0 && (
                                 <span className="mt-1 block text-[11px] text-slate-600">
-                                  Parecidas: {rubricasMaisParecidas(rot, rubricasUsaveis).map((x) => x.nome).join(", ")}
+                                  Parecidas: {rubricasMaisParecidas(rot, rubricasUsaveis, 3, emHoras).map((x) => x.nome).join(", ")}
                                 </span>
                               )}
                               {rubSel && rubSel.formato !== "moeda" && (
@@ -875,7 +938,7 @@ export default function ImportarArquivoFolha({
                             <td className="px-3 py-1.5">{rub.nome}</td>
                             <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{tem ? l.atual : "—"}</td>
                             <td className={`px-3 py-1.5 text-right font-semibold tabular-nums ${tem && modo === "substituir" ? "text-amber-800" : ""}`}>
-                              {rub.formato === "moeda" ? formatarValor(l.valor) : l.valorTexto}
+                              {rub.formato === "moeda" ? (l.temHoras ? `${formatarValor(l.valor)} h` : formatarValor(l.valor)) : l.valorTexto}
                             </td>
                           </tr>
                         );
@@ -914,6 +977,7 @@ export default function ImportarArquivoFolha({
               {semColaborador.length > 0 && (
                 <span className="text-red-800"> · {semColaborador.length} pessoa{semColaborador.length === 1 ? "" : "s"} sem colaborador (ficam de fora)</span>
               )}
+              {horasEmDinheiro.length > 0 && <span className="text-red-800"> · {horasEmDinheiro.length} coluna{horasEmDinheiro.length === 1 ? "" : "s"} em horas ligada{horasEmDinheiro.length === 1 ? "" : "s"} a coluna de dinheiro (fica de fora)</span>}
               {rotulosSemColuna.length > 0 && <span className="text-amber-800"> · {rotulosSemColuna.length} coluna{rotulosSemColuna.length === 1 ? "" : "s"} do arquivo não importada{rotulosSemColuna.length === 1 ? "" : "s"}</span>}
               {substituidos > 0 && <span className="text-amber-800"> · {substituidos} vai trocar um valor que já estava</span>}
             </div>

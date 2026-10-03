@@ -71,6 +71,29 @@ export function formatarValor(n: number): string {
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * Horas escritas de vários jeitos → total de minutos (null = não é hora).
+ * "04:15" · "35:58:00" · "4h15" · "4h 15min" · "7 h" · "00:00"
+ */
+export function minutosDeHora(bruto: string | number | null | undefined): number | null {
+  if (bruto === null || bruto === undefined) return null;
+  const t = String(bruto).trim().toLowerCase();
+  if (!t) return null;
+  let m = t.match(/^(\d{1,4}):([0-5]\d)(?::([0-5]\d))?$/);
+  if (m) return Number(m[1]) * 60 + Number(m[2]) + (m[3] ? Math.round(Number(m[3]) / 60) : 0);
+  m = t.match(/^(\d{1,4})\s*h(?:oras?)?\s*(?:e\s*)?(?:([0-5]?\d)\s*(?:min(?:utos?)?|m)?)?$/);
+  if (m) return Number(m[1]) * 60 + (m[2] ? Number(m[2]) : 0);
+  return null;
+}
+
+/** 255 → "04:15" · 2158 → "35:58" */
+export function formatarHoras(minutos: number): string {
+  const total = Math.round(minutos);
+  const h = Math.floor(total / 60);
+  const mm = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
 // ------------------------------------------------------------
 // TIPOS
 // ------------------------------------------------------------
@@ -85,8 +108,10 @@ export interface ItemLido {
   rotulo: string;
   /** texto original da célula do valor */
   bruto: string;
-  /** valor numérico (null = não deu para entender como número) */
+  /** valor numérico (null = não deu para entender como número). Para horas: horas em decimal (4h15 = 4,25) */
   valor: number | null;
+  /** quando o valor é uma quantidade de horas ("04:15"): total de minutos */
+  minutos?: number;
 }
 
 export interface LeituraTabela {
@@ -382,7 +407,7 @@ function ehCpfTxt(t: string): boolean {
 }
 function ehValorTxt(t: string): boolean {
   if (!t || ehCpfTxt(t) || RE_DATA.test(t.trim())) return false;
-  return valorBR(t) !== null;
+  return valorBR(t) !== null || minutosDeHora(t) !== null;
 }
 /** "ELLEN BATISTA DA CRUZ", "Karine D. Santos" — duas ou mais palavras, só letras */
 function ehNomeTxt(t: string): boolean {
@@ -489,9 +514,13 @@ export function detectarLayout(linhasBrutas: unknown[][]): LayoutTabela {
       const nums: number[] = [];
       for (const r of linhasDados) {
         const t = cel(r, c);
-        if (ehValorTxt(t)) nums.push(valorBR(t) as number);
+        if (!ehValorTxt(t)) continue;
+        const h = minutosDeHora(t);
+        nums.push(h !== null && valorBR(t) === null ? h / 60 : (valorBR(t) as number));
       }
-      if (nums.length === 0 || nums.every((v) => v === 0)) continue;
+      if (nums.length === 0 || nums.every((v) => v === 0)) {
+        continue;
+      }
       // número inteiro à esquerda do nome = código/ordem da pessoa, não é verba
       if (colNome >= 0 && c < colNome && nums.every((v) => Number.isInteger(v))) continue;
       // numeração de linhas (1, 2, 3…) não é verba
@@ -513,12 +542,22 @@ function tituloDaColuna(g: string[][], linhaCab: number, c: number): string {
   return "";
 }
 
+/** célula de valor → {valor} (dinheiro/número) ou {valor, minutos} (horas); null se vazia, zerada ou não for valor */
+function itemDeCelula(bruto: string): { valor: number; minutos?: number } | null {
+  if (!ehValorTxt(bruto)) return null;
+  const n = valorBR(bruto);
+  if (n !== null) return n === 0 ? null : { valor: n };
+  const min = minutosDeHora(bruto);
+  if (min === null || min === 0) return null;
+  return { valor: Math.round((min / 60) * 100) / 100, minutos: min };
+}
+
 export function lerComLayout(linhasBrutas: unknown[][], layout: LayoutTabela): LeituraTabela {
   const g = linhasBrutas.map((l) => l.map(celulaTexto));
   const vazio: LeituraTabela = { ok: false, itens: [], rotulos: [], avisos: [], linhasLidas: 0 };
   if (layout.colNome < 0 && layout.colCpf < 0 && layout.colMat < 0) return { ...vazio, erro: "Escolha a coluna do nome (ou do CPF)." };
   const longo = layout.colEvento >= 0;
-  if (layout.colsValor.length === 0) return { ...vazio, erro: "Escolha pelo menos uma coluna com valores." };
+  if (layout.colsValor.length === 0) return { ...vazio, erro: "Escolha pelo menos uma coluna com valores (dinheiro ou horas)." };
 
   const itens: ItemLido[] = [];
   const rotulos: string[] = [];
@@ -547,9 +586,9 @@ export function lerComLayout(linhasBrutas: unknown[][], layout: LayoutTabela): L
       if (!rotulo) continue;
       for (const c of layout.colsValor) {
         const bruto = cel[c] ?? "";
-        const v = valorBR(bruto);
-        if (v === null || v === 0 || !ehValorTxt(bruto)) continue;
-        itens.push({ linha: r + 1, nome, cpf, matricula, rotulo, bruto, valor: v });
+        const it = itemDeCelula(bruto);
+        if (!it) continue;
+        itens.push({ linha: r + 1, nome, cpf, matricula, rotulo, bruto, ...it });
         addRotulo(rotulo);
         break;
       }
@@ -557,10 +596,10 @@ export function lerComLayout(linhasBrutas: unknown[][], layout: LayoutTabela): L
       for (const c of layout.colsValor) {
         const bruto = cel[c] ?? "";
         if (bruto === "" || !ehValorTxt(bruto)) continue;
-        const v = valorBR(bruto);
-        if (v === null || v === 0) continue;
+        const it = itemDeCelula(bruto);
+        if (!it) continue;
         const rotulo = nomesCol.get(c) ?? "";
-        itens.push({ linha: r + 1, nome, cpf, matricula, rotulo, bruto, valor: v });
+        itens.push({ linha: r + 1, nome, cpf, matricula, rotulo, bruto, ...it });
         addRotulo(rotulo);
       }
     }
@@ -609,8 +648,8 @@ export function diagnosticoArquivo(linhasBrutas: unknown[][], layout: LayoutTabe
   } else if (layout.colsValor.length === 0) {
     partes.push(
       titulos.length
-        ? `Achei as colunas: ${titulos.join(", ")}. Nenhuma tem valores em dinheiro (só identificam as pessoas).`
-        : "Achei as pessoas, mas nenhuma coluna com valores em dinheiro."
+        ? `Achei as colunas: ${titulos.join(", ")}. Nenhuma tem valores (dinheiro ou horas); só identificam as pessoas.`
+        : "Achei as pessoas, mas nenhuma coluna com valores (dinheiro ou horas)."
     );
     partes.push("Se os valores estão em outra aba, escolha a aba. Se estão em outra coluna, marque abaixo.");
   }
@@ -949,7 +988,8 @@ const RUIDO = new Set(["de", "da", "do", "dos", "das", "e", "em", "s", "sobre", 
 function conceitos(texto: string): string[] {
   const out: string[] = [];
   // "V.T." vira "vt": junta letras soltas seguidas
-  const brutas = norm(texto).split(" ");
+  // "50%" e "100%" são verbas diferentes: o percentual vira uma palavra própria ("pct50")
+  const brutas = norm(String(texto ?? "").replace(/(\d+)\s*%/g, " pct$1 ")).split(" ");
   const palavras: string[] = [];
   for (let i = 0; i < brutas.length; i++) {
     if (brutas[i].length === 1 && /^[a-z]$/.test(brutas[i]) && i + 1 < brutas.length && /^[a-z]$/.test(brutas[i + 1])) {
@@ -977,8 +1017,16 @@ function conceitos(texto: string): string[] {
   return out;
 }
 
-function notaConceitos(a: string[], b: string[]): number {
+function notaConceitos(a0: string[], b0: string[]): number {
+  // percentual ("pct50"): se os dois lados têm, precisam ser iguais; se só um lado tem, é ignorado
+  const ehPct = (x: string) => /^pct\d+$/.test(x);
+  const pa = a0.filter(ehPct);
+  const pb = b0.filter(ehPct);
+  if (pa.length && pb.length && !pa.some((x) => pb.includes(x))) return 0;
+  const a = pa.length && pb.length ? a0 : a0.filter((x) => !ehPct(x));
+  const b = pa.length && pb.length ? b0 : b0.filter((x) => !ehPct(x));
   if (a.length === 0 || b.length === 0) return 0;
+  const ignorouPct = (pa.length > 0 || pb.length > 0) && !(pa.length && pb.length);
   let comuns = 0;
   for (const x of a) {
     if (b.some((y) => y === x || (x.length >= 5 && y.length >= 5 && (distancia(x, y) <= 1 || x.startsWith(y) || y.startsWith(x))))) comuns++;
@@ -986,7 +1034,23 @@ function notaConceitos(a: string[], b: string[]): number {
   if (comuns === 0) return 0;
   const cobre = comuns / Math.min(a.length, b.length);
   const jaccard = comuns / (a.length + b.length - comuns);
-  return cobre * 0.7 + jaccard * 0.3;
+  const nota = cobre * 0.7 + jaccard * 0.3;
+  return ignorouPct ? nota * 0.75 : nota; // verba sem o percentual igual perde para a que tem
+}
+
+/** tira o código da frente mas mantém o resto como veio (com o "%") */
+function textoSemCodigoBruto(s: string): string {
+  return String(s ?? "").trim().replace(/^0*\d{1,4}\s*[-–.:]?\s+(?=\D)/, "");
+}
+
+/**
+ * A coluna da folha é de horas? ("Hora extra 50% - Referência", "HE 100%").
+ * Colunas "Valor"/"R$" são dinheiro, mesmo que falem de hora extra.
+ */
+export function nomeEhDeHoras(nome: string): boolean {
+  const n = String(nome ?? "");
+  if (/refer[eê]ncia/i.test(n)) return true;
+  return /(^|[^a-zà-ú])(horas?|he)([^a-zà-ú]|$)/i.test(n) && !/(^|[^a-zà-ú])valor([^a-zà-ú]|$)|r\$/i.test(n);
 }
 
 export interface RubricaParecida {
@@ -999,19 +1063,24 @@ export interface RubricaParecida {
  * diferentes ("Plano saúde Unimed" ~ "Unimed Titular", "VT" ~ "Vale Transporte").
  * Só devolve quando uma coluna se destaca; se duas empatam, devolve null.
  */
-export function acharRubricaParecida(rotulo: string, rubricas: RubricaRef[]): RubricaParecida | null {
+export function acharRubricaParecida(rotulo: string, rubricas: RubricaRef[], opcoes?: { horas?: boolean }): RubricaParecida | null {
   if (!rotulo) return null;
-  const sem = semCodigo(rotulo).texto || norm(rotulo);
-  const cr = conceitos(sem);
+  const cr = conceitos(textoSemCodigoBruto(rotulo));
   if (cr.length === 0) return null;
   const textoNorm = norm(rotulo);
   const dizDesconto = /\bdesc(onto)?s?\b/.test(textoNorm);
   const dizProvento = /\b(provento|rendimento|adicional|premio|bonus)s?\b/.test(textoNorm);
   const notas = rubricas
     .map((t) => {
-      let n = notaConceitos(cr, conceitos(semCodigo(t.nome).texto || t.nome));
+      let n = notaConceitos(cr, conceitos(textoSemCodigoBruto(t.nome)));
       if (dizDesconto && t.grupo === "provento") n *= 0.8;
       if (dizProvento && t.grupo === "desconto") n *= 0.8;
+      // coluna em horas prefere a coluna de horas ("Referência"); coluna em dinheiro prefere a de valor
+      if (opcoes?.horas !== undefined) {
+        const dehoras = nomeEhDeHoras(t.nome);
+        if (opcoes.horas) n *= dehoras ? 1.15 : 0.85;
+        else if (dehoras && /refer[eê]ncia/i.test(t.nome)) n *= 0.85;
+      }
       return { rubrica: t, nota: n };
     })
     .filter((x) => x.nota >= 0.6)
@@ -1023,11 +1092,10 @@ export function acharRubricaParecida(rotulo: string, rubricas: RubricaRef[]): Ru
 }
 
 /** as colunas da folha que mais se parecem com a verba (para mostrar como dica quando não dá para escolher sozinho) */
-export function rubricasMaisParecidas(rotulo: string, rubricas: RubricaRef[], quantas = 3): RubricaRef[] {
-  const sem = semCodigo(rotulo).texto || norm(rotulo);
-  const cr = conceitos(sem);
+export function rubricasMaisParecidas(rotulo: string, rubricas: RubricaRef[], quantas = 3, horas?: boolean): RubricaRef[] {
+  const cr = conceitos(textoSemCodigoBruto(rotulo));
   return rubricas
-    .map((t) => ({ t, n: notaConceitos(cr, conceitos(semCodigo(t.nome).texto || t.nome)) }))
+    .map((t) => ({ t, n: notaConceitos(cr, conceitos(textoSemCodigoBruto(t.nome))) * (horas === undefined ? 1 : horas === nomeEhDeHoras(t.nome) ? 1.15 : 0.85) }))
     .filter((x) => x.n >= 0.4)
     .sort((a, b) => b.n - a.n)
     .slice(0, quantas)
