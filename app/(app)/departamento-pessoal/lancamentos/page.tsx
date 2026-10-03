@@ -12,6 +12,8 @@ import LancamentosGrade, {
 } from "@/components/lancamentos/LancamentosGrade";
 
 export const dynamic = "force-dynamic";
+// a leitura por IA (Importar arquivo) pode levar até ~1 minuto
+export const maxDuration = 60;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const fmt = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

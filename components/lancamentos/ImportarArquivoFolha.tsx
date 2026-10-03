@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { importarLancamentosFolha, lerPlanilhaExcel } from "@/lib/actions-leitura-folha";
+import { iaAnalisar, iaExtrairItens, type ItemIA } from "@/lib/actions-ia-folha";
 import {
   acharColaborador,
   acharRubrica,
@@ -61,6 +62,39 @@ function chaveDaPessoa(i: { nome: string; cpf: string; matricula: string }): str
   return `nome:${i.nome.toLowerCase().replace(/\s+/g, " ").trim()}`;
 }
 
+function agruparPessoas(itens: ItemLido[], funcionarios: ColaboradorRef[]): PessoaLida[] {
+  const mapaPessoas = new Map<string, PessoaLida>();
+  for (const it of itens) {
+    const chave = chaveDaPessoa(it);
+    let p = mapaPessoas.get(chave);
+    if (!p) {
+      p = { chave, nome: it.nome, cpf: it.cpf, matricula: it.matricula, itens: [], match: acharColaborador(it, funcionarios) };
+      mapaPessoas.set(chave, p);
+    }
+    p.itens.push(it);
+  }
+  return Array.from(mapaPessoas.values());
+}
+
+/** junta o que a IA extraiu (já conferido no servidor) no mesmo formato da leitura por regras */
+function leituraDaIA(itensIA: ItemIA[], avisos: string[]): LeituraTabela {
+  const itens: ItemLido[] = itensIA.map((x, i) => ({
+    linha: i + 1,
+    nome: x.nome,
+    cpf: x.cpf,
+    matricula: x.matricula,
+    rotulo: x.rotulo,
+    bruto: formatarValor(x.valor),
+    valor: x.valor,
+  }));
+  const rotulos: string[] = [];
+  for (const it of itens) if (!rotulos.includes(it.rotulo)) rotulos.push(it.rotulo);
+  return { ok: itens.length > 0, formato: "longo", itens, rotulos, avisos, linhasLidas: itens.length, erro: itens.length ? undefined : "A IA não achou valores nesse arquivo." };
+}
+
+const PEDACO_LINHAS = 100;
+const MAX_PEDACOS = 12;
+
 export default function ImportarArquivoFolha({
   competencia,
   rotuloMes,
@@ -84,6 +118,14 @@ export default function ImportarArquivoFolha({
   const [soPendentes, setSoPendentes] = useState(false);
   const [gravados, setGravados] = useState(0);
   const entrada = useRef<HTMLInputElement>(null);
+  const [linhasAtuais, setLinhasAtuais] = useState<string[][]>([]);
+  /** linhas como a IA deve ler (CSV/TXT: o texto cru, sem cortar nas vírgulas) */
+  const [linhasParaIA, setLinhasParaIA] = useState<string[][]>([]);
+  const [statusIA, setStatusIA] = useState("");
+  const [iaIndisponivel, setIaIndisponivel] = useState("");
+  const [iaColunas, setIaColunas] = useState<Record<string, string>>({});
+  const [iaPessoas, setIaPessoas] = useState<Record<string, string>>({});
+  const execucao = useRef(0);
 
   const rubricasUsaveis = useMemo(() => rubricas.filter((r) => !r.automatico), [rubricas]);
   const rubricaPorId = useMemo(() => new Map(rubricasUsaveis.map((r) => [r.id, r])), [rubricasUsaveis]);
@@ -92,21 +134,138 @@ export default function ImportarArquivoFolha({
   // ------------------------------------------------------------------
   // 1. ler o arquivo
   // ------------------------------------------------------------------
-  function aplicarLinhas(linhas: string[][]) {
-    const r = interpretarLinhas(linhas);
-    if (!r.ok) {
-      setErro(r.erro ?? "Não consegui entender esse arquivo.");
-      setEtapa("escolher");
-      return;
-    }
+  function mostrarLeitura(r: LeituraTabela): Record<string, string> {
     // sugestão automática de coluna da folha para cada coluna/verba do arquivo
     const novoMapa: Record<string, string> = {};
     for (const rot of r.rotulos) novoMapa[rot] = acharRubrica(rot, rubricasUsaveis)?.id ?? "";
     setMapa(novoMapa);
     setEscolha({});
     setExcluir({});
+    setIaColunas({});
+    setIaPessoas({});
     setLeitura(r);
     setEtapa("previa");
+    return novoMapa;
+  }
+
+  /** lê o arquivo inteiro pela IA, em pedaços (cada pedaço é uma chamada curta) */
+  async function extrairComIA(linhas: string[][], nomeArq: string, id: number): Promise<LeituraTabela | { erro: string; semChave?: boolean }> {
+    const pedacos: string[][][] = [];
+    for (let i = 0; i < linhas.length; i += PEDACO_LINHAS) pedacos.push(linhas.slice(i, i + PEDACO_LINHAS));
+    if (pedacos.length > MAX_PEDACOS) {
+      return { erro: `Esse arquivo é grande demais para a IA ler de uma vez (${linhas.length} linhas). Divida em partes menores.` };
+    }
+    const todos: ItemIA[] = [];
+    let descartados = 0;
+    let ultimoNome = "";
+    for (let i = 0; i < pedacos.length; i++) {
+      if (execucao.current !== id) return { erro: "cancelado" };
+      setStatusIA(`A IA está lendo o arquivo… parte ${i + 1} de ${pedacos.length}`);
+      const r = await iaExtrairItens({ nomeArquivo: nomeArq, linhas: pedacos[i], ultimoNome });
+      if (!r.ok) return { erro: r.erro, semChave: r.semChave };
+      todos.push(...r.itens);
+      descartados += r.descartados;
+      ultimoNome = r.ultimoNome;
+    }
+    const avisos = ["Esse arquivo foi lido pela IA. Confira os valores com atenção antes de confirmar."];
+    if (descartados > 0) avisos.push(`${descartados} valor${descartados === 1 ? "" : "es"} que a IA devolveu não estava${descartados === 1 ? "" : "m"} escrito${descartados === 1 ? "" : "s"} no arquivo e foi${descartados === 1 ? "" : "ram"} descartado${descartados === 1 ? "" : "s"}.`);
+    return leituraDaIA(todos, avisos);
+  }
+
+  /** a IA só cuida do que as regras não resolveram: colunas sem destino e pessoas não achadas ou duvidosas */
+  async function refinarComIA(r: LeituraTabela, mapaInicial: Record<string, string>, nomeArq: string, id: number) {
+    const pendRotulos = r.rotulos.filter((rot) => !mapaInicial[rot]);
+    const todasPessoas = agruparPessoas(r.itens, funcionarios);
+    const pendPessoas = todasPessoas.filter((p) => !p.match.colaborador || p.match.nivel === "provavel");
+    if (pendRotulos.length === 0 && pendPessoas.length === 0) {
+      setStatusIA("");
+      return;
+    }
+    setStatusIA("A IA está conferindo colunas e pessoas…");
+
+    const colunasArquivo = pendRotulos.map((rot) => {
+      const its = r.itens.filter((i) => i.rotulo === rot);
+      const nums = its.map((i) => i.valor).filter((v): v is number => v !== null);
+      return { rotulo: rot, amostras: its.slice(0, 4).map((i) => i.bruto), soma: nums.length ? nums.reduce((a, b) => a + b, 0) : null };
+    });
+    const colunasFolha = rubricasUsaveis.map((x) => ({ id: x.id, nome: x.nome, grupo: x.grupo, formato: x.formato }));
+    const colaboradores = funcionarios.map((f) => ({ id: f.id, nome: f.nome, detalhe: [f.empresa, f.unidade].filter(Boolean).join(" · ") }));
+
+    const lotes: { chave: string; nome: string; matricula: string }[][] = [];
+    const pessoasPend = pendPessoas.map((p) => ({ chave: p.chave, nome: p.nome, matricula: p.matricula }));
+    for (let i = 0; i < pessoasPend.length; i += 80) lotes.push(pessoasPend.slice(i, i + 80));
+    if (lotes.length === 0) lotes.push([]);
+
+    for (let i = 0; i < lotes.length; i++) {
+      if (execucao.current !== id) return;
+      const resp = await iaAnalisar({
+        nomeArquivo: nomeArq,
+        colunasArquivo: i === 0 ? colunasArquivo : [],
+        colunasFolha: i === 0 ? colunasFolha : [],
+        pessoas: lotes[i],
+        colaboradores: lotes[i].length ? colaboradores : [],
+      });
+      if (execucao.current !== id) return;
+      if (!resp.ok) {
+        setStatusIA("");
+        setIaIndisponivel(resp.erro);
+        return;
+      }
+      // só preenche o que ainda está vazio (se a pessoa já mexeu, vale o que ela escolheu)
+      if (Object.keys(resp.colunas).length) {
+        setMapa((m) => {
+          const novo = { ...m };
+          for (const [rot, v] of Object.entries(resp.colunas)) if (!novo[rot]) novo[rot] = v.rubricaId;
+          return novo;
+        });
+        setIaColunas((x) => ({ ...x, ...Object.fromEntries(Object.entries(resp.colunas).map(([rot, v]) => [rot, v.rubricaId])) }));
+      }
+      if (Object.keys(resp.pessoas).length) {
+        setIaPessoas((x) => ({ ...x, ...Object.fromEntries(Object.entries(resp.pessoas).map(([ch, v]) => [ch, v.colaboradorId])) }));
+      }
+    }
+    setStatusIA("");
+  }
+
+  async function aplicarLinhas(linhas: string[][], opcoes?: { forcarIA?: boolean; nomeArq?: string; linhasIA?: string[][] }) {
+    const nomeArq = opcoes?.nomeArq ?? nomeArquivo;
+    const id = ++execucao.current;
+    const linhasIA = opcoes?.linhasIA ?? linhas;
+    setLinhasAtuais(linhas);
+    setLinhasParaIA(linhasIA);
+    setIaIndisponivel("");
+    setStatusIA("");
+
+    let r: LeituraTabela | null = opcoes?.forcarIA ? null : interpretarLinhas(linhas);
+    if (!r || !r.ok || r.itens.length === 0) {
+      // as regras não entenderam: tenta a IA
+      const erroRegras = r?.erro ?? "Não consegui entender esse arquivo.";
+      setEtapa(opcoes?.forcarIA && leitura ? "previa" : "lendo");
+      setStatusIA("A IA está lendo o arquivo…");
+      const ia = await extrairComIA(linhasIA, nomeArq, id);
+      if (execucao.current !== id) return;
+      setStatusIA("");
+      if (!("itens" in ia)) {
+        if (opcoes?.forcarIA && leitura) {
+          setErro(ia.erro);
+          setEtapa("previa");
+        } else {
+          setErro(ia.semChave ? `${erroRegras} (Dá para tentar com a IA, mas ela ainda não foi ligada: falta a chave na Vercel.)` : `${erroRegras} A IA também não conseguiu: ${ia.erro}`);
+          setEtapa("escolher");
+        }
+        return;
+      }
+      if (!ia.ok) {
+        const refazendo = !!opcoes?.forcarIA && !!leitura;
+        setErro(refazendo ? (ia.erro ?? "A IA não achou valores nesse arquivo.") : `${erroRegras} ${ia.erro ?? ""}`.trim());
+        setEtapa(refazendo ? "previa" : "escolher");
+        return;
+      }
+      r = ia;
+    }
+    setErro(null);
+    const mapaInicial = mostrarLeitura(r);
+    await refinarComIA(r, mapaInicial, nomeArq, id);
   }
 
   async function lerArquivo(arquivo: File) {
@@ -122,10 +281,15 @@ export default function ImportarArquivoFolha({
         if (linhas.length === 0) {
           throw new Error("Esse PDF não tem texto para eu ler (pode ser uma foto ou digitalização). Use um PDF gerado pelo sistema, ou uma planilha.");
         }
-        aplicarLinhas(linhas);
+        await aplicarLinhas(linhas, { nomeArq: arquivo.name });
       } else if (nome.endsWith(".csv") || nome.endsWith(".txt")) {
         const texto = await arquivo.text();
-        aplicarLinhas(csvParaLinhas(texto));
+        const cruas = texto
+          .replace(/^\uFEFF/, "")
+          .split(/\r?\n/)
+          .filter((l) => l.trim() !== "")
+          .map((l) => [l]);
+        await aplicarLinhas(csvParaLinhas(texto), { nomeArq: arquivo.name, linhasIA: cruas });
       } else if (nome.endsWith(".xlsx") || nome.endsWith(".xls")) {
         const fd = new FormData();
         fd.set("arquivo", arquivo);
@@ -138,7 +302,7 @@ export default function ImportarArquivoFolha({
           if (a.linhas.length > r.abas[melhor].linhas.length) melhor = i;
         });
         setAbaSel(melhor);
-        aplicarLinhas(r.abas[melhor].linhas);
+        await aplicarLinhas(r.abas[melhor].linhas, { nomeArq: arquivo.name });
       } else {
         throw new Error("Tipo de arquivo não aceito. Envie Excel (.xlsx), CSV ou PDF.");
       }
@@ -150,26 +314,13 @@ export default function ImportarArquivoFolha({
 
   function trocarAba(i: number) {
     setAbaSel(i);
-    aplicarLinhas(abas[i].linhas);
+    void aplicarLinhas(abas[i].linhas);
   }
 
   // ------------------------------------------------------------------
   // 2. juntar linhas por pessoa e achar o colaborador
   // ------------------------------------------------------------------
-  const pessoas: PessoaLida[] = useMemo(() => {
-    if (!leitura) return [];
-    const mapaPessoas = new Map<string, PessoaLida>();
-    for (const it of leitura.itens) {
-      const chave = chaveDaPessoa(it);
-      let p = mapaPessoas.get(chave);
-      if (!p) {
-        p = { chave, nome: it.nome, cpf: it.cpf, matricula: it.matricula, itens: [], match: acharColaborador(it, funcionarios) };
-        mapaPessoas.set(chave, p);
-      }
-      p.itens.push(it);
-    }
-    return Array.from(mapaPessoas.values());
-  }, [leitura, funcionarios]);
+  const pessoas: PessoaLida[] = useMemo(() => (leitura ? agruparPessoas(leitura.itens, funcionarios) : []), [leitura, funcionarios]);
 
   // os parecidos vêm primeiro na lista de escolha
   const opcoesDaPessoa = (p: PessoaLida): FuncionarioImportacao[] => {
@@ -177,7 +328,9 @@ export default function ImportarArquivoFolha({
     return [...parecidos, ...funcionarios.filter((f) => !parecidos.some((c) => c.id === f.id))];
   };
 
-  const colaboradorDe = (p: PessoaLida): string => escolha[p.chave] ?? p.match.colaborador?.id ?? "";
+  const colaboradorDe = (p: PessoaLida): string => escolha[p.chave] ?? p.match.colaborador?.id ?? iaPessoas[p.chave] ?? "";
+  /** a pessoa foi achada só pela IA (nem as regras nem o usuário decidiram) */
+  const soIA = (p: PessoaLida): boolean => !escolha[p.chave] && !p.match.colaborador && !!iaPessoas[p.chave];
 
   // ------------------------------------------------------------------
   // 3. o que vai ser lançado
@@ -189,7 +342,7 @@ export default function ImportarArquivoFolha({
     >();
     for (const p of pessoas) {
       if (excluir[p.chave]) continue;
-      const colabId = escolha[p.chave] ?? p.match.colaborador?.id ?? "";
+      const colabId = escolha[p.chave] ?? p.match.colaborador?.id ?? iaPessoas[p.chave] ?? "";
       if (!colabId) continue;
       for (const it of p.itens) {
         const rubId = mapa[it.rotulo];
@@ -222,10 +375,10 @@ export default function ImportarArquivoFolha({
       return { ...x, antes: 0 };
     });
     return lista.filter((x) => x.valor !== 0 || x.valorTexto);
-  }, [pessoas, excluir, escolha, mapa, rubricaPorId, valoresAtuais, modo]);
+  }, [pessoas, excluir, escolha, iaPessoas, mapa, rubricaPorId, valoresAtuais, modo]);
 
   const semColaborador = pessoas.filter((p) => !colaboradorDe(p) && !excluir[p.chave]);
-  const provaveis = pessoas.filter((p) => !escolha[p.chave] && p.match.nivel === "provavel");
+  const provaveis = pessoas.filter((p) => !escolha[p.chave] && (p.match.nivel === "provavel" || soIA(p)));
   const rotulosSemColuna = (leitura?.rotulos ?? []).filter((r) => !mapa[r]);
   const substituidos = lancamentos.filter((l) => l.atual && modo === "substituir" && (valorBR(l.atual) ?? 0) !== l.valor && l.atual !== "").length;
 
@@ -251,7 +404,7 @@ export default function ImportarArquivoFolha({
   // ------------------------------------------------------------------
   // tela
   // ------------------------------------------------------------------
-  const pessoasVisiveis = soPendentes ? pessoas.filter((p) => !colaboradorDe(p) || p.match.nivel === "provavel") : pessoas;
+  const pessoasVisiveis = soPendentes ? pessoas.filter((p) => !colaboradorDe(p) || p.match.nivel === "provavel" || soIA(p)) : pessoas;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-3" onClick={aoFechar}>
@@ -267,7 +420,7 @@ export default function ImportarArquivoFolha({
           <div>
             <h3 className="text-base font-semibold">Importar arquivo para a folha</h3>
             <p className={`${TXT} text-slate-600`}>
-              Mês: <b>{rotuloMes}</b>. Aceita Excel (.xlsx), CSV e PDF. Nada é lançado antes de você conferir e confirmar.
+              Mês: <b>{rotuloMes}</b>. Aceita Excel (.xlsx), CSV e PDF. A IA ajuda a entender colunas e nomes. Nada é lançado antes de você conferir e confirmar.
             </p>
           </div>
           <button type="button" onClick={aoFechar} className="rounded-md px-2 py-1 text-[13px] text-slate-600 hover:bg-slate-100">
@@ -296,7 +449,7 @@ export default function ImportarArquivoFolha({
                 className="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-slate-300 px-6 py-10 text-center"
               >
                 <p className="text-[15px] font-medium">
-                  {etapa === "lendo" ? `Lendo ${nomeArquivo}…` : "Arraste o arquivo aqui ou escolha no computador"}
+                  {etapa === "lendo" ? statusIA || `Lendo ${nomeArquivo}…` : "Arraste o arquivo aqui ou escolha no computador"}
                 </p>
                 <button
                   type="button"
@@ -367,13 +520,34 @@ export default function ImportarArquivoFolha({
                   type="button"
                   className="text-blue-700 underline"
                   onClick={() => {
+                    execucao.current++;
+                    setStatusIA("");
                     setLeitura(null);
                     setEtapa("escolher");
                   }}
                 >
                   Trocar arquivo
                 </button>
+                <button
+                  type="button"
+                  className="text-blue-700 underline disabled:opacity-50"
+                  disabled={!!statusIA || etapa === "salvando"}
+                  title="A IA lê o arquivo do zero, sem usar as regras. Use se os valores ou as colunas vieram errados."
+                  onClick={() => void aplicarLinhas(linhasAtuais, { forcarIA: true, linhasIA: linhasParaIA })}
+                >
+                  Ler de novo com IA
+                </button>
               </div>
+              {statusIA && (
+                <p className={`${TXT} rounded-md bg-blue-50 px-3 py-2 text-blue-900`} role="status">
+                  {statusIA} Pode ir conferindo, as sugestões aparecem em amarelo.
+                </p>
+              )}
+              {iaIndisponivel && (
+                <p className={`${TXT} rounded-md bg-slate-50 px-3 py-2 text-slate-700`}>
+                  A IA não ajudou dessa vez: {iaIndisponivel} O que as regras entenderam continua valendo.
+                </p>
+              )}
               {leitura.avisos.map((a, i) => (
                 <p key={i} className={`${TXT} rounded-md bg-slate-50 px-3 py-2 text-slate-700`}>
                   {a}
@@ -384,7 +558,7 @@ export default function ImportarArquivoFolha({
               <section>
                 <h4 className="mb-1 text-[14px] font-semibold">1 · Para qual coluna da folha vai cada valor?</h4>
                 <p className={`${TXT} mb-2 text-slate-600`}>
-                  Já escolhi o que reconheci. Onde estiver &quot;Não importar&quot;, a coluna do arquivo fica de fora.
+                  Já escolhi o que reconheci (o que a IA sugeriu fica em amarelo). Onde estiver &quot;Não importar&quot;, a coluna do arquivo fica de fora.
                 </p>
                 <div className="overflow-hidden rounded-lg border border-slate-200">
                   <table className={`w-full ${TXT}`}>
@@ -411,7 +585,7 @@ export default function ImportarArquivoFolha({
                                 aria-label={`Coluna da folha para ${rot || "o arquivo"}`}
                                 value={mapa[rot] ?? ""}
                                 onChange={(e) => setMapa((m) => ({ ...m, [rot]: e.target.value }))}
-                                className={`input !py-1 ${!mapa[rot] ? "!border-amber-400 !bg-amber-50" : ""}`}
+                                className={`input !py-1 ${!mapa[rot] || iaColunas[rot] === mapa[rot] ? "!border-amber-400 !bg-amber-50" : ""}`}
                               >
                                 <option value="">— Não importar —</option>
                                 <optgroup label="Proventos">
@@ -433,6 +607,9 @@ export default function ImportarArquivoFolha({
                                     ))}
                                 </optgroup>
                               </select>
+                              {mapa[rot] && iaColunas[rot] === mapa[rot] && (
+                                <span className="mt-1 block text-[11px] text-amber-800">Sugerido pela IA — confira.</span>
+                              )}
                               {rubSel && rubSel.formato !== "moeda" && (
                                 <span className="mt-1 block text-[11px] text-slate-500">
                                   Coluna de {rubSel.formato === "texto" ? "texto" : "Sim/Não"}: o texto do arquivo vai como está.
@@ -457,7 +634,7 @@ export default function ImportarArquivoFolha({
                   </label>
                 </div>
                 <p className={`${TXT} mb-2 text-slate-600`}>
-                  Procurei pelo CPF, pela matrícula e pelo nome. Quem não foi achado fica de fora até você escolher o colaborador.
+                  Procurei pelo CPF, pela matrícula e pelo nome; a IA ajuda nos nomes que não são iguais aos do sistema (sugestões em amarelo). Quem não foi achado fica de fora até você escolher o colaborador.
                 </p>
                 <div className="max-h-[320px] overflow-auto rounded-lg border border-slate-200">
                   <table className={`w-full ${TXT}`}>
@@ -472,7 +649,7 @@ export default function ImportarArquivoFolha({
                     <tbody>
                       {pessoasVisiveis.map((p) => {
                         const colabId = colaboradorDe(p);
-                        const provavel = !escolha[p.chave] && p.match.nivel === "provavel";
+                        const provavel = !escolha[p.chave] && (p.match.nivel === "provavel" || soIA(p));
                         const itensDaPessoa = p.itens.filter((i) => mapa[i.rotulo]).length;
                         return (
                           <tr key={p.chave} className={`border-t border-slate-100 ${excluir[p.chave] ? "opacity-50" : ""}`}>
@@ -512,6 +689,8 @@ export default function ImportarArquivoFolha({
                               <div className="mt-0.5 text-[11px] text-slate-500">
                                 {escolha[p.chave]
                                   ? "escolhido por você"
+                                  : soIA(p)
+                                  ? "sugerido pela IA — confira"
                                   : p.match.nivel
                                   ? NIVEL_ROTULO[p.match.nivel]
                                   : p.match.candidatos.length > 1
