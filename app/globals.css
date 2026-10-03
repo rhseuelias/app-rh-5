@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 body {
-  background-color: #fff8f1;
+  background-color: #faf7f3;
   color: #262626;
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
@@ -45,7 +45,7 @@ h2 {
 /* Botões                                                        */
 /* ------------------------------------------------------------ */
 .btn-primary {
-  @apply bg-ink-800 hover:bg-ink-900 text-brand-50 font-semibold rounded-md px-5 py-2.5 transition-colors;
+  @apply bg-[#262626] hover:bg-[#3d3d3d] text-white font-semibold rounded-md px-5 py-2.5 transition-colors;
 }
 
 .btn-secondary {

@@ -3,6 +3,7 @@ import { differenceInCalendarDays } from "date-fns";
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, EtapaProcesso, ProcessoIntegracao, Unidade } from "@/types/db";
 import { etapaAtrasada } from "@/lib/calculos";
+import IncluirColaboradorPainel from "@/components/integracao/IncluirColaboradorPainel";
 import PainelTimeline, {
   type EstadoEtapa,
   type GrupoTimeline,
@@ -122,6 +123,13 @@ export default async function PainelIntegracaoPage() {
       return "RH";
     };
 
+    const respCurto = (e: EtapaProcesso): string => {
+      if (e.responsavel === "LIDER") return "Líder";
+      if (e.responsavel === "FUNCIONARIO") return "Funcionário";
+      if (e.responsavel === "SISTEMA") return "Sistema";
+      return "RH";
+    };
+
     const porGrupo: EtapaProcesso[][] = GRUPOS.map(() => []);
     etapasDoProcesso.forEach((e, i) => {
       porGrupo[indiceGrupo(e, i, total)].push(e);
@@ -201,8 +209,25 @@ export default async function PainelIntegracaoPage() {
         situacao = "Pendente";
         situacaoTom = "amber";
       }
+      const dPrazo = diasAte(atualRaw.prazo);
+      const curto = respCurto(atualRaw);
+      let detalhe: string;
+      if (atrasadaAtual && dPrazo !== null) {
+        const n = Math.max(1, -dPrazo);
+        detalhe = `${curto} · atrasada há ${n} dia${n !== 1 ? "s" : ""}`;
+      } else if (atualRaw.prazo) {
+        detalhe = `${curto} · até ${fmtCurta(atualRaw.prazo)}`;
+      } else {
+        detalhe = `${curto} · sem prazo definido`;
+      }
       atual = {
         nome: atualRaw.nome,
+        detalhe,
+        atrasada: atrasadaAtual,
+        diasAtraso: atrasadaAtual && dPrazo !== null ? Math.max(1, -dPrazo) : 0,
+        prazoCurto: fmtCurta(atualRaw.prazo),
+        responsavelTipo: atualRaw.responsavel,
+        responsavelCurto: curto,
         responsavel: respLabel(atualRaw),
         inicio: fmt(atualRaw.data_inicio),
         prazo: fmt(atualRaw.prazo),
@@ -226,22 +251,37 @@ export default async function PainelIntegracaoPage() {
       status = d !== null && d < 5 ? "andamento" : "dentro";
     }
 
-    const categoriaDoGrupo = ["Tarefas", "Exames", "Documentos", "Treinamentos", "Tarefas", "Tarefas"];
-    const ordemCategorias = ["Documentos", "Exames", "Treinamentos", "Tarefas"];
-    const pendencias = ordemCategorias.map((categoria) => ({
-      categoria,
-      itens: etapasDoProcesso
-        .filter((e, i) => !feita(e) && categoriaDoGrupo[indiceGrupo(e, i, total)] === categoria)
-        .map((e) => ({ nome: e.nome, atrasada: etapaAtrasada(e.prazo, e.status) })),
-    }));
+    const pendencias = etapasDoProcesso
+      .filter((e) => !feita(e))
+      .map((e) => ({ nome: e.nome, atrasada: etapaAtrasada(e.prazo, e.status), resp: respCurto(e) }));
+
+    const etapasLista = etapasDoProcesso.map((e) => {
+      const atrasadaE = etapaAtrasada(e.prazo, e.status);
+      let estadoE: "done" | "progress" | "late" | "pending" = "pending";
+      let direita = "—";
+      if (e.status === "realizado") {
+        estadoE = "done";
+        direita = fmtCurta(e.data_conclusao) || "—";
+      } else if (e.status === "em_experiencia") {
+        estadoE = "done";
+        direita = "em experiência";
+      } else if (atrasadaE) {
+        estadoE = "late";
+        direita = e.prazo ? `prazo ${fmtCurta(e.prazo)}` : "atrasada";
+      } else if (e.status === "em_andamento") {
+        estadoE = "progress";
+        direita = "em andamento";
+      }
+      return { nome: e.nome, resp: respCurto(e), estado: estadoE, direita };
+    });
 
     const movimentos = etapasDoProcesso
       .flatMap((e) => {
         if (e.data_conclusao) {
-          return [{ chave: e.data_conclusao, data: fmt(e.data_conclusao), texto: `${e.nome} — etapa concluída`, quem: e.concluido_por ?? respLabel(e) }];
+          return [{ chave: e.data_conclusao, data: fmtCurta(e.data_conclusao), texto: `${e.nome} — etapa concluída`, quem: e.concluido_por ?? respLabel(e) }];
         }
         if (e.data_inicio) {
-          return [{ chave: e.data_inicio, data: fmt(e.data_inicio), texto: `${e.nome} — etapa iniciada`, quem: respLabel(e) }];
+          return [{ chave: e.data_inicio, data: fmtCurta(e.data_inicio), texto: `${e.nome} — etapa iniciada`, quem: respLabel(e) }];
         }
         return [];
       })
@@ -259,7 +299,7 @@ export default async function PainelIntegracaoPage() {
       id: p.id,
       colaboradorId: p.colaborador_id,
       nome: colaborador?.nome ?? "—",
-      cargo: colaborador?.cargo ?? "—",
+      cargo: colaborador?.cargo && colaborador.cargo !== "—" ? colaborador.cargo : "",
       empresaId: colaborador?.empresa_id ?? null,
       empresaNome: empresa?.nome ?? "",
       unidadeId: colaborador?.unidade_id ?? null,
@@ -277,6 +317,7 @@ export default async function PainelIntegracaoPage() {
       responsavelAtual: atualRaw ? respLabel(atualRaw) : "RH",
       previsao,
       pendencias,
+      etapas: etapasLista,
       movimentos,
     };
   });
@@ -286,18 +327,52 @@ export default async function PainelIntegracaoPage() {
     (a, b) => STATUS_PRIORIDADE[a.status] - STATUS_PRIORIDADE[b.status] || a.nome.localeCompare(b.nome, "pt-BR")
   );
 
+  const atrasados = linhas.filter((l) => l.status === "atrasado").length;
+
+  // Quem ainda não tem processo de integração pode ser incluído pelo botão do topo.
+  const comProcesso = new Set(((processos ?? []) as ProcessoIntegracao[]).map((p) => p.colaborador_id));
+  const disponiveis = ((colaboradores ?? []) as Colaborador[])
+    .filter((c) => (c.status === "ativo" || c.status === "experiencia") && !comProcesso.has(c.id))
+    .map((c) => ({
+      id: c.id,
+      nome: c.nome,
+      detalhe: [c.cargo, c.empresa_id ? empresaPorId.get(c.empresa_id)?.nome : ""].filter(Boolean).join(" · "),
+    }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-5" style={{ fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" }}>
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-display font-semibold text-ink-900">Painel de Integração</h1>
-          <p className="text-ink-600 text-sm mt-1">
-            Acompanhe o processo de integração dos colaboradores em tempo real.
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: "'Oswald', 'Arial Narrow', sans-serif",
+              fontWeight: 600,
+              fontSize: 32,
+              lineHeight: 1.1,
+              textTransform: "uppercase",
+              letterSpacing: ".02em",
+              color: "#262626",
+            }}
+          >
+            Painel de Integração
+          </h1>
+          <p style={{ fontSize: 13, color: "#5c5c5c", marginTop: 4 }}>
+            {linhas.length} colaborador{linhas.length !== 1 ? "es" : ""} em integração · {atrasados} com etapa atrasada ·
+            atualizado agora
           </p>
         </div>
-        <Link href="/configuracoes/integracao" className="text-sm text-brand-600 hover:text-brand-700 hover:underline">
-          Configurações do processo
-        </Link>
+        <div className="flex items-center gap-5">
+          <Link
+            href="/configuracoes/integracao"
+            style={{ fontSize: 13, fontWeight: 500, color: "#b85c12" }}
+            className="hover:underline"
+          >
+            Configurações do processo
+          </Link>
+          <IncluirColaboradorPainel disponiveis={disponiveis} />
+        </div>
       </div>
 
       <PainelTimeline linhas={linhas} gruposNomes={GRUPOS} />

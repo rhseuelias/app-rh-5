@@ -174,16 +174,16 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
 
   return (
     <aside
-      className={`${recolhido ? "w-[68px]" : "w-64"} shrink-0 bg-brand-400 min-h-screen flex flex-col transition-[width] duration-200 print:hidden`}
+      className={`${recolhido ? "w-[68px]" : "w-64"} shrink-0 bg-[#262626] min-h-screen flex flex-col transition-[width] duration-200 print:hidden`}
     >
-      <div className={`border-b border-ink-800/15 ${recolhido ? "px-2 py-4 flex justify-center" : "px-5 py-6"}`}>
+      <div className={`border-b border-white/10 ${recolhido ? "px-2 py-4 flex justify-center" : "px-5 py-6"}`}>
         {recolhido ? (
           <button
             type="button"
             onClick={alternarMenu}
             aria-label="Expandir menu"
             title="Expandir menu"
-            className="w-9 h-9 rounded-lg border border-ink-800/25 bg-white/30 hover:bg-white/60 flex items-center justify-center text-ink-900 transition-colors"
+            className="w-9 h-9 rounded-lg border border-white/15 bg-transparent hover:bg-white/[.06] flex items-center justify-center text-[#a39a91] transition-colors"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <polyline points="9 18 15 12 9 6" />
@@ -192,17 +192,22 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
         ) : (
           <div className="flex items-start justify-between gap-2">
             <div>
-              <p role="heading" aria-level={1} className="font-display font-bold text-ink-900 text-2xl leading-tight uppercase">
+              <p
+                role="heading"
+                aria-level={1}
+                className="font-display font-semibold text-white text-2xl leading-tight uppercase flex items-center gap-2"
+              >
+                <span className="inline-block w-[10px] h-[10px] bg-[#fbb26e] shrink-0" aria-hidden="true" />
                 AppliQ RH
               </p>
-              <p className="text-xs text-ink-800 mt-1">Gestão de pessoas que gera resultados</p>
+              <p className="text-xs text-[#a39a91] mt-1">Gestão de pessoas que gera resultados</p>
             </div>
             <button
               type="button"
               onClick={alternarMenu}
               aria-label="Recolher menu"
               title="Recolher menu"
-              className="shrink-0 w-8 h-8 rounded-lg border border-ink-800/25 bg-white/30 hover:bg-white/60 flex items-center justify-center text-ink-900 transition-colors"
+              className="shrink-0 w-8 h-8 rounded-lg border border-white/15 bg-transparent hover:bg-white/[.06] flex items-center justify-center text-[#a39a91] transition-colors"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <polyline points="15 18 9 12 15 6" />
@@ -220,9 +225,9 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
               href={item.href}
               title={recolhido ? item.label : undefined}
               aria-label={recolhido ? item.label : undefined}
-              className={`flex items-center rounded-xl text-sm font-medium transition-colors ${
+              className={`flex items-center rounded-[9px] text-sm font-medium transition-colors ${
                 recolhido ? "justify-center py-2.5" : "gap-3 px-3.5 py-2.5"
-              } ${ativo ? "bg-ink-800 text-brand-50" : "text-ink-800 hover:bg-white/30"}`}
+              } ${ativo ? "bg-[#fbb26e] text-[#262626]" : "text-[#d9d2ca] hover:bg-white/[.06]"}`}
             >
               <span className="shrink-0">
                 <Icone nome={item.icon} />
@@ -232,12 +237,14 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
           );
         })}
       </nav>
-      <div className={`pb-2 ${recolhido ? "px-2" : "px-3"}`}>
+      <div className={`pb-1 pt-3 border-t border-white/10 ${recolhido ? "px-2" : "px-3"}`}>
         <a
           href="/api/backup"
           title={recolhido ? "Exportar backup" : undefined}
           aria-label={recolhido ? "Exportar backup" : undefined}
-          className="flex items-center justify-center gap-2 text-xs text-ink-800 hover:bg-white/30 rounded-xl py-2.5 border border-ink-800/25 transition-colors"
+          className={`flex items-center gap-3 text-sm text-[#d9d2ca] hover:bg-white/[.06] rounded-[9px] transition-colors ${
+            recolhido ? "justify-center py-2.5" : "px-3.5 py-2.5"
+          }`}
         >
           <Icone nome="backup" />
           {!recolhido && "Exportar backup"}
@@ -247,7 +254,7 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
         <button
           title={recolhido ? "Sair" : undefined}
           aria-label={recolhido ? "Sair" : undefined}
-          className={`w-full flex items-center text-sm text-ink-800 hover:bg-white/30 rounded-xl transition-colors ${
+          className={`w-full flex items-center text-sm text-[#d9d2ca] hover:bg-white/[.06] rounded-[9px] transition-colors ${
             recolhido ? "justify-center py-2.5" : "gap-3 text-left px-3.5 py-2.5"
           }`}
         >
