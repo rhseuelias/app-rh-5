@@ -2337,7 +2337,7 @@ interface ResumoGeracaoAutomatica {
  * preferenciais e capacidade máxima simultânea por unidade/departamento.
  * Períodos definidos manualmente nunca são tocados por essa função.
  */
-async function executarGeracaoAutomatica(cenarioId: string): Promise<ResumoGeracaoAutomatica> {
+async function executarGeracaoAutomatica(cenarioId: string, somenteColaboradorId?: string): Promise<ResumoGeracaoAutomatica> {
   const supabase = createClient();
 
   const { data: cenario } = await supabase.from("cenarios_simulacao").select("*").eq("id", cenarioId).single();
@@ -2396,7 +2396,11 @@ async function executarGeracaoAutomatica(cenarioId: string): Promise<ResumoGerac
     fila = fila.slice().sort((a, b) => a.nome.localeCompare(b.nome));
   }
 
+  // "Gerar" de uma pessoa só (botão da linha na Simulação): limita a fila a ela
+  if (somenteColaboradorId) fila = fila.filter((c) => c.id === somenteColaboradorId);
+
   for (const c of colaboradores) {
+    if (somenteColaboradorId && c.id !== somenteColaboradorId) continue;
     if (!aquisitivoPorColaborador.has(c.id) && !jaDefinidos.has(c.id)) resumo.semPeriodoAquisitivo.push(c.nome);
   }
 
@@ -2525,8 +2529,8 @@ async function executarGeracaoAutomatica(cenarioId: string): Promise<ResumoGerac
 }
 
 /** "🎲 Gerar automaticamente" / "GERAR FÉRIAS ALEATORIAMENTE": gera só pra quem ainda não tem nenhuma definição no cenário. */
-export async function gerarAutomaticoParaRestantes(cenarioId: string): Promise<ResumoGeracaoAutomatica> {
-  return executarGeracaoAutomatica(cenarioId);
+export async function gerarAutomaticoParaRestantes(cenarioId: string, somenteColaboradorId?: string): Promise<ResumoGeracaoAutomatica> {
+  return executarGeracaoAutomatica(cenarioId, somenteColaboradorId);
 }
 
 /** "🎲 Nova simulação": mantém as férias definidas manualmente e gera datas novas só pros colaboradores automáticos. */

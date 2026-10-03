@@ -2,20 +2,43 @@ import { createClient } from "@/lib/supabase-server";
 import Link from "next/link";
 import { addDays } from "date-fns";
 import type { Colaborador, Empresa, Unidade, Ferias, PeriodoAquisitivo, Feriado, CenarioSimulacao } from "@/types/db";
-import { formatarReais } from "@/lib/formatadores";
-import { diasParaVencerFerias, formatarDataBR } from "@/lib/calculos";
-import { detectarConflitos, respeitaRegraInicio, paraSetDeDatas } from "@/lib/ferias-calculos";
-import { normalizarConfig, periodosDoModelo, calcularSaldo } from "@/lib/simulacao-ferias";
-import { criarCenario, excluirCenario, duplicarCenario, limparCenario, promoverCenario } from "@/lib/actions";
-import ConfigSimulacaoForm from "@/components/ferias/ConfigSimulacaoForm";
-import DefinirManualForm from "@/components/ferias/DefinirManualForm";
-import GerarAutomaticoBotao from "@/components/ferias/GerarAutomaticoBotao";
-import MapaSimulacao, { type LinhaSimulacao, type CelulaSimulacao, LEGENDA_SIMULACAO } from "@/components/ferias/MapaSimulacao";
+import { formatarDataBR } from "@/lib/calculos";
+import { detectarConflitos, respeitaRegraInicio, paraSetDeDatas, semanasEnvolvidas } from "@/lib/ferias-calculos";
+import { normalizarConfig, calcularSaldo } from "@/lib/simulacao-ferias";
+import { criarCenario } from "@/lib/actions";
+import { souAssistente } from "@/lib/permissoes";
+import { fDM, fDMA } from "@/lib/ferias-regras";
+import ExcluirCenarioBotao from "@/components/ferias/ExcluirCenarioBotao";
+import SimulacaoWorkspace, {
+  type PessoaSim,
+  type PendenciaSim,
+} from "@/components/ferias/SimulacaoWorkspace";
 
 export const dynamic = "force-dynamic";
 
+const INTER = "'Inter', ui-sans-serif, system-ui, sans-serif";
+const OSWALD = "'Oswald', 'Arial Narrow', sans-serif";
+
 function chaveDia(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+function dia10(s: string): string {
+  return String(s).slice(0, 10);
+}
+
+/** Motivo (em português) de uma data de início ser recusada pela regra da CLT. */
+function motivoInicioInvalido(iso: string, feriadosChave: Set<string>): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const base = Date.UTC(y, m - 1, d);
+  const dow = new Date(base).getUTCDay();
+  if (dow === 5) return "cai numa sexta-feira";
+  if (dow === 6) return "cai num sábado";
+  for (let i = 1; i <= 2; i++) {
+    const outro = new Date(base + i * 86400000).toISOString().slice(0, 10);
+    if (feriadosChave.has(outro)) return `começa a menos de 2 dias de um feriado (${fDM(outro)})`;
+  }
+  return "não é um dia de início permitido";
 }
 
 export default async function SimulacaoFeriasPage({
@@ -44,87 +67,170 @@ export default async function SimulacaoFeriasPage({
   // ------------------------------------------------------------
   if (!cenarioAtual) {
     const anoBase = new Date().getFullYear();
+    const campo = {
+      fontFamily: INTER,
+      fontSize: 13,
+      padding: "9px 12px",
+      border: "1px solid #e7ddd2",
+      borderRadius: 8,
+      background: "#fff",
+      color: "#262626",
+    } as const;
+    const rotulo = {
+      fontFamily: INTER,
+      fontSize: 11,
+      fontWeight: 600,
+      letterSpacing: ".06em",
+      textTransform: "uppercase",
+      color: "#737373",
+    } as const;
+
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Simulação de férias</h1>
-          <p className="text-slate-500 text-sm">
-            Monte cenários de planejamento por empresa/unidade e ano — o RH escolhe manualmente alguns colaboradores e
-            deixa o sistema distribuir os demais, sem mexer no mapa oficial até aprovar.
+      <div className="max-w-[1320px] mx-auto flex flex-col gap-5" style={{ fontFamily: INTER, color: "#262626" }}>
+        <div className="flex flex-col gap-2">
+          <Link href="/ferias" style={{ fontSize: 12, fontWeight: 500, color: "#b85c12" }} className="hover:underline">
+            ← Férias
+          </Link>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: OSWALD,
+              fontWeight: 600,
+              fontSize: 32,
+              lineHeight: 1,
+              textTransform: "uppercase",
+              letterSpacing: ".02em",
+            }}
+          >
+            Simulação de férias
+          </h1>
+          <p style={{ fontSize: 13, color: "#5c5c5c", margin: 0, maxWidth: 720 }}>
+            Monte cenários de planejamento por empresa, unidade e ano. O RH escolhe algumas datas e deixa o sistema
+            distribuir as demais, sem mexer no mapa oficial até aprovar.
           </p>
         </div>
-        <Link href="/ferias" className="text-xs text-brand-600 hover:underline inline-block">
-          ← Voltar pro mapa de férias
-        </Link>
 
-        <div className="card">
-          <h2 className="font-medium text-slate-900 mb-3">+ Nova simulação</h2>
-          <form action={criarCenario} className="flex flex-wrap gap-3 items-end">
-            <label className="text-xs text-slate-500">
-              Nome
+        <div style={{ background: "#fff", border: "1px solid #f1e4d6", borderRadius: 12, padding: "20px 24px" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>Nova simulação</div>
+          <form action={criarCenario} className="flex flex-wrap gap-4 items-end">
+            <label className="flex flex-col gap-1.5">
+              <span style={rotulo}>Nome</span>
               <input
-                type="text" name="nome" required placeholder="Planejamento de Férias 2027 — Cenário A"
-                className="input !text-xs mt-1 !w-64"
+                type="text"
+                name="nome"
+                required
+                placeholder="Planejamento de Férias 2027 — Cenário A"
+                style={{ ...campo, width: 280 }}
               />
             </label>
-            <label className="text-xs text-slate-500">
-              Empresa
-              <select name="empresa_id" className="input !text-xs mt-1 !w-auto">
+            <label className="flex flex-col gap-1.5">
+              <span style={rotulo}>Empresa</span>
+              <select name="empresa_id" style={campo}>
                 <option value="">Todas</option>
                 {empresas.map((e) => (
-                  <option key={e.id} value={e.id}>{e.nome}</option>
+                  <option key={e.id} value={e.id}>
+                    {e.nome}
+                  </option>
                 ))}
               </select>
             </label>
-            <label className="text-xs text-slate-500">
-              Unidade
-              <select name="unidade_id" className="input !text-xs mt-1 !w-auto">
+            <label className="flex flex-col gap-1.5">
+              <span style={rotulo}>Unidade</span>
+              <select name="unidade_id" style={campo}>
                 <option value="">Todas</option>
                 {unidades.map((u) => (
-                  <option key={u.id} value={u.id}>{u.nome}</option>
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
                 ))}
               </select>
             </label>
-            <label className="text-xs text-slate-500">
-              Ano
-              <select name="ano" defaultValue={anoBase + 1} className="input !text-xs mt-1 !w-auto">
+            <label className="flex flex-col gap-1.5">
+              <span style={rotulo}>Ano</span>
+              <select name="ano" defaultValue={anoBase + 1} style={campo}>
                 {[0, 1, 2, 3].map((i) => (
-                  <option key={anoBase + i} value={anoBase + i}>{anoBase + i}</option>
+                  <option key={anoBase + i} value={anoBase + i}>
+                    {anoBase + i}
+                  </option>
                 ))}
               </select>
             </label>
-            <label className="text-xs text-slate-500 flex-1 min-w-[180px]">
-              Descrição (opcional)
-              <input type="text" name="descricao" className="input !text-xs mt-1 w-full" />
+            <label className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
+              <span style={rotulo}>Descrição (opcional)</span>
+              <input type="text" name="descricao" style={{ ...campo, width: "100%" }} />
             </label>
-            <button type="submit" className="btn-primary !text-xs">Criar cenário</button>
+            <button
+              type="submit"
+              style={{
+                fontFamily: INTER,
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "10px 16px",
+                borderRadius: 8,
+                border: 0,
+                background: "#262626",
+                color: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              Criar cenário
+            </button>
           </form>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-3">
-          {cenarios.map((c) => (
-            <Link
-              key={c.id}
-              href={`/ferias/simulacao?cenario=${c.id}`}
-              className="card hover:border-brand-300 hover:shadow-card block"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-medium text-slate-900">{c.nome}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {c.empresa_id ? nomeEmpresa[c.empresa_id] ?? "—" : "Todas as empresas"} ·{" "}
-                    {c.unidade_id ? nomeUnidade[c.unidade_id] ?? "—" : "Todas as unidades"} · {c.ano ?? "—"}
-                  </p>
+        <div className="grid md:grid-cols-2 gap-4">
+          {cenarios.map((c) => {
+            const aprovado = c.status === "aprovado";
+            return (
+              <div
+                key={c.id}
+                style={{ background: "#fff", border: "1px solid #f1e4d6", borderRadius: 12, padding: "20px 24px" }}
+                className="flex flex-col gap-3"
+              >
+                <Link href={`/ferias/simulacao?cenario=${c.id}`} className="block group">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div style={{ fontSize: 14, fontWeight: 600 }} className="group-hover:underline">
+                        {c.nome}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#737373", marginTop: 2 }}>
+                        {c.empresa_id ? nomeEmpresa[c.empresa_id] ?? "—" : "Todas as empresas"} ·{" "}
+                        {c.unidade_id ? nomeUnidade[c.unidade_id] ?? "—" : "Todas as unidades"} · {c.ano ?? "—"}
+                      </div>
+                    </div>
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        padding: "3px 10px",
+                        borderRadius: 10,
+                        background: aprovado ? "#e6f4ec" : "#f0e8df",
+                        color: aprovado ? "#1f7a52" : "#5c5c5c",
+                      }}
+                    >
+                      {aprovado ? "Aprovado" : "Rascunho"}
+                    </span>
+                  </div>
+                  {c.descricao && <div style={{ fontSize: 12, color: "#737373", marginTop: 8 }}>{c.descricao}</div>}
+                </Link>
+                <div style={{ borderTop: "1px solid #f4ebe1", paddingTop: 10 }} className="flex items-center justify-between">
+                  <Link
+                    href={`/ferias/simulacao?cenario=${c.id}`}
+                    style={{ fontSize: 12, fontWeight: 600, color: "#b85c12" }}
+                    className="hover:underline"
+                  >
+                    Abrir
+                  </Link>
+                  <ExcluirCenarioBotao cenarioId={c.id} nome={c.nome} />
                 </div>
-                <span className={`badge ${c.status === "aprovado" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                  {c.status === "aprovado" ? "Aprovado" : "Rascunho"}
-                </span>
               </div>
-              {c.descricao && <p className="text-xs text-slate-400 mt-2">{c.descricao}</p>}
-            </Link>
-          ))}
+            );
+          })}
           {cenarios.length === 0 && (
-            <p className="text-sm text-slate-400 text-center py-10 md:col-span-2">Nenhum cenário criado ainda.</p>
+            <p style={{ fontSize: 13, color: "#737373", textAlign: "center", padding: "40px 0" }} className="md:col-span-2">
+              Nenhum cenário criado ainda.
+            </p>
           )}
         </div>
       </div>
@@ -135,8 +241,8 @@ export default async function SimulacaoFeriasPage({
   // MODO WORKSPACE — cenário selecionado
   // ------------------------------------------------------------
   const config = normalizarConfig(cenarioAtual.config);
-  const periodosModelo = periodosDoModelo(config);
   const ano = cenarioAtual.ano ?? new Date().getFullYear();
+  const ocultarValores = await souAssistente();
 
   const [
     { data: colaboradoresData },
@@ -162,7 +268,7 @@ export default async function SimulacaoFeriasPage({
   const feriasSimuladas = (feriasSimuladasData ?? []) as Ferias[];
   const feriados = (feriadosData ?? []) as Feriado[];
   const feriadosSet = paraSetDeDatas(feriados);
-  const feriadosChaveSet = new Set(feriados.map((f) => f.data));
+  const feriadosChaveSet = new Set(feriados.map((f) => dia10(f.data)));
 
   const idsEscopo = new Set(colaboradores.map((c) => c.id));
   const nomePorColaborador = Object.fromEntries(colaboradores.map((c) => [c.id, c.nome]));
@@ -191,10 +297,12 @@ export default async function SimulacaoFeriasPage({
   }
   for (const lista of Object.values(simuladosPorColaborador)) lista.sort((a, b) => (a.data_inicio < b.data_inicio ? -1 : 1));
 
+  const feriasRealEscopo = todasFeriasReais.filter((f) => idsEscopo.has(f.colaborador_id));
+
   // ------------------------------------------------------------
-  // CONFLITOS + DATAS INVÁLIDAS
+  // CONFLITOS + DATAS INVÁLIDAS (mesma lógica de antes)
   // ------------------------------------------------------------
-  const feriasParaConflito = [...todasFeriasReais.filter((f) => idsEscopo.has(f.colaborador_id)), ...feriasSimuladas].map((f) => ({
+  const feriasParaConflito = [...feriasRealEscopo, ...feriasSimuladas].map((f) => ({
     id: f.id,
     colaborador_id: f.colaborador_id,
     unidade_id: unidadePorColaborador[f.colaborador_id] ?? null,
@@ -211,9 +319,9 @@ export default async function SimulacaoFeriasPage({
   // ------------------------------------------------------------
   // CAPACIDADE DA EQUIPE (concentração acima do configurado)
   // ------------------------------------------------------------
-  const contagemUnidadeDia = new Map<string, number>();
-  const contagemDeptoDia = new Map<string, number>();
-  for (const f of [...todasFeriasReais.filter((f) => idsEscopo.has(f.colaborador_id)), ...feriasSimuladas]) {
+  const contagemUnidadeDia = new Map<string, number>(); // unidade::dia
+  const contagemDeptoDia = new Map<string, number>(); // unidade::depto::dia
+  for (const f of [...feriasRealEscopo, ...feriasSimuladas]) {
     const unidadeId = unidadePorColaborador[f.colaborador_id];
     const depto = departamentoPorColaborador[f.colaborador_id];
     if (!unidadeId) continue;
@@ -230,378 +338,181 @@ export default async function SimulacaoFeriasPage({
       d = addDays(d, 1);
     }
   }
-  let concentracaoOperacional = 0;
-  if (config.capacidadeMaxUnidade != null) {
-    for (const v of contagemUnidadeDia.values()) if (v > config.capacidadeMaxUnidade) concentracaoOperacional++;
+
+  // ------------------------------------------------------------
+  // LISTA DE PENDÊNCIAS (frases prontas)
+  // ------------------------------------------------------------
+  const pendencias: PendenciaSim[] = [];
+  const nomeDaUnidade = (id: string | null | undefined) => (id ? nomeUnidade[id] ?? "unidade" : "unidade");
+  const porInicio = (a: Ferias, b: Ferias) => (a.data_inicio < b.data_inicio ? -1 : 1);
+
+  // conflitos: quem cai na mesma semana, na mesma unidade
+  const todasParaCruzar = [...feriasRealEscopo, ...feriasSimuladas];
+  for (const f of feriasSimuladas.slice().sort(porInicio)) {
+    if (!conflitos.has(f.id)) continue;
+    const unidadeId = unidadePorColaborador[f.colaborador_id];
+    const semanas = semanasEnvolvidas({ inicio: new Date(f.data_inicio), fim: new Date(f.data_fim) });
+    const outros = new Set<string>();
+    for (const g of todasParaCruzar) {
+      if (g.id === f.id || g.colaborador_id === f.colaborador_id) continue;
+      if (unidadePorColaborador[g.colaborador_id] !== unidadeId) continue;
+      const sg = semanasEnvolvidas({ inicio: new Date(g.data_inicio), fim: new Date(g.data_fim) });
+      if (sg.some((s) => semanas.includes(s))) outros.add(nomePorColaborador[g.colaborador_id] ?? "colega");
+    }
+    const lista = Array.from(outros);
+    const quem =
+      lista.length === 0
+        ? "outra pessoa"
+        : lista.length <= 2
+        ? lista.join(" e ")
+        : `${lista.slice(0, 2).join(", ")} e mais ${lista.length - 2}`;
+    pendencias.push({
+      tipo: "Conflito",
+      texto: `${nomePorColaborador[f.colaborador_id] ?? "—"}: ${fDM(dia10(f.data_inicio))} a ${fDM(dia10(f.data_fim))} cai na mesma semana de ${quem} (${nomeDaUnidade(unidadeId)}).`,
+      bloqueia: true,
+    });
   }
-  if (config.capacidadeMaxDepartamento != null) {
-    for (const v of contagemDeptoDia.values()) if (v > config.capacidadeMaxDepartamento) concentracaoOperacional++;
+
+  // datas de início que a CLT não permite
+  for (const f of feriasSimuladas.slice().sort(porInicio)) {
+    if (!datasInvalidas.has(f.id)) continue;
+    pendencias.push({
+      tipo: "Data inválida",
+      texto: `${nomePorColaborador[f.colaborador_id] ?? "—"}: início em ${fDM(dia10(f.data_inicio))} ${motivoInicioInvalido(dia10(f.data_inicio), feriadosChaveSet)}.`,
+      bloqueia: true,
+    });
   }
 
-  // ------------------------------------------------------------
-  // RESUMO / ALERTAS
-  // ------------------------------------------------------------
-  const colaboradoresComAquisitivo = colaboradores.filter((c) => aquisitivoAbertoPorColaborador[c.id]);
-  const programados = colaboradoresComAquisitivo.filter((c) => (simuladosPorColaborador[c.id] ?? []).length > 0);
-  const naoProgramados = colaboradoresComAquisitivo.filter((c) => !(simuladosPorColaborador[c.id]?.length));
-
-  let saldoNaoProgramado = 0;
-  const proximosDoLimite: Colaborador[] = [];
-  for (const c of colaboradoresComAquisitivo) {
-    const periodo = aquisitivoAbertoPorColaborador[c.id]!;
-    const usados = usadosPorPeriodo[periodo.id] ?? 0;
-    const saldoTotal = calcularSaldo(usados);
-    const simulado = (simuladosPorColaborador[c.id] ?? []).reduce((s, f) => s + f.dias, 0);
-    saldoNaoProgramado += Math.max(0, saldoTotal - simulado);
-    if (diasParaVencerFerias(periodo.limite_concessao) <= 60 && simulado < saldoTotal) proximosDoLimite.push(c);
+  // concentração acima do máximo configurado (agrupa dias seguidos)
+  function trechos(dias: { dia: string; n: number }[]): { de: string; ate: string; max: number }[] {
+    const ordenados = dias.slice().sort((a, b) => (a.dia < b.dia ? -1 : 1));
+    const res: { de: string; ate: string; max: number }[] = [];
+    for (const x of ordenados) {
+      const ult = res[res.length - 1];
+      const seguinte = ult ? chaveDia(addDays(new Date(ult.ate), 1)) : "";
+      if (ult && seguinte === x.dia) {
+        ult.ate = x.dia;
+        ult.max = Math.max(ult.max, x.n);
+      } else {
+        res.push({ de: x.dia, ate: x.dia, max: x.n });
+      }
+    }
+    return res;
   }
-  const periodosComConflito = feriasSimuladas.filter((f) => conflitos.has(f.id));
-
-  const resumo = {
-    colaboradores: colaboradoresComAquisitivo.length,
-    programados: programados.length,
-    comConflito: periodosComConflito.length,
-    datasInvalidas: datasInvalidas.size,
-    proximosDoLimite: proximosDoLimite.length,
-    concentracaoOperacional,
-    saldoNaoProgramado,
-  };
-  const custoTotal = feriasSimuladas.reduce((s, f) => s + (f.valor_estimado ?? 0), 0);
-
-  // ------------------------------------------------------------
-  // MAPA (calendário) — ano inteiro do cenário
-  // ------------------------------------------------------------
-  const diasPorColaborador: Record<string, Record<string, CelulaSimulacao>> = {};
-  function pintarPeriodo(f: Ferias, cor: string, rotulo: string) {
-    if (!diasPorColaborador[f.colaborador_id]) diasPorColaborador[f.colaborador_id] = {};
-    const titulo = `${rotulo} — ${formatarDataBR(f.data_inicio)} a ${formatarDataBR(f.data_fim)}`;
-    let d = new Date(f.data_inicio);
-    const fim = new Date(f.data_fim);
-    while (d <= fim) {
-      diasPorColaborador[f.colaborador_id][chaveDia(d)] = {
-        cor,
-        titulo,
-        conflito: conflitos.has(f.id) || datasInvalidas.has(f.id),
-      };
-      d = addDays(d, 1);
+  const concentracao: PendenciaSim[] = [];
+  const capU = config.capacidadeMaxUnidade;
+  const capD = config.capacidadeMaxDepartamento;
+  if (capU != null) {
+    const porUnidade = new Map<string, { dia: string; n: number }[]>();
+    for (const [chave, n] of contagemUnidadeDia) {
+      if (n <= capU) continue;
+      const [uid, dia] = chave.split("::");
+      if (!porUnidade.has(uid)) porUnidade.set(uid, []);
+      porUnidade.get(uid)!.push({ dia, n });
+    }
+    for (const [uid, dias] of porUnidade) {
+      for (const t of trechos(dias)) {
+        concentracao.push({
+          tipo: "Concentração",
+          texto: `${nomeDaUnidade(uid)}: ${fDM(t.de)}${t.de === t.ate ? "" : ` a ${fDM(t.ate)}`} passa de ${capU} pessoa${capU !== 1 ? "s" : ""} fora (chega a ${t.max}).`,
+          bloqueia: true,
+        });
+      }
     }
   }
-  for (const f of todasFeriasReais.filter((f) => idsEscopo.has(f.colaborador_id))) pintarPeriodo(f, "bg-blue-500", "Real");
-  for (const f of feriasSimuladas) {
-    pintarPeriodo(
-      f,
-      f.origem_simulacao === "manual" ? "bg-emerald-500" : "bg-amber-400",
-      f.origem_simulacao === "manual" ? "Manual" : "Automática"
-    );
+  if (capD != null) {
+    const porDepto = new Map<string, { dia: string; n: number }[]>();
+    for (const [chave, n] of contagemDeptoDia) {
+      if (n <= capD) continue;
+      const [uid, depto, dia] = chave.split("::");
+      const k = `${uid}::${depto}`;
+      if (!porDepto.has(k)) porDepto.set(k, []);
+      porDepto.get(k)!.push({ dia, n });
+    }
+    for (const [k, dias] of porDepto) {
+      const [uid, depto] = k.split("::");
+      for (const t of trechos(dias)) {
+        concentracao.push({
+          tipo: "Concentração",
+          texto: `${depto} (${nomeDaUnidade(uid)}): ${fDM(t.de)}${t.de === t.ate ? "" : ` a ${fDM(t.ate)}`} passa de ${capD} pessoa${capD !== 1 ? "s" : ""} fora (chega a ${t.max}).`,
+          bloqueia: true,
+        });
+      }
+    }
+  }
+  const LIMITE_CONCENTRACAO = 12;
+  pendencias.push(...concentracao.slice(0, LIMITE_CONCENTRACAO));
+  if (concentracao.length > LIMITE_CONCENTRACAO) {
+    pendencias.push({
+      tipo: "Concentração",
+      texto: `e mais ${concentracao.length - LIMITE_CONCENTRACAO} trechos acima do máximo configurado.`,
+      bloqueia: true,
+    });
   }
 
-  const linhasMapa: LinhaSimulacao[] = colaboradoresComAquisitivo.map((c) => ({
-    id: c.id,
-    nome: c.nome,
-    dias: diasPorColaborador[c.id] ?? {},
-    periodos: (simuladosPorColaborador[c.id] ?? []).map((f) => ({
-      id: f.id,
-      dataInicio: f.data_inicio,
-      dataFim: f.data_fim,
-      dias: f.dias,
-      origemSimulacao: f.origem_simulacao ?? null,
-    })),
-  }));
+  // avisos (não impedem aprovar): período que termina depois do limite de concessão
+  for (const f of feriasSimuladas.slice().sort(porInicio)) {
+    const aq = aquisitivoAbertoPorColaborador[f.colaborador_id];
+    if (!aq) continue;
+    const limite = dia10(aq.limite_concessao);
+    if (dia10(f.data_fim) > limite) {
+      pendencias.push({
+        tipo: "Após o limite",
+        texto: `${nomePorColaborador[f.colaborador_id] ?? "—"}: ${fDM(dia10(f.data_inicio))} a ${fDM(dia10(f.data_fim))} termina depois do limite de concessão (${fDMA(limite)}). Os dias após o limite são pagos em dobro.`,
+        bloqueia: false,
+      });
+    }
+  }
 
-  const view = searchParams.view === "lista" ? "lista" : "calendario";
+  // ------------------------------------------------------------
+  // PESSOAS (uma linha por colaborador com período aquisitivo aberto)
+  // ------------------------------------------------------------
+  const pessoas: PessoaSim[] = colaboradores
+    .filter((c) => aquisitivoAbertoPorColaborador[c.id])
+    .map((c) => {
+      const aq = aquisitivoAbertoPorColaborador[c.id]!;
+      const usados = usadosPorPeriodo[aq.id] ?? 0;
+      return {
+        id: c.id,
+        nome: c.nome,
+        unidade: (c.unidade_id && nomeUnidade[c.unidade_id]) || "Sem unidade",
+        periodoId: aq.id,
+        periodoLabel: `${formatarDataBR(aq.inicio)} a ${formatarDataBR(aq.fim)}`,
+        limite: dia10(aq.limite_concessao),
+        saldo: calcularSaldo(usados),
+        periodos: (simuladosPorColaborador[c.id] ?? []).map((f) => ({
+          id: f.id,
+          ini: dia10(f.data_inicio),
+          fim: dia10(f.data_fim),
+          dias: f.dias,
+          origem: f.origem_simulacao === "manual" ? ("manual" as const) : ("automatica" as const),
+          problema: conflitos.has(f.id) || datasInvalidas.has(f.id),
+        })),
+        reais: feriasRealEscopo
+          .filter((f) => f.colaborador_id === c.id)
+          .map((f) => ({ ini: dia10(f.data_inicio), fim: dia10(f.data_fim) })),
+      };
+    })
+    .sort((a, b) => a.unidade.localeCompare(b.unidade, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR"));
+
+  const custoTotal = feriasSimuladas.reduce((s, f) => s + (f.valor_estimado ?? 0), 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-semibold text-slate-900">{cenarioAtual.nome}</h1>
-            <span className={`badge ${cenarioAtual.status === "aprovado" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-              {cenarioAtual.status === "aprovado" ? "Aprovado" : "Rascunho"}
-            </span>
-          </div>
-          <p className="text-slate-500 text-sm mt-0.5">
-            {cenarioAtual.empresa_id ? nomeEmpresa[cenarioAtual.empresa_id] ?? "—" : "Todas as empresas"} ·{" "}
-            {cenarioAtual.unidade_id ? nomeUnidade[cenarioAtual.unidade_id] ?? "—" : "Todas as unidades"} · {ano}
-            {cenarioAtual.usuario_responsavel && <> · por {cenarioAtual.usuario_responsavel}</>}
-          </p>
-          <div className="flex items-center gap-3 mt-1">
-            <Link href="/ferias" className="text-xs text-brand-600 hover:underline">← Voltar pro mapa de férias</Link>
-            <Link href="/ferias/simulacao" className="text-xs text-slate-400 hover:underline">Ver todos os cenários</Link>
-          </div>
-        </div>
-        <form method="get" className="flex items-center gap-1.5">
-          <select name="cenario" defaultValue={cenarioAtual.id} className="input !text-xs !py-1.5 !w-auto">
-            {cenarios.map((c) => (
-              <option key={c.id} value={c.id}>{c.nome} ({c.ano ?? "—"})</option>
-            ))}
-          </select>
-          <button type="submit" className="btn-secondary !text-xs !py-1.5">Trocar</button>
-        </form>
-      </div>
-
-      <div className="card flex items-center gap-2 flex-wrap">
-        <form action={duplicarCenario.bind(null, cenarioAtual.id)}>
-          <button type="submit" className="btn-secondary !text-xs">⧉ Duplicar cenário</button>
-        </form>
-        <form action={limparCenario.bind(null, cenarioAtual.id)}>
-          <button type="submit" className="btn-secondary !text-xs">🧹 Limpar simulação</button>
-        </form>
-        <a href={`/api/ferias/simulacao/${cenarioAtual.id}/pdf`} className="btn-secondary !text-xs">⬇️ PDF</a>
-        <a href={`/api/ferias/simulacao/${cenarioAtual.id}/excel`} className="btn-secondary !text-xs">⬇️ Excel</a>
-        <form action={excluirCenario.bind(null, cenarioAtual.id)} className="ml-auto">
-          <button type="submit" className="text-xs text-red-500 hover:underline">🗑️ Excluir cenário</button>
-        </form>
-      </div>
-
-      <div className="card">
-        <h2 className="font-medium text-slate-900 mb-3">Configuração da simulação</h2>
-        <ConfigSimulacaoForm cenarioId={cenarioAtual.id} config={config} />
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        <KpiCard icon="👥" label="Colaboradores" valor={resumo.colaboradores.toString()} />
-        <KpiCard icon="✅" label="Programados" valor={resumo.programados.toString()} />
-        <KpiCard icon="🟥" label="Com conflito" valor={resumo.comConflito.toString()} cor={resumo.comConflito > 0 ? "text-red-600" : undefined} />
-        <KpiCard icon="⚠️" label="Datas inválidas" valor={resumo.datasInvalidas.toString()} cor={resumo.datasInvalidas > 0 ? "text-red-600" : undefined} />
-        <KpiCard icon="⏳" label="Próx. do limite" valor={resumo.proximosDoLimite.toString()} cor={resumo.proximosDoLimite > 0 ? "text-amber-600" : undefined} />
-        <KpiCard icon="🏭" label="Concentração" valor={resumo.concentracaoOperacional.toString()} cor={resumo.concentracaoOperacional > 0 ? "text-amber-600" : undefined} />
-        <KpiCard icon="📆" label="Saldo não programado" valor={`${resumo.saldoNaoProgramado} dias`} pequeno />
-      </div>
-
-      {(naoProgramados.length > 0 || proximosDoLimite.length > 0 || periodosComConflito.length > 0) && (
-        <div className="card !p-4 space-y-2 text-xs">
-          {naoProgramados.length > 0 && (
-            <details>
-              <summary className="cursor-pointer text-slate-500">Sem nenhuma definição ({naoProgramados.length}) — clique pra ver</summary>
-              <p className="mt-1 text-slate-400">{naoProgramados.map((c) => c.nome).join(", ")}</p>
-            </details>
-          )}
-          {proximosDoLimite.length > 0 && (
-            <details>
-              <summary className="cursor-pointer text-amber-600">Próximos do limite de concessão ({proximosDoLimite.length}) — clique pra ver</summary>
-              <p className="mt-1 text-slate-400">{proximosDoLimite.map((c) => c.nome).join(", ")}</p>
-            </details>
-          )}
-          {periodosComConflito.length > 0 && (
-            <details>
-              <summary className="cursor-pointer text-red-600">Períodos com conflito ({periodosComConflito.length}) — clique pra ver</summary>
-              <p className="mt-1 text-slate-400">{periodosComConflito.map((f) => nomePorColaborador[f.colaborador_id]).join(", ")}</p>
-            </details>
-          )}
-        </div>
-      )}
-
-      <div className="card !p-0 overflow-hidden">
-        <div className="flex items-center justify-between flex-wrap gap-3 px-4 pt-4 pb-3">
-          <div>
-            <h2 className="font-medium text-slate-900">Colaboradores elegíveis</h2>
-            <p className="text-xs text-slate-400">Modelo configurado: {periodosModelo.join(" + ")} dias</p>
-          </div>
-          <GerarAutomaticoBotao cenarioId={cenarioAtual.id} modo="gerar" />
-        </div>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-left">
-            <tr>
-              <th className="py-2 px-4">Colaborador</th>
-              <th className="py-2 px-4">Período aquisitivo</th>
-              <th className="py-2 px-4">Saldo</th>
-              <th className="py-2 px-4">Definição</th>
-              <th className="py-2 px-4"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {colaboradoresComAquisitivo.map((c) => {
-              const periodo = aquisitivoAbertoPorColaborador[c.id]!;
-              const usados = usadosPorPeriodo[periodo.id] ?? 0;
-              const saldo = calcularSaldo(usados);
-              const simulados = simuladosPorColaborador[c.id] ?? [];
-              const diasSimulados = simulados.reduce((s, f) => s + f.dias, 0);
-              const origem =
-                simulados.length === 0
-                  ? null
-                  : simulados.every((f) => f.origem_simulacao === "manual")
-                  ? "manual"
-                  : simulados.every((f) => f.origem_simulacao === "automatica")
-                  ? "automatica"
-                  : "mista";
-              return (
-                <tr key={c.id} className="border-t border-slate-100">
-                  <td className="py-2.5 px-4">{c.nome}</td>
-                  <td className="py-2.5 px-4 text-xs text-slate-500">
-                    {formatarDataBR(periodo.inicio)} – {formatarDataBR(periodo.fim)}
-                    <br />
-                    <span className="text-slate-400">limite: {formatarDataBR(periodo.limite_concessao)}</span>
-                  </td>
-                  <td className="py-2.5 px-4 text-xs">
-                    {saldo} dias {diasSimulados > 0 && <span className="text-slate-400">({diasSimulados} simulados)</span>}
-                  </td>
-                  <td className="py-2.5 px-4">
-                    {origem === null && <span className="badge bg-slate-100 text-slate-500">Não definido</span>}
-                    {origem === "manual" && <span className="badge bg-emerald-100 text-emerald-700">Manual</span>}
-                    {origem === "automatica" && <span className="badge bg-amber-100 text-amber-700">Automática</span>}
-                    {origem === "mista" && <span className="badge bg-slate-100 text-slate-500">Mista</span>}
-                  </td>
-                  <td className="py-2.5 px-4 text-right">
-                    <DefinirManualForm
-                      cenarioId={cenarioAtual.id}
-                      colaboradorId={c.id}
-                      colaboradorNome={c.nome}
-                      periodoAquisitivoId={periodo.id}
-                      periodoAquisitivoLabel={`${formatarDataBR(periodo.inicio)} a ${formatarDataBR(periodo.fim)}`}
-                      saldoDisponivel={saldo}
-                      periodosPadrao={periodosModelo}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-            {colaboradoresComAquisitivo.length === 0 && (
-              <tr>
-                <td colSpan={5} className="py-8 text-center text-slate-400">
-                  Nenhum colaborador com período aquisitivo aberto nesse escopo.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="card">
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <Link
-              href={`/ferias/simulacao?cenario=${cenarioAtual.id}&view=calendario`}
-              className={`btn-secondary !text-xs ${view === "calendario" ? "!bg-brand-600 !text-white" : ""}`}
-            >
-              MAPA DE FÉRIAS — CALENDÁRIO
-            </Link>
-            <Link
-              href={`/ferias/simulacao?cenario=${cenarioAtual.id}&view=lista`}
-              className={`btn-secondary !text-xs ${view === "lista" ? "!bg-brand-600 !text-white" : ""}`}
-            >
-              MAPA DE FÉRIAS — LISTA
-            </Link>
-          </div>
-          <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap">
-            {LEGENDA_SIMULACAO.map((l) => (
-              <span key={l.label} className="flex items-center gap-1">
-                <span className={`inline-block w-2.5 h-2.5 rounded-sm ${l.cor}`} />
-                {l.label}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {view === "calendario" ? (
-          <MapaSimulacao
-            ano={ano}
-            meses={Array.from({ length: 12 }, (_, i) => i)}
-            linhas={linhasMapa}
-            feriados={feriadosChaveSet}
-            cenarioId={cenarioAtual.id}
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-left">
-                <tr>
-                  <th className="py-2 px-3">Colaborador</th>
-                  <th className="py-2 px-3">Período aquisitivo</th>
-                  <th className="py-2 px-3">1º início</th>
-                  <th className="py-2 px-3">1º fim</th>
-                  <th className="py-2 px-3">Dias</th>
-                  <th className="py-2 px-3">2º início</th>
-                  <th className="py-2 px-3">2º fim</th>
-                  <th className="py-2 px-3">Dias</th>
-                  <th className="py-2 px-3">3º período</th>
-                  <th className="py-2 px-3">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {colaboradoresComAquisitivo.map((c) => {
-                  const periodo = aquisitivoAbertoPorColaborador[c.id]!;
-                  const simulados = simuladosPorColaborador[c.id] ?? [];
-                  const [p1, p2, p3] = simulados;
-                  const totalSimulado = simulados.reduce((s, f) => s + f.dias, 0);
-                  const usados = usadosPorPeriodo[periodo.id] ?? 0;
-                  const saldoTotal = calcularSaldo(usados);
-                  const completo = saldoTotal > 0 && totalSimulado >= saldoTotal;
-                  return (
-                    <tr key={c.id} className="border-t border-slate-100">
-                      <td className="py-2 px-3">{c.nome}</td>
-                      <td className="py-2 px-3 text-xs text-slate-500">
-                        {formatarDataBR(periodo.inicio)}–{formatarDataBR(periodo.fim)}
-                      </td>
-                      <td className="py-2 px-3 text-xs">{p1 ? formatarDataBR(p1.data_inicio) : "—"}</td>
-                      <td className="py-2 px-3 text-xs">{p1 ? formatarDataBR(p1.data_fim) : "—"}</td>
-                      <td className="py-2 px-3 text-xs">{p1 ? p1.dias : "—"}</td>
-                      <td className="py-2 px-3 text-xs">{p2 ? formatarDataBR(p2.data_inicio) : "—"}</td>
-                      <td className="py-2 px-3 text-xs">{p2 ? formatarDataBR(p2.data_fim) : "—"}</td>
-                      <td className="py-2 px-3 text-xs">{p2 ? p2.dias : "—"}</td>
-                      <td className="py-2 px-3 text-xs">
-                        {p3 ? `${formatarDataBR(p3.data_inicio)}–${formatarDataBR(p3.data_fim)} (${p3.dias}d)` : "—"}
-                      </td>
-                      <td className="py-2 px-3">
-                        {completo ? (
-                          <span className="text-emerald-600">✅ completo</span>
-                        ) : simulados.length > 0 ? (
-                          <span className="text-amber-600">parcial</span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {colaboradoresComAquisitivo.length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="py-8 text-center text-slate-400">Nenhum colaborador nesse escopo.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <p className="text-xs text-slate-400">Custo total estimado do cenário</p>
-          <p className="font-display font-bold text-xl text-slate-900">{formatarReais(custoTotal)}</p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <GerarAutomaticoBotao cenarioId={cenarioAtual.id} modo="regenerar" />
-          <form action={promoverCenario.bind(null, cenarioAtual.id)}>
-            <button type="submit" disabled={feriasSimuladas.length === 0} className="btn-primary disabled:opacity-40">
-              ✅ Aprovar e converter em programação oficial
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function KpiCard({
-  icon,
-  label,
-  valor,
-  cor,
-  pequeno,
-}: {
-  icon: string;
-  label: string;
-  valor: string;
-  cor?: string;
-  pequeno?: boolean;
-}) {
-  return (
-    <div className="card !p-4">
-      <p className="text-[11px] text-slate-400">{icon} {label}</p>
-      <p className={`font-display font-bold mt-0.5 ${pequeno ? "text-base" : "text-xl"} ${cor ?? "text-slate-900"}`}>
-        {valor}
-      </p>
-    </div>
+    <SimulacaoWorkspace
+      cenario={{
+        id: cenarioAtual.id,
+        nome: cenarioAtual.nome,
+        status: cenarioAtual.status,
+        ano,
+        empresa: cenarioAtual.empresa_id ? nomeEmpresa[cenarioAtual.empresa_id] ?? "—" : "todas as empresas",
+        unidade: cenarioAtual.unidade_id ? nomeUnidade[cenarioAtual.unidade_id] ?? null : null,
+      }}
+      cenarios={cenarios.map((c) => ({ id: c.id, nome: c.nome, ano: c.ano }))}
+      config={config}
+      pessoas={pessoas}
+      pendencias={pendencias}
+      custo={ocultarValores ? 0 : custoTotal}
+      mostrarValores={!ocultarValores}
+    />
   );
 }
