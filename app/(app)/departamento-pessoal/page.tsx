@@ -23,17 +23,6 @@ export default function DepartamentoPessoalPage() {
         </Link>
 
         <Link
-          href="/departamento-pessoal/folha"
-          className="card hover:border-brand-300 transition-colors flex flex-col gap-2"
-        >
-          <span className="text-2xl">🧾</span>
-          <span className="text-lg font-bold text-slate-900">Controle de Folha</span>
-          <span className="text-sm text-slate-500">
-            A grade de Proventos, Descontos e Espelhamento — igual à planilha que você manda pra contabilidade, agora dentro do sistema.
-          </span>
-        </Link>
-
-        <Link
           href="/departamento-pessoal/lancamentos"
           className="card hover:border-brand-300 transition-colors flex flex-col gap-2"
         >

@@ -191,7 +191,7 @@ async function colunaEditavel(tipoId: string): Promise<{ erro: string | null; ti
   if (!data) return { erro: "Coluna não encontrada (talvez já tenha sido excluída).", tipo: null };
   if (data.calculo_automatico === true) {
     return {
-      erro: "Coluna calculada automaticamente pelo sistema: só dá para desligar na tela de Controle de Folha.",
+      erro: "Coluna calculada automaticamente pelo sistema: não dá para editar nem excluir, só ligar ou desligar.",
       tipo: null,
     };
   }
@@ -292,7 +292,7 @@ export async function moverColunaFolha(tipoId: string, direcao: number): Promise
 }
 
 // Liga ou desliga uma coluna: desligada, ela some da planilha, mas os valores
-// já lançados continuam guardados. Vale também para o Controle de Folha.
+// já lançados continuam guardados.
 export async function alternarColunaFolha(tipoId: string, ativar: boolean): Promise<Resultado> {
   const supabase = createClient();
   const { data, error } = await supabase.from("folha_tipos").update({ ativo: ativar }).eq("id", tipoId).select("id");
