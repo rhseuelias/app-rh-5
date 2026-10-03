@@ -221,6 +221,8 @@ export default function SimulacaoWorkspace({
   const [definindo, setDefinindo] = useState<PessoaSim | null>(null);
   const [confirmaLimpar, setConfirmaLimpar] = useState(false);
   const [confirmaAprovar, setConfirmaAprovar] = useState(false);
+  const [confirmaSemFixas, setConfirmaSemFixas] = useState(false);
+  const [buscaFixa, setBuscaFixa] = useState("");
 
   /* ---- salvar regras (com atraso, para não gravar a cada clique) ---- */
   const primeira = useRef(true);
@@ -300,6 +302,14 @@ export default function SimulacaoWorkspace({
     const nenhumaFerias = pessoas.every((p) => p.periodos.length === 0);
     return { completos, parciais, indefinidos, semData, bloqueantes: bloqueantes.length, subPend, nenhumaFerias };
   }, [pessoas, pendencias]);
+
+  // passo 1: quem já tem data fixa (definida manualmente) — a simulação mantém e considera essas datas
+  const fixas = useMemo(() => pessoas.filter((p) => p.periodos.some((x) => x.origem === "manual")), [pessoas]);
+  const candidatosFixa = useMemo(() => {
+    const q = semAcento(buscaFixa.trim());
+    if (!q) return [];
+    return pessoas.filter((p) => !p.periodos.some((x) => x.origem === "manual") && semAcento(p.nome).includes(q)).slice(0, 6);
+  }, [pessoas, buscaFixa]);
 
   const total = pessoas.length;
   const pctCompleto = total ? (resumo.completos / total) * 100 : 0;
@@ -670,9 +680,22 @@ export default function SimulacaoWorkspace({
 
           {!aprovado && (
             <div className="flex flex-col gap-2" style={{ paddingTop: 4, borderTop: "1px solid #f4ebe1" }}>
+              <div style={{ ...ROTULO, marginTop: 14 }}>Passo 2 · Simular os demais</div>
+              <div style={{ fontSize: 12, color: "#5c5c5c", lineHeight: 1.45 }}>
+                {fixas.length > 0
+                  ? `As ${fixas.length} data${fixas.length !== 1 ? "s" : ""} fixa${fixas.length !== 1 ? "s" : ""} ficam como estão e entram na conta de conflitos e de pessoas fora ao mesmo tempo.`
+                  : "Antes de simular, defina no passo 1 quem já tem data fixa."}
+              </div>
               <button
                 type="button"
-                onClick={() => gerar("gerar")}
+                onClick={() => {
+                  if (fixas.length === 0 && !confirmaSemFixas) {
+                    setConfirmaSemFixas(true);
+                    return;
+                  }
+                  setConfirmaSemFixas(false);
+                  gerar("gerar");
+                }}
                 disabled={ocupado || resumo.indefinidos === 0}
                 style={{
                   marginTop: 14,
@@ -689,6 +712,34 @@ export default function SimulacaoWorkspace({
               >
                 {ocupado ? "Gerando…" : `Gerar para ${resumo.indefinidos} sem definição`}
               </button>
+              {confirmaSemFixas && fixas.length === 0 && (
+                <div style={{ fontSize: 12, color: "#3d3d3d", background: "#fdf3e7", borderRadius: 8, padding: 10 }}>
+                  <div>Ninguém tem data fixa ainda. Simular mesmo assim?</div>
+                  <div className="flex items-center gap-3" style={{ marginTop: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmaSemFixas(false);
+                        gerar("gerar");
+                      }}
+                      style={linkBtn("#262626")}
+                    >
+                      Sim, simular
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmaSemFixas(false);
+                        document.getElementById("passo-datas-fixas")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                        document.getElementById("busca-data-fixa")?.focus();
+                      }}
+                      style={linkBtn("#b85c12")}
+                    >
+                      Definir antes
+                    </button>
+                  </div>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => gerar("regenerar")}
@@ -760,6 +811,102 @@ export default function SimulacaoWorkspace({
               <div style={{ fontSize: 12, color: "#5c5c5c" }}>férias + 1/3 do cenário</div>
             </div>
           </div>
+
+          {/* Passo 1 — datas fixas */}
+          {!aprovado && (
+            <div id="passo-datas-fixas" style={{ ...CARTAO, padding: "20px 24px" }} className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div style={{ fontSize: 14, fontWeight: 600 }}>Passo 1 · Datas já definidas</div>
+                <span style={{ fontSize: 12, color: "#5c5c5c" }}>
+                  {fixas.length} com data fixa · {total - fixas.length} para simular
+                </span>
+              </div>
+              <div style={{ fontSize: 13, color: "#5c5c5c", lineHeight: 1.45 }}>
+                Quem já tem as férias combinadas: defina aqui primeiro. A simulação mantém essas datas e planeja os outros em volta delas.
+              </div>
+
+              {fixas.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {fixas.map((p) => {
+                    const manuais = p.periodos.filter((x) => x.origem === "manual");
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setDefinindo(p)}
+                        title="Editar datas"
+                        style={{
+                          fontFamily: INTER,
+                          fontSize: 12,
+                          padding: "6px 10px",
+                          borderRadius: 8,
+                          border: "1px solid #e7ddd2",
+                          background: "#f4ebe1",
+                          color: "#262626",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <strong style={{ fontWeight: 600 }}>{p.nome}</strong>
+                        <span style={{ color: "#5c5c5c" }}>
+                          {" · "}
+                          {manuais.map((x) => `${fDM(x.ini)} a ${fDM(x.fim)}`).join(" + ")}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2" style={{ maxWidth: 420 }}>
+                <input
+                  id="busca-data-fixa"
+                  type="search"
+                  value={buscaFixa}
+                  onChange={(e) => setBuscaFixa(e.target.value)}
+                  placeholder="Buscar colaborador para definir a data"
+                  style={{ fontFamily: INTER, fontSize: 13, padding: "9px 12px", border: "1px solid #e7ddd2", borderRadius: 8, background: "#fff", color: "#262626" }}
+                />
+                {candidatosFixa.length > 0 && (
+                  <div style={{ border: "1px solid #f4ebe1", borderRadius: 8, overflow: "hidden" }}>
+                    {candidatosFixa.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setDefinindo(p);
+                          setBuscaFixa("");
+                        }}
+                        style={{
+                          display: "flex",
+                          width: "100%",
+                          justifyContent: "space-between",
+                          gap: 8,
+                          padding: "9px 12px",
+                          border: 0,
+                          borderBottom: "1px solid #f4ebe1",
+                          background: "#fff",
+                          fontFamily: INTER,
+                          fontSize: 13,
+                          color: "#262626",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span>
+                          {p.nome} <span style={{ color: "#737373", fontSize: 12 }}>· {p.unidade}</span>
+                        </span>
+                        <span style={{ color: "#b85c12", fontWeight: 600, fontSize: 12 }}>Definir data</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {buscaFixa.trim() && candidatosFixa.length === 0 && (
+                  <span style={{ fontSize: 12, color: "#737373" }}>Ninguém encontrado (ou já tem data fixa).</span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Colaboradores */}
           <div style={{ ...CARTAO, padding: "8px 24px 16px" }} className="flex flex-col">
@@ -1086,6 +1233,10 @@ function SeletorUnidades({
       </div>
     </div>
   );
+}
+
+function semAcento(s: string) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
 function Bloco({ titulo, children }: { titulo: string; children: ReactNode }) {
