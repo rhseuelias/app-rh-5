@@ -1820,7 +1820,7 @@ export async function gerarPrevisaoAnoTodos(): Promise<{ criados: number; semVag
 
   const [{ data: colaboradores }, { data: aquisitivos }, { data: feriasExistentes }, { data: feriados }] =
     await Promise.all([
-      supabase.from("colaboradores").select("*").in("status", ["ativo", "experiencia"]),
+      supabase.from("colaboradores").select("*").eq("tipo", "CLT").in("status", ["ativo", "experiencia"]),
       supabase.from("periodos_aquisitivos").select("*").eq("status", "aberto"),
       supabase.from("ferias").select("*").neq("status", "cancelado").eq("simulacao", false),
       supabase.from("feriados").select("*"),
@@ -2329,6 +2329,14 @@ interface ResumoGeracaoAutomatica {
   incompletos: string[];
 }
 
+/** Tira de um cenário qualquer período simulado de quem não é CLT (a simulação de férias é só CLT). */
+async function removerSimuladasNaoCLT(supabase: ReturnType<typeof createClient>, cenarioId: string) {
+  const { data: naoClt } = await supabase.from("colaboradores").select("id").neq("tipo", "CLT");
+  const ids = ((naoClt ?? []) as { id: string }[]).map((c) => c.id);
+  if (ids.length === 0) return;
+  await supabase.from("ferias").delete().eq("cenario_id", cenarioId).eq("simulacao", true).in("colaborador_id", ids);
+}
+
 /**
  * Motor do "Gerar automaticamente": pra cada colaborador do escopo do
  * cenário que ainda não tem NENHUM período simulado (nem manual, nem
@@ -2343,6 +2351,7 @@ async function executarGeracaoAutomatica(cenarioId: string, somenteColaboradorId
   const { data: cenario } = await supabase.from("cenarios_simulacao").select("*").eq("id", cenarioId).single();
   const resumo: ResumoGeracaoAutomatica = { criados: 0, semPeriodoAquisitivo: [], saldoInsuficiente: [], incompletos: [] };
   if (!cenario) return resumo;
+  await removerSimuladasNaoCLT(supabase, cenarioId);
 
   const config = normalizarConfig(cenario.config);
   const periodosDias = periodosDoModelo(config);
@@ -2355,7 +2364,7 @@ async function executarGeracaoAutomatica(cenarioId: string, somenteColaboradorId
     { data: feriasSimuladasData },
     { data: feriadosData },
   ] = await Promise.all([
-    supabase.from("colaboradores").select("*").in("status", ["ativo", "experiencia"]),
+    supabase.from("colaboradores").select("*").eq("tipo", "CLT").in("status", ["ativo", "experiencia"]),
     supabase.from("periodos_aquisitivos").select("*").eq("status", "aberto"),
     supabase.from("ferias").select("*").eq("simulacao", false).neq("status", "cancelado"),
     supabase.from("ferias").select("*").eq("cenario_id", cenarioId).eq("simulacao", true),
@@ -2543,6 +2552,7 @@ export async function regenerarAutomaticos(cenarioId: string): Promise<ResumoGer
 /** "Aprovar e converter em programação oficial": os períodos do cenário viram férias planejadas de verdade, aparecem no mapa real. O cenário continua existindo (histórico), só solto dos períodos que promoveu. */
 export async function promoverCenario(cenarioId: string) {
   const supabase = createClient();
+  await removerSimuladasNaoCLT(supabase, cenarioId);
 
   const { data: periodos } = await supabase
     .from("ferias")

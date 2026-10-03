@@ -251,7 +251,7 @@ export default async function SimulacaoFeriasPage({
     { data: feriasSimuladasData },
     { data: feriadosData },
   ] = await Promise.all([
-    supabase.from("colaboradores").select("*").in("status", ["ativo", "experiencia"]),
+    supabase.from("colaboradores").select("*").eq("tipo", "CLT").in("status", ["ativo", "experiencia"]),
     supabase.from("periodos_aquisitivos").select("*").eq("status", "aberto"),
     supabase.from("ferias").select("*").eq("simulacao", false).neq("status", "cancelado"),
     supabase.from("ferias").select("*").eq("cenario_id", cenarioAtual.id).eq("simulacao", true),
@@ -265,12 +265,14 @@ export default async function SimulacaoFeriasPage({
 
   const todosAquisitivos = (aquisitivosData ?? []) as PeriodoAquisitivo[];
   const todasFeriasReais = (feriasReaisData ?? []) as Ferias[];
-  const feriasSimuladas = (feriasSimuladasData ?? []) as Ferias[];
+  const feriasSimuladasTodas = (feriasSimuladasData ?? []) as Ferias[];
   const feriados = (feriadosData ?? []) as Feriado[];
   const feriadosSet = paraSetDeDatas(feriados);
   const feriadosChaveSet = new Set(feriados.map((f) => dia10(f.data)));
 
   const idsEscopo = new Set(colaboradores.map((c) => c.id));
+  // só CLT: períodos simulados de quem não é CLT (ou está fora do escopo) não entram
+  const feriasSimuladas = feriasSimuladasTodas.filter((f) => idsEscopo.has(f.colaborador_id));
   const nomePorColaborador = Object.fromEntries(colaboradores.map((c) => [c.id, c.nome]));
   const unidadePorColaborador = Object.fromEntries(colaboradores.map((c) => [c.id, c.unidade_id]));
   const departamentoPorColaborador = Object.fromEntries(colaboradores.map((c) => [c.id, c.departamento]));
