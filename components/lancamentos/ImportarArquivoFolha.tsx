@@ -12,7 +12,11 @@ import {
   csvParaLinhas,
   ehSim,
   formatarValor,
-  interpretarLinhas,
+  detectarLayout,
+  diagnosticoArquivo,
+  lerAutomatico,
+  lerComLayout,
+  type LayoutTabela,
   valorBR,
   type ColaboradorRef,
   type ItemLido,
@@ -21,6 +25,7 @@ import {
   type RubricaRef,
 } from "@/lib/leitura-folha";
 import { linhasDoPdf } from "@/lib/pdf-linhas";
+import AjustarLeitura from "@/components/lancamentos/AjustarLeitura";
 
 export interface FuncionarioImportacao extends ColaboradorRef {
   empresa: string;
@@ -39,7 +44,7 @@ interface Props {
   aoConcluir: () => void;
 }
 
-type Etapa = "escolher" | "lendo" | "previa" | "salvando" | "pronto";
+type Etapa = "escolher" | "lendo" | "ajustar" | "previa" | "salvando" | "pronto";
 
 interface PessoaLida {
   chave: string;
@@ -158,6 +163,9 @@ export default function ImportarArquivoFolha({
   const [lembradas, setLembradas] = useState<Record<string, string>>({});
   const [iaPessoas, setIaPessoas] = useState<Record<string, string>>({});
   const execucao = useRef(0);
+  const [layout, setLayout] = useState<LayoutTabela | null>(null);
+  const [mensagemAjuste, setMensagemAjuste] = useState("");
+  const [erroAjuste, setErroAjuste] = useState<string | null>(null);
 
   const rubricasUsaveis = useMemo(() => rubricas.filter((r) => !r.automatico), [rubricas]);
   const rubricaPorId = useMemo(() => new Map(rubricasUsaveis.map((r) => [r.id, r])), [rubricasUsaveis]);
@@ -287,6 +295,32 @@ export default function ImportarArquivoFolha({
     setStatusIA("");
   }
 
+  /** abre a tela "Como eu li o arquivo" para a pessoa dizer onde estão o nome e os valores */
+  function abrirAjuste(linhas: string[][], mensagem?: string) {
+    const l = detectarLayout(linhas);
+    setLayout(l);
+    setMensagemAjuste(mensagem ?? diagnosticoArquivo(linhas, l));
+    setErroAjuste(null);
+    setErro(null);
+    setStatusIA("");
+    setEtapa("ajustar");
+  }
+
+  async function usarLayout() {
+    if (!layout) return;
+    const r = lerComLayout(linhasAtuais, layout);
+    if (!r.ok) {
+      setErroAjuste(r.erro ?? "Não consegui ler com essas escolhas.");
+      return;
+    }
+    setErroAjuste(null);
+    setErro(null);
+    r.avisos = ["Li o arquivo do jeito que você indicou."];
+    const id = ++execucao.current;
+    const mapaInicial = mostrarLeitura(r);
+    await refinarComIA(r, mapaInicial, nomeArquivo, id);
+  }
+
   async function aplicarLinhas(linhas: string[][], opcoes?: { forcarIA?: boolean; nomeArq?: string; linhasIA?: string[][] }) {
     const nomeArq = opcoes?.nomeArq ?? nomeArquivo;
     const id = ++execucao.current;
@@ -296,7 +330,7 @@ export default function ImportarArquivoFolha({
     setIaIndisponivel("");
     setStatusIA("");
 
-    let r: LeituraTabela | null = opcoes?.forcarIA ? null : interpretarLinhas(linhas);
+    let r: LeituraTabela | null = opcoes?.forcarIA ? null : lerAutomatico(linhas);
     if (!r || !r.ok || r.itens.length === 0) {
       // as regras não entenderam: tenta a IA
       const erroRegras = r?.erro ?? "Não consegui entender esse arquivo.";
@@ -310,15 +344,17 @@ export default function ImportarArquivoFolha({
           setErro(ia.erro);
           setEtapa("previa");
         } else {
-          setErro(ia.semChave ? erroRegras : `${erroRegras} A IA também não conseguiu: ${ia.erro}`);
-          setEtapa("escolher");
+          abrirAjuste(linhas); // não deu para entender sozinho: a pessoa indica onde estão nome e valores
         }
         return;
       }
       if (!ia.ok) {
-        const refazendo = !!opcoes?.forcarIA && !!leitura;
-        setErro(refazendo ? (ia.erro ?? "A IA não achou valores nesse arquivo.") : `${erroRegras} ${ia.erro ?? ""}`.trim());
-        setEtapa(refazendo ? "previa" : "escolher");
+        if (opcoes?.forcarIA && leitura) {
+          setErro(ia.erro ?? "A IA não achou valores nesse arquivo.");
+          setEtapa("previa");
+        } else {
+          abrirAjuste(linhas);
+        }
         return;
       }
       r = ia;
@@ -544,27 +580,28 @@ export default function ImportarArquivoFolha({
                   }}
                 />
               </div>
-              <div className={`${TXT} space-y-1 text-slate-700`}>
-                <p>
-                  <b>Como o arquivo deve ser:</b>
-                </p>
-                <ul className="list-disc space-y-1 pl-5">
-                  <li>
-                    <b>Uma linha por pessoa</b>, com o nome (ou CPF) e uma coluna para cada verba. Ex.: Nome · Unimed · Vale transporte.
-                  </li>
-                  <li>
-                    <b>Ou uma linha por verba</b>: Nome · Verba · Valor.
-                  </li>
-                  <li>
-                    <b>Ou só duas colunas</b> (Nome · Valor): depois você escolhe a qual coluna da folha o arquivo pertence.
-                  </li>
-                  <li>
-                    <b>Recibos de pagamento em PDF</b> (da contabilidade) também são lidos: um por pessoa.
-                  </li>
-                  <li>PDF precisa ter texto (não pode ser foto ou digitalização).</li>
-                </ul>
-              </div>
+              <p className={`${TXT} text-slate-700`}>
+                Pode enviar o arquivo <b>do jeito que veio</b>: planilha, CSV ou PDF (inclusive recibos). Eu descubro onde estão os nomes e os
+                valores, mostro o que entendi e você confirma antes de lançar.
+              </p>
             </div>
+          )}
+
+          {/* ----------------------------- ajustar ----------------------------- */}
+          {etapa === "ajustar" && layout && (
+            <AjustarLeitura
+              linhas={linhasAtuais}
+              layout={layout}
+              mensagem={mensagemAjuste}
+              erro={erroAjuste}
+              abas={abas}
+              abaSel={abaSel}
+              aoTrocarAba={trocarAba}
+              aoMudar={setLayout}
+              aoUsar={() => void usarLayout()}
+              aoVoltar={() => setEtapa(leitura ? "previa" : "escolher")}
+              podeVoltar={!!leitura}
+            />
           )}
 
           {/* ----------------------------- prévia ----------------------------- */}
@@ -609,6 +646,9 @@ export default function ImportarArquivoFolha({
                   onClick={() => void aplicarLinhas(linhasAtuais, { forcarIA: true, linhasIA: linhasParaIA })}
                 >
                   Ler de novo com IA
+                </button>
+                <button type="button" className="text-blue-700 underline" onClick={() => abrirAjuste(linhasAtuais, "Corrija onde estão o nome e os valores e clique em Usar essa leitura.")}>
+                  Ajustar como li o arquivo
                 </button>
               </div>
               {statusIA && (

@@ -176,7 +176,7 @@ export function csvParaLinhas(texto: string): string[][] {
 
 const H_NOME = ["nome", "colaborador", "funcionario", "empregado", "nome do colaborador", "nome do funcionario", "nome completo", "beneficiario", "titular"];
 const H_CPF = ["cpf"];
-const H_MATRICULA = ["matricula", "cod", "codigo", "cod func", "codigo funcionario", "registro", "re"];
+const H_MATRICULA = ["matricula", "cod", "codigo", "cod func", "codigo funcionario", "registro", "re", "mat", "matr", "n matricula", "num matricula"];
 const H_EVENTO = ["evento", "verba", "rubrica", "descricao", "descricao verba", "lancamento", "tipo", "historico", "provento desconto"];
 const H_VALOR = ["valor", "total", "importe", "quantia", "valor r", "vlr", "rendimentos", "proventos", "descontos", "vencimentos", "valor total", "mensalidade"];
 const IGNORAR_COLUNA = [
@@ -356,6 +356,266 @@ export function interpretarLinhas(linhasBrutas: unknown[][]): LeituraTabela {
   return { ok: true, formato: "largo", itens, rotulos, avisos, linhasLidas: corpo.length };
 }
 
+
+// ------------------------------------------------------------
+// LEITURA SEM PADRÃO: descobre pelo CONTEÚDO onde está o nome, o CPF e os valores
+// ------------------------------------------------------------
+
+/** onde estão as coisas numa tabela (números de linha/coluna começam em 0; -1 = não tem) */
+export interface LayoutTabela {
+  /** linha com os títulos das colunas (-1 = sem títulos) */
+  linhaCab: number;
+  colNome: number;
+  colCpf: number;
+  colMat: number;
+  /** coluna com o nome da verba, quando cada linha traz uma verba (formato "longo") */
+  colEvento: number;
+  /** colunas que têm os valores em dinheiro */
+  colsValor: number[];
+}
+
+const RE_CPF = /^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/;
+const RE_DATA = /^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}$/;
+
+function ehCpfTxt(t: string): boolean {
+  return RE_CPF.test(t.replace(/\s/g, ""));
+}
+function ehValorTxt(t: string): boolean {
+  if (!t || ehCpfTxt(t) || RE_DATA.test(t.trim())) return false;
+  return valorBR(t) !== null;
+}
+/** "ELLEN BATISTA DA CRUZ", "Karine D. Santos" — duas ou mais palavras, só letras */
+function ehNomeTxt(t: string): boolean {
+  const x = t.trim();
+  if (x.length < 5 || /\d/.test(x)) return false;
+  if (!/^[\p{L}][\p{L}'.\- ]+$/u.test(x)) return false;
+  const palavras = x.split(/\s+/).filter((w) => w.length > 0);
+  if (palavras.filter((w) => !LIGACOES.has(norm(w))).length < 2) return false;
+  if (PALAVRAS_TOTAL.test(norm(x))) return false;
+  const th = tipoCabecalho(x);
+  return th === "outro";
+}
+
+export function letraDaColuna(i: number): string {
+  let n = i;
+  let r = "";
+  do {
+    r = String.fromCharCode(65 + (n % 26)) + r;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return r;
+}
+
+export function detectarLayout(linhasBrutas: unknown[][]): LayoutTabela {
+  const g = linhasBrutas.map((l) => l.map(celulaTexto));
+  const nCols = g.reduce((m, l) => Math.max(m, l.length), 0);
+  const cel = (r: number, c: number) => g[r]?.[c] ?? "";
+
+  // 1. coluna do nome: a que tem mais cara de nome de pessoa
+  let colNome = -1;
+  let melhorNome = 0;
+  for (let c = 0; c < nCols; c++) {
+    let n = 0;
+    let titulo = 0;
+    for (let r = 0; r < g.length; r++) {
+      const t = cel(r, c);
+      if (ehNomeTxt(t)) n++;
+      else if (t && tipoCabecalho(t) === "nome") titulo = 4;
+    }
+    const nota = n + (n > 0 ? titulo : 0);
+    if (nota > melhorNome) {
+      melhorNome = nota;
+      colNome = c;
+    }
+  }
+
+  // 2. CPF
+  let colCpf = -1;
+  let melhorCpf = 0;
+  for (let c = 0; c < nCols; c++) {
+    if (c === colNome) continue;
+    let n = 0;
+    for (let r = 0; r < g.length; r++) if (ehCpfTxt(cel(r, c))) n++;
+    if (n > melhorCpf) {
+      melhorCpf = n;
+      colCpf = c;
+    }
+  }
+
+  // 3. primeira linha de dados
+  const temPessoa = (r: number) => (colNome >= 0 && ehNomeTxt(cel(r, colNome))) || (colCpf >= 0 && ehCpfTxt(cel(r, colCpf)));
+  let primeira = -1;
+  for (let r = 0; r < g.length; r++) {
+    if (temPessoa(r)) {
+      primeira = r;
+      break;
+    }
+  }
+
+  // 4. linha de títulos: a mais próxima acima dos dados com 2+ células preenchidas
+  let linhaCab = -1;
+  if (primeira > 0) {
+    for (let r = primeira - 1; r >= Math.max(0, primeira - 6); r--) {
+      if (g[r].filter((c) => c !== "").length >= 2) {
+        linhaCab = r;
+        break;
+      }
+    }
+  }
+
+  // 5. matrícula e evento pelos títulos
+  let colMat = -1;
+  let colEvento = -1;
+  if (linhaCab >= 0) {
+    for (let c = 0; c < nCols; c++) {
+      if (c === colNome || c === colCpf) continue;
+      const tp = tipoCabecalho(tituloDaColuna(g, linhaCab, c));
+      if (tp === "matricula" && colMat < 0) colMat = c;
+      if (tp === "evento" && colEvento < 0) colEvento = c;
+    }
+  }
+
+  // 6. colunas de valores
+  const linhasDados: number[] = [];
+  for (let r = Math.max(primeira, 0); r < g.length; r++) if (temPessoa(r)) linhasDados.push(r);
+  const colsValor: number[] = [];
+  if (primeira >= 0) {
+    for (let c = 0; c < nCols; c++) {
+      if (c === colNome || c === colCpf || c === colMat || c === colEvento) continue;
+      const titulo = tituloDaColuna(g, linhaCab, c);
+      const tp = titulo ? tipoCabecalho(titulo) : "outro";
+      if (tp === "ignorar" || tp === "matricula" || tp === "nome" || tp === "cpf") continue;
+      if (titulo && COLUNA_CALCULADA.test(norm(titulo))) continue;
+      const nums: number[] = [];
+      for (const r of linhasDados) {
+        const t = cel(r, c);
+        if (ehValorTxt(t)) nums.push(valorBR(t) as number);
+      }
+      if (nums.length === 0 || nums.every((v) => v === 0)) continue;
+      // número inteiro à esquerda do nome = código/ordem da pessoa, não é verba
+      if (colNome >= 0 && c < colNome && nums.every((v) => Number.isInteger(v))) continue;
+      // numeração de linhas (1, 2, 3…) não é verba
+      const ehSequencia = nums.length >= 3 && nums.every((v, i) => Number.isInteger(v) && v === nums[0] + i);
+      if (ehSequencia) continue;
+      colsValor.push(c);
+    }
+  }
+  return { linhaCab, colNome, colCpf, colMat, colEvento, colsValor };
+}
+
+/** título da coluna: a linha de títulos, ou (se a célula estiver vazia por causa de células mescladas) a de cima */
+function tituloDaColuna(g: string[][], linhaCab: number, c: number): string {
+  if (linhaCab < 0) return "";
+  for (let r = linhaCab; r >= Math.max(0, linhaCab - 2); r--) {
+    const t = g[r]?.[c] ?? "";
+    if (t) return t;
+  }
+  return "";
+}
+
+export function lerComLayout(linhasBrutas: unknown[][], layout: LayoutTabela): LeituraTabela {
+  const g = linhasBrutas.map((l) => l.map(celulaTexto));
+  const vazio: LeituraTabela = { ok: false, itens: [], rotulos: [], avisos: [], linhasLidas: 0 };
+  if (layout.colNome < 0 && layout.colCpf < 0 && layout.colMat < 0) return { ...vazio, erro: "Escolha a coluna do nome (ou do CPF)." };
+  const longo = layout.colEvento >= 0;
+  if (layout.colsValor.length === 0) return { ...vazio, erro: "Escolha pelo menos uma coluna com valores." };
+
+  const itens: ItemLido[] = [];
+  const rotulos: string[] = [];
+  const addRotulo = (r: string) => {
+    if (!rotulos.includes(r)) rotulos.push(r);
+  };
+  const nomesCol = new Map<number, string>();
+  for (const c of layout.colsValor) {
+    nomesCol.set(c, tituloDaColuna(g, layout.linhaCab, c) || (layout.colsValor.length > 1 ? `Coluna ${letraDaColuna(c)}` : ""));
+  }
+
+  let linhasLidas = 0;
+  const inicio = layout.linhaCab >= 0 ? layout.linhaCab + 1 : 0;
+  for (let r = inicio; r < g.length; r++) {
+    const cel = g[r];
+    if (!cel.some((c) => c !== "")) continue;
+    const nome = layout.colNome >= 0 ? cel[layout.colNome] ?? "" : "";
+    const cpf = layout.colCpf >= 0 ? cel[layout.colCpf] ?? "" : "";
+    const matricula = layout.colMat >= 0 ? cel[layout.colMat] ?? "" : "";
+    if (!nome && !cpf && !matricula) continue;
+    if (PALAVRAS_TOTAL.test(norm(nome))) continue;
+    if (nome && !cpf && !matricula && tipoCabecalho(nome) !== "outro") continue; // título repetido (PDF de várias páginas)
+    linhasLidas++;
+    if (longo) {
+      const rotulo = (cel[layout.colEvento] ?? "").trim();
+      if (!rotulo) continue;
+      for (const c of layout.colsValor) {
+        const bruto = cel[c] ?? "";
+        const v = valorBR(bruto);
+        if (v === null || v === 0 || !ehValorTxt(bruto)) continue;
+        itens.push({ linha: r + 1, nome, cpf, matricula, rotulo, bruto, valor: v });
+        addRotulo(rotulo);
+        break;
+      }
+    } else {
+      for (const c of layout.colsValor) {
+        const bruto = cel[c] ?? "";
+        if (bruto === "" || !ehValorTxt(bruto)) continue;
+        const v = valorBR(bruto);
+        if (v === null || v === 0) continue;
+        const rotulo = nomesCol.get(c) ?? "";
+        itens.push({ linha: r + 1, nome, cpf, matricula, rotulo, bruto, valor: v });
+        addRotulo(rotulo);
+      }
+    }
+  }
+  if (itens.length === 0) return { ...vazio, linhasLidas, erro: "Não achei valores nessas colunas (estão vazias ou zeradas)." };
+  return { ok: true, formato: longo ? "longo" : layout.colsValor.length === 1 && !nomesCol.get(layout.colsValor[0]) ? "simples" : "largo", itens, rotulos, avisos: [], linhasLidas };
+}
+
+/** leitura automática de arquivos sem formato conhecido */
+export function interpretarGenerico(linhasBrutas: unknown[][]): LeituraTabela {
+  const layout = detectarLayout(linhasBrutas);
+  const r = lerComLayout(linhasBrutas, layout);
+  if (r.ok) {
+    r.avisos = ["Esse arquivo não seguia um formato conhecido. Descobri sozinho onde estão o nome e os valores — confira com atenção."];
+  }
+  return r;
+}
+
+/**
+ * Leitura automática: tenta os formatos conhecidos e, se não servirem (ou lerem
+ * mal, ex.: sem o nome das pessoas), descobre o layout pelo conteúdo.
+ */
+export function lerAutomatico(linhasBrutas: unknown[][]): LeituraTabela {
+  const a = interpretarLinhas(linhasBrutas);
+  if (pareceReciboDePagamento(linhasBrutas)) return a;
+  const g = interpretarGenerico(linhasBrutas);
+  if (a.ok && !g.ok) return a;
+  if (!a.ok && g.ok) return g;
+  if (a.ok && g.ok) {
+    const semNome = a.itens.filter((i) => !i.nome && !i.cpf).length / Math.max(1, a.itens.length) > 0.5;
+    if (semNome && g.itens.some((i) => i.nome || i.cpf)) return g;
+    const pessoas = (it: ItemLido[]) => new Set(it.map((i) => i.cpf || i.matricula || norm(i.nome))).size;
+    if (pessoas(g.itens) > pessoas(a.itens) * 1.5) return g;
+    return a;
+  }
+  return a;
+}
+
+/** texto simples explicando o que foi (e o que não foi) encontrado no arquivo */
+export function diagnosticoArquivo(linhasBrutas: unknown[][], layout: LayoutTabela): string {
+  const g = linhasBrutas.map((l) => l.map(celulaTexto));
+  const partes: string[] = [];
+  const titulos = layout.linhaCab >= 0 ? g[layout.linhaCab].filter((t) => t !== "") : [];
+  if (layout.colNome < 0 && layout.colCpf < 0) {
+    partes.push("Não consegui achar uma coluna com nomes de pessoas.");
+  } else if (layout.colsValor.length === 0) {
+    partes.push(
+      titulos.length
+        ? `Achei as colunas: ${titulos.join(", ")}. Nenhuma tem valores em dinheiro (só identificam as pessoas).`
+        : "Achei as pessoas, mas nenhuma coluna com valores em dinheiro."
+    );
+    partes.push("Se os valores estão em outra aba, escolha a aba. Se estão em outra coluna, marque abaixo.");
+  }
+  return partes.join(" ");
+}
 
 // ------------------------------------------------------------
 // RECIBOS DE PAGAMENTO (holerites) — um bloco por empregado
@@ -550,12 +810,18 @@ export function acharColaborador(
     const achado = lista.filter((c) => cpfNorm(c.cpf) === cpf);
     if (achado.length === 1) return { colaborador: achado[0], nivel: "cpf", candidatos: [] };
   }
+  const tk = tokensNome(item.nome);
   const mat = soDigitos(item.matricula);
   if (mat) {
     const achado = lista.filter((c) => soDigitos(c.matricula) === mat);
-    if (achado.length === 1) return { colaborador: achado[0], nivel: "matricula", candidatos: [] };
+    // a matrícula da contabilidade pode não ser a do sistema: se o nome não tem nada a ver, não confia nela
+    const nomeCombina = (c: ColaboradorRef) => {
+      if (tk.length === 0) return true;
+      const ct = tokensNome(c.nome);
+      return tk.some((t) => ct.some((u) => notaPalavra(t, u) >= 0.75 && Math.min(t.length, u.length) >= 3));
+    };
+    if (achado.length === 1 && nomeCombina(achado[0])) return { colaborador: achado[0], nivel: "matricula", candidatos: [] };
   }
-  const tk = tokensNome(item.nome);
   if (tk.length === 0) return { colaborador: null, nivel: null, candidatos: [] };
   const chave = tk.join(" ");
 
