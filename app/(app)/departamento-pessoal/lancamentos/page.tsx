@@ -92,6 +92,8 @@ export default async function LancamentosFolhaPage({ searchParams }: { searchPar
       empresa: nomeEmpresa(c),
       unidade: c.unidade_id ? unidadePorId.get(c.unidade_id) ?? null : null,
       regime: rotuloRegime(c),
+      cpf: c.cpf_cnpj ?? null,
+      matricula: c.matricula ?? null,
       novo: !!c.data_admissao && c.data_admissao.slice(0, 10) >= periodo.iniISO && c.data_admissao.slice(0, 10) <= periodo.fimISO,
     }))
     .sort(

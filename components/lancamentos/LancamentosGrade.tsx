@@ -13,6 +13,7 @@ import {
   salvarCelulaLancamento,
   salvarPontoLancamento,
 } from "@/lib/actions-lancamentos";
+import ImportarArquivoFolha from "@/components/lancamentos/ImportarArquivoFolha";
 
 export type GrupoRubrica = "provento" | "desconto";
 export type FormatoRubrica = "moeda" | "texto" | "sim_nao";
@@ -34,6 +35,9 @@ export interface FuncionarioGrade {
   unidade: string | null;
   regime: string;
   novo: boolean;
+  /** usados só para casar com arquivos importados */
+  cpf?: string | null;
+  matricula?: string | null;
 }
 
 export interface MovimentoGrade {
@@ -205,6 +209,7 @@ export default function LancamentosGrade({
   const [busca, setBusca] = useState("");
   const buscaRef = useRef<HTMLInputElement>(null);
   const [gaveta, setGaveta] = useState(false);
+  const [importando, setImportando] = useState(false);
   const [modal, setModal] = useState<{ d: Rascunho; confirmar: boolean; uso?: string } | null>(null);
   const [estado, setEstado] = useState<EstadoSalvar>({ tipo: "parado" });
   const [aviso, setAviso] = useState("");
@@ -635,6 +640,13 @@ export default function LancamentosGrade({
         >
           Relatório analítico
         </Link>
+        <button
+          type="button"
+          onClick={() => setImportando(true)}
+          className="rounded-md bg-white px-3 py-1.5 text-[12.5px] font-semibold text-ink-900 transition-colors hover:bg-white/90"
+        >
+          Importar arquivo
+        </button>
         <button
           type="button"
           onClick={() => setGaveta(true)}
@@ -1084,6 +1096,20 @@ export default function LancamentosGrade({
             </div>
           </aside>
         </div>
+      )}
+
+      {/* importar arquivo (Excel, CSV ou PDF) */}
+      {importando && (
+        <ImportarArquivoFolha
+          competencia={competencia}
+          rotuloMes={opcoesMes.find((o) => o.valor === competencia)?.rotulo ?? competencia}
+          mesFechado={mesFechado}
+          funcionarios={funcionarios.map((f) => ({ id: f.id, nome: f.nome, cpf: f.cpf ?? null, matricula: f.matricula ?? null, empresa: f.empresa, unidade: f.unidade }))}
+          rubricas={rubs}
+          valoresAtuais={vals}
+          aoFechar={() => setImportando(false)}
+          aoConcluir={() => window.location.reload()}
+        />
       )}
 
       {/* modal de coluna */}
