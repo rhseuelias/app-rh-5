@@ -77,7 +77,7 @@ const FORMATOS: Record<FormatoRubrica, { rotulo: string; exemplo: string; largur
 const LARG_NUM = 44;
 const LARG_NOME = 180;
 const LARG_UNIDADE = 112;
-const LARG_PONTO = 210;
+const LARG_PONTO = 240;
 const COLUNAS_FIXAS = 4;
 
 const fmt = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -176,6 +176,7 @@ export default function LancamentosGrade({
   funcionarios,
   valoresIniciais,
   pontoIniciais,
+  pontoHerdadoDe = {},
   movimentos,
 }: {
   competencia: string;
@@ -188,6 +189,8 @@ export default function LancamentosGrade({
   funcionarios: FuncionarioGrade[];
   valoresIniciais: Record<string, Record<string, string>>;
   pontoIniciais: Record<string, string>;
+  /** colaborador → "set/26": observação que veio de um mês anterior e ainda não foi mexida neste mês */
+  pontoHerdadoDe?: Record<string, string>;
   movimentos: MovimentoGrade[];
 }) {
   const router = useRouter();
@@ -199,6 +202,29 @@ export default function LancamentosGrade({
 
   const [vals, setVals] = useState(valoresIniciais);
   const [ponto, setPonto] = useState(pontoIniciais);
+  const [herdado, setHerdado] = useState(pontoHerdadoDe);
+
+  // menu lateral recolhido → a área de lançamento ocupa a tela toda
+  useEffect(() => {
+    const main = document.querySelector("main");
+    if (!main) return;
+    const raiz = document.documentElement;
+    const aplicar = () => {
+      const recolhido = raiz.dataset.menu === "recolhido";
+      main.style.maxWidth = recolhido ? "none" : "";
+      main.style.paddingLeft = recolhido ? "1.25rem" : "";
+      main.style.paddingRight = recolhido ? "1.25rem" : "";
+    };
+    aplicar();
+    const obs = new MutationObserver(aplicar);
+    obs.observe(raiz, { attributes: true, attributeFilter: ["data-menu"] });
+    return () => {
+      obs.disconnect();
+      main.style.maxWidth = "";
+      main.style.paddingLeft = "";
+      main.style.paddingRight = "";
+    };
+  }, []);
   const salvos = useRef<Record<string, string>>(
     Object.fromEntries(Object.entries(valoresIniciais).flatMap(([c, v]) => Object.entries(v).map(([r, x]) => [`${c}:${r}`, x])))
   );
@@ -299,6 +325,7 @@ export default function LancamentosGrade({
   const larguraTotal = LARG_NUM + LARG_NOME + LARG_UNIDADE + LARG_PONTO + rubs.reduce((a, r) => a + FORMATOS[r.formato].largura, 0);
   const leftNome = LARG_NUM;
   const leftUnidade = LARG_NUM + LARG_NOME;
+  const leftPonto = LARG_NUM + LARG_NOME + LARG_UNIDADE;
 
   const bandas = useMemo(() => {
     const b: { g: GrupoRubrica; n: number }[] = [];
@@ -785,9 +812,12 @@ export default function LancamentosGrade({
               >
                 UNIDADE
               </div>
-              <div className="border-r border-stone-200 px-2 py-1.5 text-[10.5px] font-semibold">
+              <div
+                className="sticky z-40 border-r-2 border-stone-300 bg-stone-50 px-2 py-1.5 text-[10.5px] font-semibold shadow-[6px_0_8px_-6px_rgba(0,0,0,0.25)]"
+                style={{ left: leftPonto }}
+              >
                 PONTO / OBSERVAÇÕES
-                <span className="block text-[10px] font-normal text-stone-500">texto livre do mês</span>
+                <span className="block text-[10px] font-normal text-stone-500">vale também para os próximos meses</span>
               </div>
               {rubs.map((r, i) => (
                 <button
@@ -827,7 +857,7 @@ export default function LancamentosGrade({
                     {g.empresa.toUpperCase()} · {termo ? `${g.linhas.length} de ${g.base.length}` : g.linhas.length}
                   </div>
                   <div className="sticky z-20 border-r border-stone-300 bg-[#FAF9F6]" style={{ left: leftUnidade }} />
-                  <div />
+                  <div className="sticky z-20 border-r-2 border-stone-300 bg-[#FAF9F6]" style={{ left: leftPonto }} />
                   {rubs.map((r) => {
                     let v = "";
                     if (r.formato === "moeda") {
@@ -887,23 +917,59 @@ export default function LancamentosGrade({
                       >
                         <span className="truncate">{rotuloUnidade(f)}</span>
                       </div>
-                      <div className="border-r border-stone-100" style={{ boxShadow: ativa && sel?.k === "ponto" ? `inset 0 0 0 2px ${COR_P}` : "none" }}>
+                      <div
+                        className="sticky z-10 flex items-center gap-1 border-r-2 border-stone-300 shadow-[6px_0_8px_-6px_rgba(0,0,0,0.2)]"
+                        style={{ left: leftPonto, background: herdado[f.id] ? "#FFF8E6" : fundo, boxShadow: ativa && sel?.k === "ponto" ? `inset 0 0 0 2px ${COR_P}` : undefined }}
+                      >
                         <input
                           data-cell={`${n}:1`}
                           value={ponto[f.id] ?? ""}
                           disabled={mesFechado}
-                          title={ponto[f.id] ? ponto[f.id] : "Observações de ponto deste mês"}
+                          title={ponto[f.id] ? ponto[f.id] : "Observações de ponto — continuam valendo nos próximos meses"}
                           aria-label={`Ponto e observações de ${f.nome}`}
                           placeholder="observação do ponto…"
                           onFocus={() => escolher(f.id, "ponto", n)}
                           onChange={(e) => {
                             setPonto((p) => ({ ...p, [f.id]: e.target.value }));
+                            setHerdado((h) => {
+                              if (!(f.id in h)) return h;
+                              const { [f.id]: _tirar, ...resto } = h;
+                              return resto;
+                            });
                             agendarPonto(f.id, e.target.value);
                           }}
                           onBlur={(e) => aoSairPonto(f.id, e.target.value)}
                           onKeyDown={(e) => teclar(e, n, 1)}
-                          className="h-full w-full bg-transparent px-2 text-[12px] outline-none placeholder:text-stone-300 disabled:cursor-not-allowed"
+                          className="h-full min-w-0 flex-1 bg-transparent px-2 text-[12px] outline-none placeholder:text-stone-300 disabled:cursor-not-allowed"
                         />
+                        {herdado[f.id] && (
+                          <span
+                            className="shrink-0 rounded-full bg-amber-200 px-1.5 py-px text-[9px] font-bold text-amber-900"
+                            title={`Veio de ${herdado[f.id]}. Apague ou mude para valer só daqui para frente.`}
+                          >
+                            de {herdado[f.id]}
+                          </span>
+                        )}
+                        {!mesFechado && (ponto[f.id] ?? "") !== "" && (
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            aria-label={`Apagar observação de ${f.nome}`}
+                            title="Apagar (não aparece mais nos próximos meses)"
+                            onClick={() => {
+                              setPonto((p) => ({ ...p, [f.id]: "" }));
+                              setHerdado((h) => {
+                                const { [f.id]: _tirar, ...resto } = h;
+                                return resto;
+                              });
+                              limparPendente(`p:${f.id}`);
+                              void gravarPonto(f.id, "");
+                            }}
+                            className="mr-1 shrink-0 rounded px-1 text-[14px] leading-none text-stone-400 hover:bg-stone-100 hover:text-red-700"
+                          >
+                            ×
+                          </button>
+                        )}
                       </div>
                       {rubs.map((r, ri) => {
                         const v = vals[f.id]?.[r.id] ?? "";

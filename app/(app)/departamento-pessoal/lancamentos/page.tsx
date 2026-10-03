@@ -1,7 +1,8 @@
 import { createClient } from "@/lib/supabase-server";
-import type { Colaborador, Empresa, FolhaCompetencia, FolhaLancamento, FolhaNota, FolhaTipo, Unidade } from "@/types/db";
+import type { Colaborador, Empresa, FolhaCompetencia, FolhaLancamento, FolhaTipo, Unidade } from "@/types/db";
 import { colaboradorAtivoFolha } from "@/lib/folha-calculos";
 import { rotuloCompetencia } from "@/lib/beneficios-calculos";
+import { carregarPontoComHeranca, mesCurto } from "@/lib/ponto-herdado";
 import LancamentosGrade, {
   type FormatoRubrica,
   type FuncionarioGrade,
@@ -136,13 +137,24 @@ export default async function LancamentosFolhaPage({ searchParams }: { searchPar
   // ---- valores do mês e observações de ponto ----
   const valoresIniciais: Record<string, Record<string, string>> = {};
   const pontoIniciais: Record<string, string> = {};
+  const pontoHerdadoDe: Record<string, string> = {};
+
+  // Ponto / Observações: vale o que foi escrito neste mês ou, se não houver, o do mês anterior mais recente
+  if (naFolha.length > 0) {
+    const pontos = await carregarPontoComHeranca(
+      supabase,
+      competencia,
+      naFolha.map((c) => c.id)
+    );
+    for (const [colabId, p] of Object.entries(pontos)) {
+      pontoIniciais[colabId] = p.texto;
+      if (p.deMes) pontoHerdadoDe[colabId] = mesCurto(p.deMes);
+    }
+  }
 
   if (competenciaRow && naFolha.length > 0) {
     const ids = naFolha.map((c) => c.id);
-    const [lancRes, notasRes] = await Promise.all([
-      supabase.from("folha_lancamentos").select("*").eq("competencia_id", competenciaRow.id).in("colaborador_id", ids),
-      supabase.from("folha_notas").select("*").eq("competencia_id", competenciaRow.id).in("colaborador_id", ids),
-    ]);
+    const lancRes = await supabase.from("folha_lancamentos").select("*").eq("competencia_id", competenciaRow.id).in("colaborador_id", ids);
 
     for (const l of (lancRes.data ?? []) as FolhaLancamento[]) {
       const formato = formatoPorId.get(l.tipo_id);
@@ -152,9 +164,6 @@ export default async function LancamentosFolhaPage({ searchParams }: { searchPar
       else if (formato === "sim_nao") texto = /^(sim|s|true|1)$/i.test((l.valor_texto ?? "").trim()) ? "SIM" : "";
       else texto = l.valor_texto ?? "";
       if (texto !== "") (valoresIniciais[l.colaborador_id] ??= {})[l.tipo_id] = texto;
-    }
-    for (const n of (notasRes.data ?? []) as FolhaNota[]) {
-      if (n.nota) pontoIniciais[n.colaborador_id] = n.nota;
     }
   }
 
@@ -170,6 +179,7 @@ export default async function LancamentosFolhaPage({ searchParams }: { searchPar
       funcionarios={funcionarios}
       valoresIniciais={valoresIniciais}
       pontoIniciais={pontoIniciais}
+      pontoHerdadoDe={pontoHerdadoDe}
       movimentos={movimentos}
     />
   );

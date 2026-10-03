@@ -132,7 +132,9 @@ export async function salvarPontoLancamento(competencia: string, colaboradorId: 
       .update({ nota, updated_at: new Date().toISOString() })
       .eq("id", existente[0].id);
     if (error) return { ok: false, erro: mensagem(error.message) };
-  } else if (nota !== null) {
+  } else {
+    // sem linha no mês: grava mesmo se vier vazio — é assim que "apagar" uma observação herdada
+    // de um mês anterior interrompe a herança nos meses seguintes
     const { error } = await supabase
       .from("folha_notas")
       .insert({ competencia_id: comp.id, colaborador_id: colaboradorId, nota });

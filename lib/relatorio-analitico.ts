@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
-import type { Colaborador, Empresa, FolhaCompetencia, FolhaLancamento, FolhaNota, FolhaTipo, Unidade } from "@/types/db";
+import type { Colaborador, Empresa, FolhaCompetencia, FolhaLancamento, FolhaTipo, Unidade } from "@/types/db";
 import { colaboradorAtivoFolha } from "@/lib/folha-calculos";
+import { carregarPontoComHeranca } from "@/lib/ponto-herdado";
 import type { ColunaRel, GrupoRel, LinhaRel, OpcaoEscopo, RelatorioAnalitico } from "@/lib/relatorio-analitico-tipos";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -157,14 +158,19 @@ export async function montarRelatorioAnalitico(
 
   const valoresPor: Record<string, Record<string, FolhaLancamento>> = {};
   const pontoPor: Record<string, string> = {};
+  // Ponto / Observações: vale o do mês ou, se não houver, o do mês anterior mais recente (igual à tela de lançamentos)
+  if (noEscopo.length > 0) {
+    const pontos = await carregarPontoComHeranca(
+      supabase,
+      competencia,
+      noEscopo.map((f) => f.id)
+    );
+    for (const [colabId, p] of Object.entries(pontos)) pontoPor[colabId] = p.texto;
+  }
   if (competenciaRow && noEscopo.length > 0) {
     const ids = noEscopo.map((f) => f.id);
-    const [lancRes, notasRes] = await Promise.all([
-      supabase.from("folha_lancamentos").select("*").eq("competencia_id", competenciaRow.id).in("colaborador_id", ids),
-      supabase.from("folha_notas").select("*").eq("competencia_id", competenciaRow.id).in("colaborador_id", ids),
-    ]);
+    const lancRes = await supabase.from("folha_lancamentos").select("*").eq("competencia_id", competenciaRow.id).in("colaborador_id", ids);
     for (const l of (lancRes.data ?? []) as FolhaLancamento[]) (valoresPor[l.colaborador_id] ??= {})[l.tipo_id] = l;
-    for (const n of (notasRes.data ?? []) as FolhaNota[]) if (n.nota) pontoPor[n.colaborador_id] = n.nota;
   }
 
   function celula(col: ColunaRel, colabId: string): { texto: string; numero: number } {

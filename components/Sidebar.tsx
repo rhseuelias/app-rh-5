@@ -160,6 +160,10 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
       /* sem armazenamento: segue aberto */
     }
   }, []);
+  // deixa a tela saber se o menu está recolhido (a grade de lançamentos usa isso para ocupar a tela toda)
+  useEffect(() => {
+    document.documentElement.dataset.menu = recolhido ? "recolhido" : "aberto";
+  }, [recolhido]);
   function alternarMenu() {
     setRecolhido((v) => {
       const novo = !v;
