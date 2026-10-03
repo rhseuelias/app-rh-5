@@ -8,6 +8,7 @@ import type { ConfigSimulacao, DiaSemana, EstrategiaSimulacao, ModeloDivisaoFeri
 import { MODELOS_DIVISAO, ESTRATEGIAS_SIMULACAO, periodosDoModelo } from "@/lib/simulacao-ferias";
 import {
   atualizarConfigCenario,
+  atualizarUnidadesCenario,
   definirFeriasManualCenario,
   gerarAutomaticoParaRestantes,
   regenerarAutomaticos,
@@ -67,6 +68,8 @@ interface Props {
   pendencias: PendenciaSim[];
   custo: number;
   mostrarValores: boolean;
+  unidadesDisponiveis: { id: string; nome: string }[];
+  unidadesSelecionadas: string[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -196,7 +199,17 @@ const moeda = (v: number) =>
 /* Componente principal                                                */
 /* ------------------------------------------------------------------ */
 
-export default function SimulacaoWorkspace({ cenario, cenarios, config, pessoas, pendencias, custo, mostrarValores }: Props) {
+export default function SimulacaoWorkspace({
+  cenario,
+  cenarios,
+  config,
+  pessoas,
+  pendencias,
+  custo,
+  mostrarValores,
+  unidadesDisponiveis,
+  unidadesSelecionadas,
+}: Props) {
   const router = useRouter();
   const [ocupado, startTransition] = useTransition();
   const aprovado = cenario.status === "aprovado";
@@ -432,6 +445,15 @@ export default function SimulacaoWorkspace({ cenario, cenarios, config, pessoas,
                 : ""}
             </span>
           </div>
+
+          {unidadesDisponiveis.length > 1 && (
+            <SeletorUnidades
+              cenarioId={cenario.id}
+              disponiveis={unidadesDisponiveis}
+              selecionadas={unidadesSelecionadas}
+              bloqueado={aprovado}
+            />
+          )}
 
           <fieldset disabled={aprovado} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }} className="flex flex-col gap-[22px]">
             {/* Divisão */}
@@ -978,6 +1000,92 @@ function linkBtn(cor: string): CSSProperties {
     padding: 0,
     textAlign: "center",
   };
+}
+
+/** Escolher em quais unidades a simulação vale: uma, algumas ou todas (salva sozinho). */
+function SeletorUnidades({
+  cenarioId,
+  disponiveis,
+  selecionadas,
+  bloqueado,
+}: {
+  cenarioId: string;
+  disponiveis: { id: string; nome: string }[];
+  selecionadas: string[];
+  bloqueado: boolean;
+}) {
+  const router = useRouter();
+  const [marcadas, setMarcadas] = useState<string[]>(selecionadas);
+  const [estado, setEstado] = useState<"" | "salvando" | "salvo" | "erro">("");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chave = selecionadas.join("|");
+
+  // quando a página recarrega com outra seleção (ex.: trocou de cenário), acompanha
+  useEffect(() => {
+    setMarcadas(selecionadas);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cenarioId, chave]);
+
+  function salvar(ids: string[]) {
+    if (timer.current) clearTimeout(timer.current);
+    setEstado("salvando");
+    timer.current = setTimeout(() => {
+      atualizarUnidadesCenario(cenarioId, ids)
+        .then(() => {
+          setEstado("salvo");
+          router.refresh();
+        })
+        .catch(() => setEstado("erro"));
+    }, 600);
+  }
+
+  function alternar(id: string) {
+    if (bloqueado) return;
+    const novo = marcadas.includes(id) ? marcadas.filter((x) => x !== id) : [...marcadas, id];
+    if (novo.length === 0) return; // sempre fica pelo menos uma
+    setMarcadas(novo);
+    salvar(novo);
+  }
+
+  function todas() {
+    if (bloqueado) return;
+    const ids = disponiveis.map((u) => u.id);
+    setMarcadas(ids);
+    salvar(ids);
+  }
+
+  const todasMarcadas = marcadas.length === disponiveis.length;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span style={ROTULO}>Unidades</span>
+        <span style={{ fontSize: 11, color: estado === "erro" ? "#b42318" : "#737373" }}>
+          {estado === "salvando" ? "salvando…" : estado === "salvo" ? "salvo" : estado === "erro" ? "não salvou" : ""}
+        </span>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label
+          style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8, cursor: bloqueado ? "default" : "pointer" }}
+        >
+          <input type="checkbox" checked={todasMarcadas} onChange={todas} disabled={bloqueado} />
+          Todas as unidades
+        </label>
+        {disponiveis.map((u) => (
+          <label
+            key={u.id}
+            style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 8, cursor: bloqueado ? "default" : "pointer", color: "#3d3d3d" }}
+          >
+            <input type="checkbox" checked={marcadas.includes(u.id)} onChange={() => alternar(u.id)} disabled={bloqueado} />
+            {u.nome}
+          </label>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: "#737373" }}>
+        {todasMarcadas ? "A simulação vale para todas as unidades." : `A simulação vale para ${marcadas.length} de ${disponiveis.length} unidades.`}
+      </div>
+    </div>
+  );
 }
 
 function Bloco({ titulo, children }: { titulo: string; children: ReactNode }) {

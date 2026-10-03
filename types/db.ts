@@ -218,6 +218,7 @@ export interface ConfigSimulacao {
   capacidadeMaxDepartamento: number | null; // null = sem limite
   estrategia: EstrategiaSimulacao;
   pesos: PesosEstrategia;
+  unidadesIds?: string[]; // vazio/ausente = todas as unidades da empresa do cenário (ou a unidade única do cenário)
 }
 
 export interface CenarioSimulacao {

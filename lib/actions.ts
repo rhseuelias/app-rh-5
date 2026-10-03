@@ -20,6 +20,8 @@ import {
   diasPreferenciaisParaSet,
   gerarPeriodosParaColaborador,
   calcularSaldo,
+  unidadesDoCenario,
+  unidadeNoEscopo,
 } from "@/lib/simulacao-ferias";
 import type { Colaborador, PeriodoAquisitivo, Ferias, Feriado, ConfigSimulacao } from "@/types/db";
 import { formatarCpfOuCnpj } from "@/lib/formatadores";
@@ -2066,9 +2068,24 @@ export async function criarCenario(formData: FormData) {
   const nome = str(formData, "nome") ?? "Cenário sem nome";
   const descricao = str(formData, "descricao");
   const empresa_id = str(formData, "empresa_id");
-  const unidade_id = str(formData, "unidade_id");
   const ano = num(formData, "ano") || new Date().getFullYear();
   const usuario_responsavel = await nomeUsuarioAtual(supabase);
+
+  // unidades marcadas na tela (todas marcadas, ou nenhuma = todas)
+  const marcadas = formData.getAll("unidades_ids").map((v) => String(v)).filter(Boolean);
+  let unidade_id: string | null = null;
+  let unidadesIds: string[] = [];
+  if (marcadas.length > 0) {
+    const { data: todasUnidades } = await supabase.from("unidades").select("id, empresa_id");
+    const escopo = ((todasUnidades ?? []) as { id: string; empresa_id: string | null }[])
+      .filter((u) => !empresa_id || u.empresa_id === empresa_id)
+      .map((u) => u.id);
+    const ids = marcadas.filter((id) => escopo.includes(id));
+    if (ids.length > 0 && ids.length < escopo.length) {
+      unidade_id = ids.length === 1 ? ids[0] : null;
+      unidadesIds = ids.length > 1 ? ids : [];
+    }
+  }
 
   const { data } = await supabase
     .from("cenarios_simulacao")
@@ -2078,7 +2095,7 @@ export async function criarCenario(formData: FormData) {
       empresa_id,
       unidade_id,
       ano,
-      config: normalizarConfig(null),
+      config: { ...normalizarConfig(null), unidadesIds },
       status: "rascunho",
       usuario_responsavel,
     })
@@ -2181,10 +2198,39 @@ export async function atualizarConfigCenario(formData: FormData) {
     },
   };
 
+  // as unidades do cenário têm ação própria — aqui só preservamos o que já estava salvo
+  const { data: atual } = await supabase.from("cenarios_simulacao").select("config").eq("id", cenario_id).single();
+  config.unidadesIds = normalizarConfig(atual?.config).unidadesIds ?? [];
+
   await supabase
     .from("cenarios_simulacao")
     .update({ config, updated_at: new Date().toISOString() })
     .eq("id", cenario_id);
+  revalidatePath("/ferias/simulacao");
+}
+
+/** Escolhe em quais unidades a simulação vale (uma, algumas ou todas as da empresa do cenário). */
+export async function atualizarUnidadesCenario(cenarioId: string, unidadesIds: string[]) {
+  const supabase = createClient();
+  const [{ data: cenario }, { data: todasUnidades }] = await Promise.all([
+    supabase.from("cenarios_simulacao").select("*").eq("id", cenarioId).single(),
+    supabase.from("unidades").select("id, empresa_id"),
+  ]);
+  if (!cenario || cenario.status === "aprovado") return;
+
+  const escopo = ((todasUnidades ?? []) as { id: string; empresa_id: string | null }[])
+    .filter((u) => !cenario.empresa_id || u.empresa_id === cenario.empresa_id)
+    .map((u) => u.id);
+  const ids = unidadesIds.filter((id) => escopo.includes(id));
+  const todas = ids.length === 0 || ids.length === escopo.length;
+
+  const config = { ...normalizarConfig(cenario.config), unidadesIds: !todas && ids.length > 1 ? ids : [] };
+  const unidade_id = todas ? null : ids.length === 1 ? ids[0] : null;
+
+  await supabase
+    .from("cenarios_simulacao")
+    .update({ unidade_id, config, updated_at: new Date().toISOString() })
+    .eq("id", cenarioId);
   revalidatePath("/ferias/simulacao");
 }
 
@@ -2329,10 +2375,20 @@ interface ResumoGeracaoAutomatica {
   incompletos: string[];
 }
 
-/** Tira de um cenário qualquer período simulado de quem não é CLT (a simulação de férias é só CLT). */
-async function removerSimuladasNaoCLT(supabase: ReturnType<typeof createClient>, cenarioId: string) {
-  const { data: naoClt } = await supabase.from("colaboradores").select("id").neq("tipo", "CLT");
-  const ids = ((naoClt ?? []) as { id: string }[]).map((c) => c.id);
+/** Tira do cenário os períodos simulados de quem está fora do escopo: não é CLT, ou é de outra empresa/unidade. */
+async function removerSimuladasForaDoEscopo(supabase: ReturnType<typeof createClient>, cenarioId: string) {
+  const { data: cenario } = await supabase.from("cenarios_simulacao").select("*").eq("id", cenarioId).single();
+  if (!cenario) return;
+  const escopoUnidades = unidadesDoCenario(cenario, normalizarConfig(cenario.config));
+  const { data: todos } = await supabase.from("colaboradores").select("id, tipo, empresa_id, unidade_id");
+  const ids = ((todos ?? []) as { id: string; tipo: string; empresa_id: string | null; unidade_id: string | null }[])
+    .filter(
+      (c) =>
+        c.tipo !== "CLT" ||
+        (cenario.empresa_id != null && c.empresa_id !== cenario.empresa_id) ||
+        !unidadeNoEscopo(c.unidade_id, escopoUnidades)
+    )
+    .map((c) => c.id);
   if (ids.length === 0) return;
   await supabase.from("ferias").delete().eq("cenario_id", cenarioId).eq("simulacao", true).in("colaborador_id", ids);
 }
@@ -2351,7 +2407,7 @@ async function executarGeracaoAutomatica(cenarioId: string, somenteColaboradorId
   const { data: cenario } = await supabase.from("cenarios_simulacao").select("*").eq("id", cenarioId).single();
   const resumo: ResumoGeracaoAutomatica = { criados: 0, semPeriodoAquisitivo: [], saldoInsuficiente: [], incompletos: [] };
   if (!cenario) return resumo;
-  await removerSimuladasNaoCLT(supabase, cenarioId);
+  await removerSimuladasForaDoEscopo(supabase, cenarioId);
 
   const config = normalizarConfig(cenario.config);
   const periodosDias = periodosDoModelo(config);
@@ -2373,7 +2429,8 @@ async function executarGeracaoAutomatica(cenarioId: string, somenteColaboradorId
 
   let colaboradores = (colaboradoresData ?? []) as Colaborador[];
   if (cenario.empresa_id) colaboradores = colaboradores.filter((c) => c.empresa_id === cenario.empresa_id);
-  if (cenario.unidade_id) colaboradores = colaboradores.filter((c) => c.unidade_id === cenario.unidade_id);
+  const escopoUnidades = unidadesDoCenario(cenario, config);
+  colaboradores = colaboradores.filter((c) => unidadeNoEscopo(c.unidade_id, escopoUnidades));
 
   const aquisitivos = (aquisitivosData ?? []) as PeriodoAquisitivo[];
   const feriasReais = (feriasReaisData ?? []) as Ferias[];
@@ -2552,7 +2609,7 @@ export async function regenerarAutomaticos(cenarioId: string): Promise<ResumoGer
 /** "Aprovar e converter em programação oficial": os períodos do cenário viram férias planejadas de verdade, aparecem no mapa real. O cenário continua existindo (histórico), só solto dos períodos que promoveu. */
 export async function promoverCenario(cenarioId: string) {
   const supabase = createClient();
-  await removerSimuladasNaoCLT(supabase, cenarioId);
+  await removerSimuladasForaDoEscopo(supabase, cenarioId);
 
   const { data: periodos } = await supabase
     .from("ferias")

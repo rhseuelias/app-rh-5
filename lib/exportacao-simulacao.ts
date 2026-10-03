@@ -1,6 +1,13 @@
 import { createClient } from "@/lib/supabase-server";
 import { souAssistente } from "@/lib/permissoes";
-import { calcularSaldo, normalizarConfig, periodosDoModelo, ESTRATEGIAS_SIMULACAO } from "@/lib/simulacao-ferias";
+import {
+  calcularSaldo,
+  normalizarConfig,
+  periodosDoModelo,
+  ESTRATEGIAS_SIMULACAO,
+  unidadesDoCenario,
+  unidadeNoEscopo,
+} from "@/lib/simulacao-ferias";
 import type { Colaborador, Ferias, PeriodoAquisitivo, CenarioSimulacao } from "@/types/db";
 import type { ColaboradorExportacao, DadosExportacaoSimulacao, PeriodoExportacao, StatusExportacao } from "@/lib/exportacao-simulacao-util";
 
@@ -38,11 +45,13 @@ export async function buscarDadosExportacaoSimulacao(cenarioId: string): Promise
     supabase.from("ferias").select("*").eq("cenario_id", cenarioId).eq("simulacao", true),
   ]);
 
+  const config = normalizarConfig(cenario.config);
+  const escopoUnidades = unidadesDoCenario(cenario, config);
   const nomeUnidade = new Map(((unidadesData ?? []) as { id: string; nome: string }[]).map((u) => [u.id, u.nome]));
 
   let colaboradores = (colaboradoresData ?? []) as Colaborador[];
   if (cenario.empresa_id) colaboradores = colaboradores.filter((c) => c.empresa_id === cenario.empresa_id);
-  if (cenario.unidade_id) colaboradores = colaboradores.filter((c) => c.unidade_id === cenario.unidade_id);
+  colaboradores = colaboradores.filter((c) => unidadeNoEscopo(c.unidade_id, escopoUnidades));
   const ids = new Set(colaboradores.map((c) => c.id));
 
   // período aquisitivo aberto com o limite mais próximo (mesma regra da tela)
@@ -97,7 +106,9 @@ export async function buscarDadosExportacaoSimulacao(cenarioId: string): Promise
     })
     .sort((a, b) => a.unidadeNome.localeCompare(b.unidadeNome, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR"));
 
-  const config = normalizarConfig(cenario.config);
+  const unidadesTexto = escopoUnidades.length
+    ? escopoUnidades.map((id) => nomeUnidade.get(id) ?? "—").join(", ")
+    : "Todas";
   const divisaoTexto = periodosDoModelo(config).join(" + ") || "30";
   const estrategia = ESTRATEGIAS_SIMULACAO.find((e) => e.valor === config.estrategia);
   const prioridadeTexto = (estrategia?.label ?? config.estrategia).toLowerCase();
@@ -116,7 +127,7 @@ export async function buscarDadosExportacaoSimulacao(cenarioId: string): Promise
     ["Cenário", cenario.nome],
     ["Ano", String(cenario.ano ?? new Date().getFullYear())],
     ["Empresa", (empresaData as { nome: string } | null)?.nome ?? "Todas"],
-    ["Unidade", cenario.unidade_id ? nomeUnidade.get(cenario.unidade_id) ?? "—" : "Todas"],
+    ["Unidade", unidadesTexto],
     ["Status", cenario.status === "aprovado" ? "Aprovado" : "Rascunho"],
     ["Responsável", cenario.usuario_responsavel ?? "—"],
     ["Divisão das férias", `${divisaoTexto} dias`],
@@ -142,7 +153,7 @@ export async function buscarDadosExportacaoSimulacao(cenarioId: string): Promise
     cabecalho: {
       cenarioNome: cenario.nome,
       empresaNome: (empresaData as { nome: string } | null)?.nome ?? "Todas",
-      unidadeNome: cenario.unidade_id ? nomeUnidade.get(cenario.unidade_id) ?? "—" : "Todas",
+      unidadeNome: unidadesTexto,
       ano: cenario.ano ?? new Date().getFullYear(),
       status: cenario.status,
       responsavel: cenario.usuario_responsavel ?? null,

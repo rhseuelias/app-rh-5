@@ -4,11 +4,12 @@ import { addDays } from "date-fns";
 import type { Colaborador, Empresa, Unidade, Ferias, PeriodoAquisitivo, Feriado, CenarioSimulacao } from "@/types/db";
 import { formatarDataBR } from "@/lib/calculos";
 import { detectarConflitos, respeitaRegraInicio, paraSetDeDatas, semanasEnvolvidas } from "@/lib/ferias-calculos";
-import { normalizarConfig, calcularSaldo } from "@/lib/simulacao-ferias";
+import { normalizarConfig, calcularSaldo, unidadesDoCenario, unidadeNoEscopo } from "@/lib/simulacao-ferias";
 import { criarCenario } from "@/lib/actions";
 import { souAssistente } from "@/lib/permissoes";
 import { fDM, fDMA } from "@/lib/ferias-regras";
 import ExcluirCenarioBotao from "@/components/ferias/ExcluirCenarioBotao";
+import EmpresaUnidadesNovo from "@/components/ferias/EmpresaUnidadesNovo";
 import SimulacaoWorkspace, {
   type PessoaSim,
   type PendenciaSim,
@@ -58,6 +59,11 @@ export default async function SimulacaoFeriasPage({
   const cenarios = (cenariosData ?? []) as CenarioSimulacao[];
   const nomeEmpresa = Object.fromEntries(empresas.map((e) => [e.id, e.nome]));
   const nomeUnidade = Object.fromEntries(unidades.map((u) => [u.id, u.nome]));
+
+  const rotuloUnidades = (c: CenarioSimulacao) => {
+    const ids = unidadesDoCenario(c, normalizarConfig(c.config));
+    return ids.length ? ids.map((id) => nomeUnidade[id] ?? "—").join(", ") : "Todas as unidades";
+  };
 
   const cenarioId = searchParams.cenario ?? null;
   const cenarioAtual = cenarioId ? cenarios.find((c) => c.id === cenarioId) ?? null : null;
@@ -123,28 +129,10 @@ export default async function SimulacaoFeriasPage({
                 style={{ ...campo, width: 280 }}
               />
             </label>
-            <label className="flex flex-col gap-1.5">
-              <span style={rotulo}>Empresa</span>
-              <select name="empresa_id" style={campo}>
-                <option value="">Todas</option>
-                {empresas.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span style={rotulo}>Unidade</span>
-              <select name="unidade_id" style={campo}>
-                <option value="">Todas</option>
-                {unidades.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <EmpresaUnidadesNovo
+              empresas={empresas.map((e) => ({ id: e.id, nome: e.nome }))}
+              unidades={unidades.map((u) => ({ id: u.id, nome: u.nome, empresa_id: u.empresa_id }))}
+            />
             <label className="flex flex-col gap-1.5">
               <span style={rotulo}>Ano</span>
               <select name="ano" defaultValue={anoBase + 1} style={campo}>
@@ -195,7 +183,7 @@ export default async function SimulacaoFeriasPage({
                       </div>
                       <div style={{ fontSize: 12, color: "#737373", marginTop: 2 }}>
                         {c.empresa_id ? nomeEmpresa[c.empresa_id] ?? "—" : "Todas as empresas"} ·{" "}
-                        {c.unidade_id ? nomeUnidade[c.unidade_id] ?? "—" : "Todas as unidades"} · {c.ano ?? "—"}
+                        {rotuloUnidades(c)} · {c.ano ?? "—"}
                       </div>
                     </div>
                     <span
@@ -260,7 +248,8 @@ export default async function SimulacaoFeriasPage({
 
   let colaboradores = (colaboradoresData ?? []) as Colaborador[];
   if (cenarioAtual.empresa_id) colaboradores = colaboradores.filter((c) => c.empresa_id === cenarioAtual.empresa_id);
-  if (cenarioAtual.unidade_id) colaboradores = colaboradores.filter((c) => c.unidade_id === cenarioAtual.unidade_id);
+  const escopoUnidades = unidadesDoCenario(cenarioAtual, config);
+  colaboradores = colaboradores.filter((c) => unidadeNoEscopo(c.unidade_id, escopoUnidades));
   colaboradores = colaboradores.slice().sort((a, b) => a.nome.localeCompare(b.nome));
 
   const todosAquisitivos = (aquisitivosData ?? []) as PeriodoAquisitivo[];
@@ -497,6 +486,14 @@ export default async function SimulacaoFeriasPage({
     })
     .sort((a, b) => a.unidade.localeCompare(b.unidade, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR"));
 
+  const unidadesDisponiveis = unidades
+    .filter((u) => !cenarioAtual.empresa_id || u.empresa_id === cenarioAtual.empresa_id)
+    .map((u) => ({
+      id: u.id,
+      nome: !cenarioAtual.empresa_id && u.empresa_id && nomeEmpresa[u.empresa_id] ? `${u.nome} · ${nomeEmpresa[u.empresa_id]}` : u.nome,
+    }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+
   const custoTotal = feriasSimuladas.reduce((s, f) => s + (f.valor_estimado ?? 0), 0);
 
   return (
@@ -507,8 +504,10 @@ export default async function SimulacaoFeriasPage({
         status: cenarioAtual.status,
         ano,
         empresa: cenarioAtual.empresa_id ? nomeEmpresa[cenarioAtual.empresa_id] ?? "—" : "todas as empresas",
-        unidade: cenarioAtual.unidade_id ? nomeUnidade[cenarioAtual.unidade_id] ?? null : null,
+        unidade: escopoUnidades.length ? escopoUnidades.map((id) => nomeUnidade[id] ?? "—").join(", ") : null,
       }}
+      unidadesDisponiveis={unidadesDisponiveis}
+      unidadesSelecionadas={escopoUnidades.length ? escopoUnidades : unidadesDisponiveis.map((u) => u.id)}
       cenarios={cenarios.map((c) => ({ id: c.id, nome: c.nome, ano: c.ano }))}
       config={config}
       pessoas={pessoas}

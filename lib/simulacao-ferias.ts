@@ -42,6 +42,7 @@ export const CONFIG_SIMULACAO_PADRAO: ConfigSimulacao = {
   capacidadeMaxDepartamento: null,
   estrategia: "equilibrada",
   pesos: { dataLimite: 40, cobertura: 30, distribuicao: 20, preferencias: 10 },
+  unidadesIds: [],
 };
 
 /** Preenche os campos que faltarem com o padrão — cenários antigos (ou recém-criados) sempre viram uma config completa. */
@@ -51,6 +52,20 @@ export function normalizarConfig(config: Partial<ConfigSimulacao> | null | undef
     ...(config ?? {}),
     pesos: { ...CONFIG_SIMULACAO_PADRAO.pesos, ...(config?.pesos ?? {}) } as PesosEstrategia,
   };
+}
+
+/**
+ * Unidades que o cenário abrange. Lista vazia = todas (da empresa escolhida, ou de todas as empresas).
+ * Cenários antigos só têm `unidade_id` (uma unidade); os novos podem ter várias em `config.unidadesIds`.
+ */
+export function unidadesDoCenario(cenario: { unidade_id: string | null }, config: ConfigSimulacao): string[] {
+  if (config.unidadesIds && config.unidadesIds.length > 0) return config.unidadesIds;
+  return cenario.unidade_id ? [cenario.unidade_id] : [];
+}
+
+/** true se a unidade está no escopo (lista vazia = todas). */
+export function unidadeNoEscopo(unidadeId: string | null | undefined, escopo: string[]): boolean {
+  return escopo.length === 0 || (!!unidadeId && escopo.includes(unidadeId));
 }
 
 export function periodosDoModelo(config: ConfigSimulacao): number[] {
