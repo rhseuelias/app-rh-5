@@ -6,6 +6,9 @@ import { iaAnalisar, iaExtrairItens, type ItemIA } from "@/lib/actions-ia-folha"
 import {
   acharColaborador,
   acharRubrica,
+  acharRubricaParecida,
+  rubricasMaisParecidas,
+  norm,
   csvParaLinhas,
   ehSim,
   formatarValor,
@@ -61,6 +64,34 @@ function chaveDaPessoa(i: { nome: string; cpf: string; matricula: string }): str
   if (i.matricula.trim()) return `mat:${i.matricula.replace(/\D/g, "") || i.matricula.trim()}`;
   return `nome:${i.nome.toLowerCase().replace(/\s+/g, " ").trim()}`;
 }
+
+// ---- o app lembra das escolhas anteriores (guardado só neste navegador) ----
+const CHAVE_MEMORIA = "folha_importacao_memoria_v1";
+interface Memoria {
+  colunas: Record<string, string>;
+  pessoas: Record<string, string>;
+}
+function lerMemoria(): Memoria {
+  try {
+    const bruto = typeof window !== "undefined" ? window.localStorage.getItem(CHAVE_MEMORIA) : null;
+    if (bruto) {
+      const m = JSON.parse(bruto) as Partial<Memoria>;
+      return { colunas: m.colunas ?? {}, pessoas: m.pessoas ?? {} };
+    }
+  } catch {
+    /* sem memória: tudo bem */
+  }
+  return { colunas: {}, pessoas: {} };
+}
+function gravarMemoria(m: Memoria) {
+  try {
+    window.localStorage.setItem(CHAVE_MEMORIA, JSON.stringify(m));
+  } catch {
+    /* sem memória: tudo bem */
+  }
+}
+
+type OrigemSugestao = "ia" | "parecida" | "lembrada";
 
 function agruparPessoas(itens: ItemLido[], funcionarios: ColaboradorRef[]): PessoaLida[] {
   const mapaPessoas = new Map<string, PessoaLida>();
@@ -123,7 +154,8 @@ export default function ImportarArquivoFolha({
   const [linhasParaIA, setLinhasParaIA] = useState<string[][]>([]);
   const [statusIA, setStatusIA] = useState("");
   const [iaIndisponivel, setIaIndisponivel] = useState("");
-  const [iaColunas, setIaColunas] = useState<Record<string, string>>({});
+  const [sugColunas, setSugColunas] = useState<Record<string, { id: string; origem: OrigemSugestao }>>({});
+  const [lembradas, setLembradas] = useState<Record<string, string>>({});
   const [iaPessoas, setIaPessoas] = useState<Record<string, string>>({});
   const execucao = useRef(0);
 
@@ -135,13 +167,35 @@ export default function ImportarArquivoFolha({
   // 1. ler o arquivo
   // ------------------------------------------------------------------
   function mostrarLeitura(r: LeituraTabela): Record<string, string> {
-    // sugestão automática de coluna da folha para cada coluna/verba do arquivo
+    const memoria = lerMemoria();
+    const sug: Record<string, { id: string; origem: OrigemSugestao }> = {};
     const novoMapa: Record<string, string> = {};
-    for (const rot of r.rotulos) novoMapa[rot] = acharRubrica(rot, rubricasUsaveis)?.id ?? "";
+    for (const rot of r.rotulos) {
+      const exata = acharRubrica(rot, rubricasUsaveis);
+      const lembrada = memoria.colunas[norm(rot)];
+      if (lembrada && rubricaPorId.has(lembrada)) {
+        novoMapa[rot] = lembrada;
+        if (exata?.id !== lembrada) sug[rot] = { id: lembrada, origem: "lembrada" };
+      } else if (exata) {
+        novoMapa[rot] = exata.id;
+      } else {
+        const parecida = acharRubricaParecida(rot, rubricasUsaveis);
+        novoMapa[rot] = parecida?.rubrica.id ?? "";
+        if (parecida) sug[rot] = { id: parecida.rubrica.id, origem: "parecida" };
+      }
+    }
+    // pessoas que o app já aprendeu em outra importação (nome do arquivo → colaborador)
+    const lemb: Record<string, string> = {};
+    for (const p of agruparPessoas(r.itens, funcionarios)) {
+      const exato = p.match.nivel === "cpf" || p.match.nivel === "matricula" || p.match.nivel === "nome";
+      const id = memoria.pessoas[norm(p.nome)];
+      if (!exato && id && funcPorId.has(id)) lemb[p.chave] = id;
+    }
     setMapa(novoMapa);
     setEscolha({});
     setExcluir({});
-    setIaColunas({});
+    setSugColunas(sug);
+    setLembradas(lemb);
     setIaPessoas({});
     setLeitura(r);
     setEtapa("previa");
@@ -174,9 +228,15 @@ export default function ImportarArquivoFolha({
 
   /** a IA só cuida do que as regras não resolveram: colunas sem destino e pessoas não achadas ou duvidosas */
   async function refinarComIA(r: LeituraTabela, mapaInicial: Record<string, string>, nomeArq: string, id: number) {
+    const memoria = lerMemoria();
+    const lembradasAgora: Record<string, string> = {};
+    for (const p of agruparPessoas(r.itens, funcionarios)) {
+      const mid = memoria.pessoas[norm(p.nome)];
+      if (mid && funcPorId.has(mid)) lembradasAgora[p.chave] = mid;
+    }
     const pendRotulos = r.rotulos.filter((rot) => !mapaInicial[rot]);
     const todasPessoas = agruparPessoas(r.itens, funcionarios);
-    const pendPessoas = todasPessoas.filter((p) => !p.match.colaborador || p.match.nivel === "provavel");
+    const pendPessoas = todasPessoas.filter((p) => !p.match.colaborador && !lembradasAgora[p.chave]);
     if (pendRotulos.length === 0 && pendPessoas.length === 0) {
       setStatusIA("");
       return;
@@ -208,7 +268,7 @@ export default function ImportarArquivoFolha({
       if (execucao.current !== id) return;
       if (!resp.ok) {
         setStatusIA("");
-        setIaIndisponivel(resp.erro);
+        if (!resp.semChave) setIaIndisponivel(resp.erro); // sem chave = IA desligada: segue só com as regras, sem aviso
         return;
       }
       // só preenche o que ainda está vazio (se a pessoa já mexeu, vale o que ela escolheu)
@@ -218,7 +278,7 @@ export default function ImportarArquivoFolha({
           for (const [rot, v] of Object.entries(resp.colunas)) if (!novo[rot]) novo[rot] = v.rubricaId;
           return novo;
         });
-        setIaColunas((x) => ({ ...x, ...Object.fromEntries(Object.entries(resp.colunas).map(([rot, v]) => [rot, v.rubricaId])) }));
+        setSugColunas((x) => ({ ...x, ...Object.fromEntries(Object.entries(resp.colunas).map(([rot, v]) => [rot, { id: v.rubricaId, origem: "ia" as OrigemSugestao }])) }));
       }
       if (Object.keys(resp.pessoas).length) {
         setIaPessoas((x) => ({ ...x, ...Object.fromEntries(Object.entries(resp.pessoas).map(([ch, v]) => [ch, v.colaboradorId])) }));
@@ -250,7 +310,7 @@ export default function ImportarArquivoFolha({
           setErro(ia.erro);
           setEtapa("previa");
         } else {
-          setErro(ia.semChave ? `${erroRegras} (Dá para tentar com a IA, mas ela ainda não foi ligada: falta a chave na Vercel.)` : `${erroRegras} A IA também não conseguiu: ${ia.erro}`);
+          setErro(ia.semChave ? erroRegras : `${erroRegras} A IA também não conseguiu: ${ia.erro}`);
           setEtapa("escolher");
         }
         return;
@@ -328,9 +388,13 @@ export default function ImportarArquivoFolha({
     return [...parecidos, ...funcionarios.filter((f) => !parecidos.some((c) => c.id === f.id))];
   };
 
-  const colaboradorDe = (p: PessoaLida): string => escolha[p.chave] ?? p.match.colaborador?.id ?? iaPessoas[p.chave] ?? "";
+  const matchExato = (p: PessoaLida): boolean => p.match.nivel === "cpf" || p.match.nivel === "matricula" || p.match.nivel === "nome";
+  /** ordem: o que você escolheu > CPF/matrícula/nome igual > o que o app lembrou > nome parecido > IA */
+  const colaboradorDe = (p: PessoaLida): string =>
+    escolha[p.chave] ?? (matchExato(p) ? p.match.colaborador?.id : undefined) ?? lembradas[p.chave] ?? p.match.colaborador?.id ?? iaPessoas[p.chave] ?? "";
+  const soLembrada = (p: PessoaLida): boolean => !escolha[p.chave] && !matchExato(p) && !!lembradas[p.chave];
   /** a pessoa foi achada só pela IA (nem as regras nem o usuário decidiram) */
-  const soIA = (p: PessoaLida): boolean => !escolha[p.chave] && !p.match.colaborador && !!iaPessoas[p.chave];
+  const soIA = (p: PessoaLida): boolean => !escolha[p.chave] && !p.match.colaborador && !lembradas[p.chave] && !!iaPessoas[p.chave];
 
   // ------------------------------------------------------------------
   // 3. o que vai ser lançado
@@ -342,7 +406,7 @@ export default function ImportarArquivoFolha({
     >();
     for (const p of pessoas) {
       if (excluir[p.chave]) continue;
-      const colabId = escolha[p.chave] ?? p.match.colaborador?.id ?? iaPessoas[p.chave] ?? "";
+      const colabId = colaboradorDe(p);
       if (!colabId) continue;
       for (const it of p.itens) {
         const rubId = mapa[it.rotulo];
@@ -375,10 +439,11 @@ export default function ImportarArquivoFolha({
       return { ...x, antes: 0 };
     });
     return lista.filter((x) => x.valor !== 0 || x.valorTexto);
-  }, [pessoas, excluir, escolha, iaPessoas, mapa, rubricaPorId, valoresAtuais, modo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pessoas, excluir, escolha, iaPessoas, lembradas, mapa, rubricaPorId, valoresAtuais, modo]);
 
   const semColaborador = pessoas.filter((p) => !colaboradorDe(p) && !excluir[p.chave]);
-  const provaveis = pessoas.filter((p) => !escolha[p.chave] && (p.match.nivel === "provavel" || soIA(p)));
+  const provaveis = pessoas.filter((p) => !escolha[p.chave] && !soLembrada(p) && (p.match.nivel === "provavel" || soIA(p)));
   const rotulosSemColuna = (leitura?.rotulos ?? []).filter((r) => !mapa[r]);
   const substituidos = lancamentos.filter((l) => l.atual && modo === "substituir" && (valorBR(l.atual) ?? 0) !== l.valor && l.atual !== "").length;
 
@@ -397,6 +462,14 @@ export default function ImportarArquivoFolha({
       setEtapa("previa");
       return;
     }
+    // o app aprende: na próxima vez, essas colunas e pessoas já vêm escolhidas
+    const mem = lerMemoria();
+    for (const rot of leitura?.rotulos ?? []) if (rot && mapa[rot]) mem.colunas[norm(rot)] = mapa[rot];
+    for (const p of pessoas) {
+      const id = colaboradorDe(p);
+      if (id && !excluir[p.chave] && p.nome && !matchExato(p)) mem.pessoas[norm(p.nome)] = id;
+    }
+    gravarMemoria(mem);
     setGravados(r.gravados);
     setEtapa("pronto");
   }
@@ -404,7 +477,7 @@ export default function ImportarArquivoFolha({
   // ------------------------------------------------------------------
   // tela
   // ------------------------------------------------------------------
-  const pessoasVisiveis = soPendentes ? pessoas.filter((p) => !colaboradorDe(p) || p.match.nivel === "provavel" || soIA(p)) : pessoas;
+  const pessoasVisiveis = soPendentes ? pessoas.filter((p) => !colaboradorDe(p) || (!soLembrada(p) && (p.match.nivel === "provavel" || soIA(p)))) : pessoas;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-3" onClick={aoFechar}>
@@ -420,7 +493,7 @@ export default function ImportarArquivoFolha({
           <div>
             <h3 className="text-base font-semibold">Importar arquivo para a folha</h3>
             <p className={`${TXT} text-slate-600`}>
-              Mês: <b>{rotuloMes}</b>. Aceita Excel (.xlsx), CSV e PDF. A IA ajuda a entender colunas e nomes. Nada é lançado antes de você conferir e confirmar.
+              Mês: <b>{rotuloMes}</b>. Aceita Excel (.xlsx), CSV e PDF. Entende colunas e nomes parecidos. Nada é lançado antes de você conferir e confirmar.
             </p>
           </div>
           <button type="button" onClick={aoFechar} className="rounded-md px-2 py-1 text-[13px] text-slate-600 hover:bg-slate-100">
@@ -585,7 +658,7 @@ export default function ImportarArquivoFolha({
                                 aria-label={`Coluna da folha para ${rot || "o arquivo"}`}
                                 value={mapa[rot] ?? ""}
                                 onChange={(e) => setMapa((m) => ({ ...m, [rot]: e.target.value }))}
-                                className={`input !py-1 ${!mapa[rot] || iaColunas[rot] === mapa[rot] ? "!border-amber-400 !bg-amber-50" : ""}`}
+                                className={`input !py-1 ${!mapa[rot] || (sugColunas[rot]?.id === mapa[rot] && sugColunas[rot].origem !== "lembrada") ? "!border-amber-400 !bg-amber-50" : ""}`}
                               >
                                 <option value="">— Não importar —</option>
                                 <optgroup label="Proventos">
@@ -607,8 +680,19 @@ export default function ImportarArquivoFolha({
                                     ))}
                                 </optgroup>
                               </select>
-                              {mapa[rot] && iaColunas[rot] === mapa[rot] && (
-                                <span className="mt-1 block text-[11px] text-amber-800">Sugerido pela IA — confira.</span>
+                              {mapa[rot] && sugColunas[rot]?.id === mapa[rot] && (
+                                <span className={`mt-1 block text-[11px] ${sugColunas[rot].origem === "lembrada" ? "text-slate-500" : "text-amber-800"}`}>
+                                  {sugColunas[rot].origem === "ia"
+                                    ? "Sugerido pela IA — confira."
+                                    : sugColunas[rot].origem === "parecida"
+                                    ? "Nome parecido — confira."
+                                    : "Lembrei da última importação."}
+                                </span>
+                              )}
+                              {!mapa[rot] && rubricasMaisParecidas(rot, rubricasUsaveis).length > 0 && (
+                                <span className="mt-1 block text-[11px] text-slate-600">
+                                  Parecidas: {rubricasMaisParecidas(rot, rubricasUsaveis).map((x) => x.nome).join(", ")}
+                                </span>
                               )}
                               {rubSel && rubSel.formato !== "moeda" && (
                                 <span className="mt-1 block text-[11px] text-slate-500">
@@ -634,7 +718,7 @@ export default function ImportarArquivoFolha({
                   </label>
                 </div>
                 <p className={`${TXT} mb-2 text-slate-600`}>
-                  Procurei pelo CPF, pela matrícula e pelo nome; a IA ajuda nos nomes que não são iguais aos do sistema (sugestões em amarelo). Quem não foi achado fica de fora até você escolher o colaborador.
+                  Procurei pelo CPF, pela matrícula e pelo nome, mesmo que o nome esteja abreviado ou com erro de digitação (sugestões em amarelo). O que você confirma aqui eu lembro na próxima vez. Quem não foi achado fica de fora até você escolher o colaborador.
                 </p>
                 <div className="max-h-[320px] overflow-auto rounded-lg border border-slate-200">
                   <table className={`w-full ${TXT}`}>
@@ -649,7 +733,7 @@ export default function ImportarArquivoFolha({
                     <tbody>
                       {pessoasVisiveis.map((p) => {
                         const colabId = colaboradorDe(p);
-                        const provavel = !escolha[p.chave] && (p.match.nivel === "provavel" || soIA(p));
+                        const provavel = !escolha[p.chave] && !soLembrada(p) && (p.match.nivel === "provavel" || soIA(p));
                         const itensDaPessoa = p.itens.filter((i) => mapa[i.rotulo]).length;
                         return (
                           <tr key={p.chave} className={`border-t border-slate-100 ${excluir[p.chave] ? "opacity-50" : ""}`}>
@@ -689,6 +773,8 @@ export default function ImportarArquivoFolha({
                               <div className="mt-0.5 text-[11px] text-slate-500">
                                 {escolha[p.chave]
                                   ? "escolhido por você"
+                                  : soLembrada(p)
+                                  ? "lembrei da última importação"
                                   : soIA(p)
                                   ? "sugerido pela IA — confira"
                                   : p.match.nivel

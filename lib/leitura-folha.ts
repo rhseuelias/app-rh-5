@@ -460,6 +460,73 @@ function tokensNome(nome: string): string[] {
     .filter((t) => t && !LIGACOES.has(t));
 }
 
+
+// ------------------------------------------------------------
+// SEMELHANÇA (nomes e verbas que não são totalmente iguais)
+// ------------------------------------------------------------
+
+/** número de letras diferentes entre duas palavras (erro de digitação = 1) */
+export function distancia(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let ant = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const atual = [i];
+    for (let j = 1; j <= b.length; j++) {
+      atual[j] = Math.min(ant[j] + 1, atual[j - 1] + 1, ant[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    ant = atual;
+  }
+  return ant[b.length];
+}
+
+/** quanto duas palavras de nome se parecem (0 a 1) */
+function notaPalavra(a: string, b: string): number {
+  if (a === b) return 1;
+  const [c, l] = a.length <= b.length ? [a, b] : [b, a];
+  if (c.length === 1) return l.startsWith(c) ? 0.6 : 0; // inicial: "J" ~ "João"
+  if (c.length >= 3 && l.startsWith(c)) return 0.75; // abreviado: "Fern" ~ "Fernanda"
+  const d = distancia(a, b);
+  if (a.length >= 4 && b.length >= 4) {
+    if (d === 1) return 0.88; // erro de digitação
+    if (d === 2 && Math.min(a.length, b.length) >= 8) return 0.75;
+  }
+  return 0;
+}
+
+/** nota de 0 a 1 para "estes dois nomes são a mesma pessoa?" (ordem das palavras não importa) */
+export function notaNome(ta: string[], tb: string[]): number {
+  if (ta.length === 0 || tb.length === 0) return 0;
+  const [curto, longo] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  const usados = new Set<number>();
+  let soma = 0;
+  let bons = 0;
+  for (const t of curto) {
+    let melhor = 0;
+    let idx = -1;
+    longo.forEach((u, i) => {
+      if (usados.has(i)) return;
+      const n = notaPalavra(t, u);
+      if (n > melhor) {
+        melhor = n;
+        idx = i;
+      }
+    });
+    if (idx >= 0) usados.add(idx);
+    soma += melhor;
+    if (melhor >= 0.75) bons++;
+  }
+  // com 1 palavra só não dá para ter certeza; com 2+ precisa bater pelo menos 2 palavras de verdade
+  if (curto.length === 1 || bons < 2) return 0;
+  const base = soma / curto.length;
+  const proporcao = curto.length / longo.length;
+  // primeiro nome precisa combinar (ou ser a primeira palavra de um dos dois)
+  const primeiro = Math.max(notaPalavra(ta[0], tb[0]), notaPalavra(curto[0], longo[0]));
+  if (primeiro < 0.75 && bons < curto.length) return base * 0.8 * (0.7 + 0.3 * proporcao);
+  return base * (0.7 + 0.3 * proporcao);
+}
+
 export type NivelMatch = "cpf" | "matricula" | "nome" | "provavel";
 
 export interface ResultadoMatch {
@@ -508,7 +575,19 @@ export function acharColaborador(
     return (a.startsWith(chave) || chave.startsWith(a)) && Math.min(a.length, chave.length) >= 12;
   });
   if (parecidos.length === 1) return { colaborador: parecidos[0], nivel: "provavel", candidatos: [] };
-  return { colaborador: null, nivel: null, candidatos: parecidos };
+  if (parecidos.length > 1) return { colaborador: null, nivel: null, candidatos: parecidos };
+
+  // nada igual nem contido: procura o mais parecido (erro de digitação, nome do meio, inicial, abreviação)
+  const notas = lista
+    .map((c) => ({ c, n: notaNome(tk, tokensNome(c.nome)) }))
+    .filter((x) => x.n >= 0.55)
+    .sort((a, b) => b.n - a.n);
+  if (notas.length === 0) return { colaborador: null, nivel: null, candidatos: [] };
+  const [primeiro, segundo] = notas;
+  if (primeiro.n >= 0.75 && (!segundo || primeiro.n - segundo.n >= 0.1)) {
+    return { colaborador: primeiro.c, nivel: "provavel", candidatos: [] };
+  }
+  return { colaborador: null, nivel: null, candidatos: notas.slice(0, 4).map((x) => x.c) };
 }
 
 // ------------------------------------------------------------
@@ -556,4 +635,135 @@ export function ehSim(bruto: string): boolean {
   if (["sim", "s", "x", "ok", "yes", "1"].includes(n)) return true;
   const v = valorBR(bruto);
   return v !== null && v !== 0;
+}
+
+
+// ------------------------------------------------------------
+// VERBA PARECIDA (descrições que não são iguais às colunas da folha)
+// ------------------------------------------------------------
+
+/** palavras que querem dizer a mesma coisa → uma palavra só */
+const SINONIMOS: Record<string, string[]> = {
+  saude: ["saude", "unimed", "plano", "medico", "convenio", "amil", "hapvida", "bradesco", "assistencia"],
+  odonto: ["odonto", "odontologico", "dental", "dentista"],
+  transporte: ["transporte", "vt", "onibus", "passe", "bilhete", "cartao"],
+  alimentacao: ["alimentacao", "va", "vr", "refeicao", "ticket", "alelo", "sodexo"],
+  farmacia: ["farmacia", "drogaria", "remedio", "medicamento"],
+  adiantamento: ["adiantamento", "adiant", "adto", "adiantado", "antecipacao"],
+  comissao: ["comissao", "comiss", "comissoes"],
+  emprestimo: ["emprestimo", "consignado", "econsignado", "financiamento", "emprest"],
+  extra: ["extra", "extras", "he"],
+  falta: ["falta", "faltas", "ausencia"],
+  atraso: ["atraso", "atrasos"],
+  bonus: ["bonus", "premio", "premiacao", "gratificacao", "meta"],
+  quebra: ["quebra", "diferenca"],
+  caixa: ["caixa"],
+  inss: ["inss", "previdencia"],
+  irrf: ["irrf", "ir", "imposto"],
+  fgts: ["fgts"],
+  sindicato: ["sindicato", "sindical", "mensalidade"],
+  ferias: ["ferias"],
+  decimo: ["decimo", "13", "13o"],
+  dsr: ["dsr", "descanso"],
+  salario: ["salario", "salarial", "ordenado", "vencimento"],
+  familia: ["familia"],
+  titular: ["titular"],
+  dependente: ["dependente", "dependentes"],
+  utilizacao: ["utilizacao", "utilizacoes", "coparticipacao"],
+  vale: ["vale"],
+  avulso: ["avulso"],
+};
+
+const PALAVRA_PARA_GRUPO = new Map<string, string>();
+for (const [grupo, palavras] of Object.entries(SINONIMOS)) for (const p of palavras) PALAVRA_PARA_GRUPO.set(p, grupo);
+
+/** palavras que não ajudam a identificar a verba */
+const RUIDO = new Set(["de", "da", "do", "dos", "das", "e", "em", "s", "sobre", "folha", "valor", "vlr", "ref", "referencia", "mes", "mensal", "desc", "desconto", "descontos", "provento", "proventos", "parc", "parcela", "a", "o", "no", "na", "pgto", "pagamento"]);
+
+function conceitos(texto: string): string[] {
+  const out: string[] = [];
+  // "V.T." vira "vt": junta letras soltas seguidas
+  const brutas = norm(texto).split(" ");
+  const palavras: string[] = [];
+  for (let i = 0; i < brutas.length; i++) {
+    if (brutas[i].length === 1 && /^[a-z]$/.test(brutas[i]) && i + 1 < brutas.length && /^[a-z]$/.test(brutas[i + 1])) {
+      let junto = brutas[i];
+      while (i + 1 < brutas.length && /^[a-z]$/.test(brutas[i + 1])) junto += brutas[++i];
+      palavras.push(junto);
+    } else palavras.push(brutas[i]);
+  }
+  for (let t of palavras) {
+    if (!t || RUIDO.has(t) || /^\d+$/.test(t)) continue;
+    if (!PALAVRA_PARA_GRUPO.has(t) && t.length > 4 && t.endsWith("s")) t = t.slice(0, -1); // plural
+    let g = PALAVRA_PARA_GRUPO.get(t);
+    if (!g && t.length >= 5) {
+      // erro de digitação: "comisao" ~ "comissao"
+      for (const [p, grupo] of PALAVRA_PARA_GRUPO) {
+        if (p.length >= 5 && Math.abs(p.length - t.length) <= 1 && distancia(p, t) === 1) {
+          g = grupo;
+          break;
+        }
+      }
+    }
+    const c = g ?? t;
+    if (!out.includes(c)) out.push(c);
+  }
+  return out;
+}
+
+function notaConceitos(a: string[], b: string[]): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  let comuns = 0;
+  for (const x of a) {
+    if (b.some((y) => y === x || (x.length >= 5 && y.length >= 5 && (distancia(x, y) <= 1 || x.startsWith(y) || y.startsWith(x))))) comuns++;
+  }
+  if (comuns === 0) return 0;
+  const cobre = comuns / Math.min(a.length, b.length);
+  const jaccard = comuns / (a.length + b.length - comuns);
+  return cobre * 0.7 + jaccard * 0.3;
+}
+
+export interface RubricaParecida {
+  rubrica: RubricaRef;
+  nota: number;
+}
+
+/**
+ * Procura a coluna da folha com o mesmo significado, mesmo com palavras
+ * diferentes ("Plano saúde Unimed" ~ "Unimed Titular", "VT" ~ "Vale Transporte").
+ * Só devolve quando uma coluna se destaca; se duas empatam, devolve null.
+ */
+export function acharRubricaParecida(rotulo: string, rubricas: RubricaRef[]): RubricaParecida | null {
+  if (!rotulo) return null;
+  const sem = semCodigo(rotulo).texto || norm(rotulo);
+  const cr = conceitos(sem);
+  if (cr.length === 0) return null;
+  const textoNorm = norm(rotulo);
+  const dizDesconto = /\bdesc(onto)?s?\b/.test(textoNorm);
+  const dizProvento = /\b(provento|rendimento|adicional|premio|bonus)s?\b/.test(textoNorm);
+  const notas = rubricas
+    .map((t) => {
+      let n = notaConceitos(cr, conceitos(semCodigo(t.nome).texto || t.nome));
+      if (dizDesconto && t.grupo === "provento") n *= 0.8;
+      if (dizProvento && t.grupo === "desconto") n *= 0.8;
+      return { rubrica: t, nota: n };
+    })
+    .filter((x) => x.nota >= 0.6)
+    .sort((a, b) => b.nota - a.nota);
+  if (notas.length === 0) return null;
+  const [p, q] = notas;
+  if (q && p.nota - q.nota < 0.12) return null; // empate: deixa a pessoa escolher
+  return p;
+}
+
+/** as colunas da folha que mais se parecem com a verba (para mostrar como dica quando não dá para escolher sozinho) */
+export function rubricasMaisParecidas(rotulo: string, rubricas: RubricaRef[], quantas = 3): RubricaRef[] {
+  const sem = semCodigo(rotulo).texto || norm(rotulo);
+  const cr = conceitos(sem);
+  return rubricas
+    .map((t) => ({ t, n: notaConceitos(cr, conceitos(semCodigo(t.nome).texto || t.nome)) }))
+    .filter((x) => x.n >= 0.4)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, quantas)
+    .map((x) => x.t);
 }
