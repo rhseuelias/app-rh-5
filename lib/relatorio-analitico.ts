@@ -3,6 +3,7 @@ import type { Colaborador, Empresa, FolhaCompetencia, FolhaLancamento, FolhaTipo
 import { colaboradorAtivoFolha } from "@/lib/folha-calculos";
 import { carregarPontoComHeranca } from "@/lib/ponto-herdado";
 import type { ColunaRel, GrupoRel, LinhaRel, OpcaoEscopo, RelatorioAnalitico } from "@/lib/relatorio-analitico-tipos";
+import type { LinhaMovimento, VerbaModelo } from "@/lib/xlsx-movimento-variavel";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
@@ -269,4 +270,166 @@ export async function montarRelatorioAnalitico(
       geradoEm: agora,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Excel "Movimento Variável" (modelo da contabilidade, para importar em outro sistema)
+// ---------------------------------------------------------------------------
+function codigoNormalizado(c: string | null | undefined): string {
+  const s = (c ?? "").trim();
+  return /^\d+$/.test(s) ? String(Number(s)) : s;
+}
+
+// código da coluna: o campo "código" ou o número no começo do nome ("17 - hora extra 50% - Referência")
+function codigoDoTipo(t: FolhaTipo): string {
+  const direto = codigoNormalizado(t.codigo);
+  if (direto) return direto;
+  const m = /^\s*(\d+)\s*-/.exec(t.nome);
+  return m ? codigoNormalizado(m[1]) : "";
+}
+
+// cabeçalho no padrão do modelo: "17 - hora extra 50%  - Referência" / "42 - comissão s/ vendas  - Valor"
+function cabecalhoDoModelo(t: FolhaTipo, codigo: string): string {
+  const nome = t.nome.trim();
+  if (/^\d+\s*-\s*.+\s-\s*(Valor|Refer[eê]ncia)$/i.test(nome)) return nome;
+  const base = nome
+    .replace(/^\s*\d+\s*-\s*/, "")
+    .replace(/\s+-\s+(Valor|Refer[eê]ncia)\s*$/i, "")
+    .trim()
+    .toLowerCase();
+  return `${codigo} - ${base}  - ${/refer[eê]ncia/i.test(nome) ? "Referência" : "Valor"}`;
+}
+
+// valor numérico de uma célula da folha (horas "04:15" viram 4,25; texto que não é número fica de fora)
+function numeroDaCelula(t: FolhaTipo, l: FolhaLancamento | undefined): { n: number | null; ignorado: boolean } {
+  if (!l || t.formato === "sim_nao") return { n: null, ignorado: false };
+  if (t.formato === "moeda") return { n: l.valor && l.valor !== 0 ? l.valor : null, ignorado: false };
+  const tx = (l.valor_texto ?? "").trim();
+  if (!tx) return { n: null, ignorado: false };
+  const hm = /^(\d+):([0-5]\d)(?::[0-5]\d)?$/.exec(tx);
+  if (hm) {
+    const h = Math.round((Number(hm[1]) + Number(hm[2]) / 60) * 100) / 100;
+    return { n: h !== 0 ? h : null, ignorado: false };
+  }
+  const n = Number(tx.replace(/\./g, "").replace(",", "."));
+  if (Number.isFinite(n)) return { n: n !== 0 ? n : null, ignorado: false };
+  return { n: null, ignorado: true };
+}
+
+function listar(nomes: string[], limite = 6): string {
+  return nomes.length <= limite ? nomes.join(", ") : `${nomes.slice(0, limite).join(", ")} e mais ${nomes.length - limite}`;
+}
+
+export interface MovimentoVariavelDados {
+  linhas: LinhaMovimento[];
+  verbas: VerbaModelo[];
+  escopoRotulo: string;
+  avisos: string[];
+}
+
+export async function montarMovimentoVariavel(
+  competencia: string,
+  escopo: string
+): Promise<{ erro: string } | { dados: MovimentoVariavelDados }> {
+  const supabase = createClient();
+
+  const [empresasRes, unidadesRes, colaboradoresRes, competenciaRes, tiposRes] = await Promise.all([
+    supabase.from("empresas").select("*"),
+    supabase.from("unidades").select("*"),
+    supabase.from("colaboradores").select("*"),
+    supabase.from("folha_competencias").select("*").eq("competencia", competencia).maybeSingle(),
+    supabase.from("folha_tipos").select("*").eq("ativo", true).order("ordem"),
+  ]);
+  const falha = empresasRes.error ?? unidadesRes.error ?? colaboradoresRes.error ?? competenciaRes.error ?? tiposRes.error;
+  if (falha) return { erro: `Não foi possível ler os dados: ${falha.message}` };
+
+  const competenciaRow = competenciaRes.data as FolhaCompetencia | null;
+  if (!competenciaRow) return { erro: "Esse mês ainda não tem lançamentos." };
+
+  const empresas = (empresasRes.data ?? []) as Empresa[];
+  const unidadePorId = new Map(((unidadesRes.data ?? []) as Unidade[]).map((u) => [u.id, u.nome]));
+  const empresaPorId = new Map(empresas.map((e) => [e.id, e.nome]));
+
+  type ColabExport = Colaborador & { matricula?: string | null };
+  const pessoas = ((colaboradoresRes.data ?? []) as ColabExport[])
+    .filter((c) => colaboradorAtivoFolha(c) && c.tipo !== "PJ")
+    .map((c) => ({
+      c,
+      f: {
+        id: c.id,
+        nome: c.nome,
+        empresa: c.empresa_id ? empresaPorId.get(c.empresa_id) ?? "SEM EMPRESA" : "SEM EMPRESA",
+        unidade: c.unidade_id ? unidadePorId.get(c.unidade_id) ?? null : null,
+      } as Func,
+    }));
+
+  // mesmo filtro de unidade do relatório (e do seletor)
+  const todosF = pessoas.map((p) => p.f);
+  const opcoes: { chave: string; rotulo: string }[] = [{ chave: "todas", rotulo: "Geral — todas as unidades" }];
+  const nomesEmpresa: string[] = [];
+  todosF.forEach((f) => {
+    if (!nomesEmpresa.includes(f.empresa)) nomesEmpresa.push(f.empresa);
+  });
+  for (const e of nomesEmpresa) {
+    const doEmp = todosF.filter((f) => f.empresa === e);
+    const unidades = Array.from(new Set(doEmp.filter((f) => !semUnidade(f)).map((f) => f.unidade as string)));
+    if (unidades.length === 0) {
+      opcoes.push({ chave: `e:${e}`, rotulo: e });
+      continue;
+    }
+    opcoes.push({ chave: `e:${e}`, rotulo: `${e} (todas as unidades)` });
+    unidades.forEach((u) => opcoes.push({ chave: `u:${e}|${u}`, rotulo: `${e}-${titulo(u)}` }));
+    if (doEmp.some(semUnidade)) opcoes.push({ chave: `s:${e}`, rotulo: `${e}-sem unidade` });
+  }
+  const escopoValido = opcoes.some((o) => o.chave === escopo) ? escopo : "todas";
+  const escopoRotulo = opcoes.find((o) => o.chave === escopoValido)?.rotulo ?? "Geral";
+
+  const noEscopo = pessoas
+    .filter((p) => casaEscopo(p.f, escopoValido))
+    .sort((a, b) => a.c.nome.localeCompare(b.c.nome, "pt-BR"));
+  if (noEscopo.length === 0) return { erro: "Nenhum funcionário encontrado para este filtro." };
+
+  const tipos = ((tiposRes.data ?? []) as FolhaTipo[]).filter((t) => t.categoria === "provento" || t.categoria === "desconto");
+
+  const { data: lancData, error: lancErro } = await supabase
+    .from("folha_lancamentos")
+    .select("*")
+    .eq("competencia_id", competenciaRow.id)
+    .in(
+      "colaborador_id",
+      noEscopo.map((p) => p.c.id)
+    );
+  if (lancErro) return { erro: `Não foi possível ler os lançamentos: ${lancErro.message}` };
+  const lancPor: Record<string, Record<string, FolhaLancamento>> = {};
+  for (const l of (lancData ?? []) as FolhaLancamento[]) (lancPor[l.colaborador_id] ??= {})[l.tipo_id] = l;
+
+  // colunas: todas as ativas que têm código (é o código que o outro sistema reconhece)
+  const comCodigo = tipos.map((t) => ({ t, codigo: codigoDoTipo(t) })).filter((x) => x.codigo !== "");
+  const semCodigo = tipos.filter((t) => codigoDoTipo(t) === "");
+  const verbas: VerbaModelo[] = comCodigo.map(({ t, codigo }) => ({ codigo, cabecalho: cabecalhoDoModelo(t, codigo) }));
+
+  const ignorados = new Set<string>();
+  const linhas: LinhaMovimento[] = noEscopo.map(({ c }) => ({
+    cpf: (c.cpf_cnpj ?? "").trim(),
+    nome: c.nome.trim(),
+    matricula: (c.matricula ?? "").trim(),
+    valores: comCodigo.map(({ t }) => {
+      const r = numeroDaCelula(t, lancPor[c.id]?.[t.id]);
+      if (r.ignorado) ignorados.add(t.nome.trim());
+      return r.n;
+    }),
+  }));
+
+  const avisos: string[] = [];
+  const semMatricula = noEscopo.filter((p) => !(p.c.matricula ?? "").trim()).map((p) => p.c.nome);
+  if (semMatricula.length > 0) avisos.push(`Sem matrícula: ${listar(semMatricula)}`);
+  const semCpf = noEscopo.filter((p) => !(p.c.cpf_cnpj ?? "").trim()).map((p) => p.c.nome);
+  if (semCpf.length > 0) avisos.push(`Sem CPF: ${listar(semCpf)}`);
+  const foraSemCodigo = semCodigo
+    .filter((t) => noEscopo.some((p) => lancPor[p.c.id]?.[t.id] && numeroDaCelula(t, lancPor[p.c.id][t.id]).n !== null))
+    .map((t) => t.nome);
+  if (foraSemCodigo.length > 0) avisos.push(`Colunas com valores mas sem código (ficaram de fora): ${listar(foraSemCodigo)}`);
+  if (ignorados.size > 0) avisos.push(`Texto que não é número ou hora foi deixado em branco em: ${listar(Array.from(ignorados))}`);
+
+  return { dados: { linhas, verbas, escopoRotulo, avisos } };
 }

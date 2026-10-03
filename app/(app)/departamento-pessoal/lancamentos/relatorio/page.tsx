@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase-server";
 import type { FolhaCompetencia } from "@/types/db";
 import { competenciaAtualSP, fmt2, montarRelatorioAnalitico, rotuloMesCompleto } from "@/lib/relatorio-analitico";
 import BotaoBaixarPdf from "@/components/lancamentos/BotaoBaixarPdf";
+import BotaoBaixarExcel from "@/components/lancamentos/BotaoBaixarExcel";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,10 @@ export default async function RelatorioAnaliticoPage({
             {rel.mesFechado ? " · 🔒 mês fechado" : ""}
           </p>
         </div>
-        <BotaoBaixarPdf competencia={competencia} escopo={escopoAtual} />
+        <div className="flex flex-wrap items-start gap-3">
+          <BotaoBaixarPdf competencia={competencia} escopo={escopoAtual} />
+          <BotaoBaixarExcel competencia={competencia} escopo={escopoAtual} />
+        </div>
       </div>
 
       <form method="get" className="card flex flex-wrap items-end gap-3 !py-3">

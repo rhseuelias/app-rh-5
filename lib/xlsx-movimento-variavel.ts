@@ -28,16 +28,17 @@ export const VERBAS_MODELO: VerbaModelo[] = [
   { codigo: "555", cabecalho: "555 - reembolso de despesas  - Valor" },
 ];
 
-const LARGURAS = [
-  15.1640625, 76, 9.83203125, 25.83203125, 26.83203125, 25, 25.1640625, 30.33203125, 29, 25.33203125, 44.5,
-  36.1640625, 28.33203125,
-];
+// largura das 3 primeiras colunas (CPF, Nome, Matricula); as das verbas acompanham o tamanho do cabeçalho
+const LARGURAS_FIXAS = [15.1640625, 76, 9.83203125];
+function larguraVerba(cabecalho: string): number {
+  return Math.min(60, Math.max(14, Math.round(cabecalho.length * 1.05 + 3)));
+}
 
 export interface LinhaMovimento {
   cpf: string;
   nome: string;
   matricula: string;
-  /** um valor por verba, na ordem de VERBAS_MODELO (null = célula vazia) */
+  /** um valor por verba, na mesma ordem da lista de verbas usada para gerar o arquivo (null = célula vazia) */
   valores: (number | null)[];
 }
 
@@ -145,7 +146,7 @@ const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n';
 const NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
-export function gerarXlsxMovimentoVariavel(linhas: LinhaMovimento[]): Buffer {
+export function gerarXlsxMovimentoVariavel(linhas: LinhaMovimento[], verbas: VerbaModelo[] = VERBAS_MODELO): Buffer {
   const textos: string[] = [];
   const indiceTexto = new Map<string, number>();
   let totalReferencias = 0;
@@ -161,7 +162,7 @@ export function gerarXlsxMovimentoVariavel(linhas: LinhaMovimento[]): Buffer {
   };
   const celulaTexto = (ref: string, s: string) => `<c r="${ref}" t="s"><v>${si(s)}</v></c>`;
 
-  const cabecalhos = [...COLUNAS_FIXAS, ...VERBAS_MODELO.map((v) => v.cabecalho)];
+  const cabecalhos = [...COLUNAS_FIXAS, ...verbas.map((v) => v.cabecalho)];
   const totalColunas = cabecalhos.length;
 
   let linhasXml = `<row r="1" spans="1:${totalColunas}">${cabecalhos
@@ -182,7 +183,7 @@ export function gerarXlsxMovimentoVariavel(linhas: LinhaMovimento[]): Buffer {
   });
 
   const ultimaLinha = linhas.length + 1;
-  const colunasXml = LARGURAS.map(
+  const colunasXml = [...LARGURAS_FIXAS, ...verbas.map((v) => larguraVerba(v.cabecalho))].map(
     (w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`
   ).join("");
 
