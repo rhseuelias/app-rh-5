@@ -41,6 +41,7 @@ export default function ColaboradorForm({
   unidades = [],
   dependentes: dependentesDoColaborador,
   restrito = false,
+  contratoLiberado = false,
 }: {
   colaborador?: Colaborador;
   empresas: Empresa[];
@@ -50,9 +51,14 @@ export default function ColaboradorForm({
    * salário (é ela quem faz a admissão); depois de criado, esses campos ficam ocultos pra ela — o
    * valor salvo continua indo no formulário escondido, só não aparece na tela. */
   restrito?: boolean;
+  /** Só vale pro perfil restrito: true = o bloco "Contrato e remuneração (CLT)" está liberado pra ela
+   * (colaborador no processo de integração e etapa Contrato ainda não concluída). Quando false, o
+   * bloco CLT some por inteiro depois que o colaborador já existe. */
+  contratoLiberado?: boolean;
 }) {
-  const ocultarFinanceiro = restrito && !!colaborador;
   const [tipo, setTipo] = useState<"CLT" | "PJ" | "Estagio">(colaborador?.tipo ?? "CLT");
+  const ocultarContratoCLT = restrito && !!colaborador && !contratoLiberado;
+  const ocultarFinanceiro = restrito && !!colaborador && !(tipo === "CLT" && contratoLiberado);
   const [empresaId, setEmpresaId] = useState(colaborador?.empresa_id ?? "");
   const [dependentes, setDependentes] = useState<Dependente[]>(
     dependentesIniciais(dependentesDoColaborador)
@@ -229,6 +235,7 @@ export default function ColaboradorForm({
       </section>
 
       {tipo === "CLT" ? (
+        ocultarContratoCLT ? null : (
         <section className="card space-y-4">
           <h2 className="font-medium text-slate-900">Contrato e remuneração (CLT)</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -307,6 +314,7 @@ export default function ColaboradorForm({
             <Flag label="Gratificação de função (40%)" name="gratificacao_funcao" defaultChecked={colaborador?.gratificacao_funcao} />
           </div>
         </section>
+        )
       ) : tipo === "PJ" ? (
         <section className="card space-y-4">
           <h2 className="font-medium text-slate-900">Contrato (PJ)</h2>
