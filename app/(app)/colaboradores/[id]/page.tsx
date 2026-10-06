@@ -35,7 +35,7 @@ import PeriodoAquisitivoAcoes from "@/components/PeriodoAquisitivoAcoes";
 import GerarPrevisaoPdfBotao from "@/components/GerarPrevisaoPdfBotao";
 import ExcluirHistoricoFeriasBotao from "@/components/ExcluirHistoricoFeriasBotao";
 import { autoGerarProximosPeriodosVencidos } from "@/lib/actions";
-import { souAssistente } from "@/lib/permissoes";
+import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
 
 export const dynamic = "force-dynamic";
 
@@ -140,6 +140,9 @@ export default async function ColaboradorPage({ params }: { params: { id: string
   await autoGerarProximosPeriodosVencidos();
 
   const restrito = await souAssistente();
+  // assistente: "Contrato e remuneração (CLT)" só aparece enquanto o colaborador está no processo
+  // de integração e a etapa Contrato não foi concluída (para os demais perfis é sempre true)
+  const contratoLiberado = await contratoCLTLiberadoParaUsuario(params.id);
 
   const [
     { data: colaborador },
@@ -460,7 +463,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
             <dl>
               <Linha rotulo="Tipo de contrato">{TIPO_COLABORADOR_LABEL[c.tipo] ?? c.tipo}</Linha>
               <Linha rotulo="Cargo">{c.cargo || "Sem cargo"}</Linha>
-              {!restrito && (
+              {(!restrito || (!ehPJ && c.tipo === "CLT" && contratoLiberado)) && (
                 <Linha rotulo={ehPJ ? "Valor da nota fiscal" : "Salário base"}>
                   {ehPJ
                     ? c.valor_nota_fiscal
@@ -545,12 +548,10 @@ export default async function ColaboradorPage({ params }: { params: { id: string
                   <AtalhoAcao href="#contrato-pj" icone="📑" texto="Emitir contrato" />
                 </>
               ) : (
-                !restrito && (
-                  <>
-                    <AtalhoAcao href={`/api/ficha-admissao/${c.id}/pdf`} icone="⬇️" texto="Ficha de admissão (PDF)" />
-                    <AtalhoAcao href={`/api/ficha-admissao/${c.id}/excel`} icone="📊" texto="Ficha de admissão (Excel)" />
-                  </>
-                )
+                <>
+                  <AtalhoAcao href={`/api/ficha-admissao/${c.id}/pdf`} icone="⬇️" texto="Ficha de admissão (PDF)" />
+                  <AtalhoAcao href={`/api/ficha-admissao/${c.id}/excel`} icone="📊" texto="Ficha de admissão (Excel)" />
+                </>
               )}
               {processo && <AtalhoAcao href={`/onboarding/${c.id}`} icone="✅" texto="Processo de integração" />}
             </div>
@@ -756,6 +757,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
           unidades={(unidades ?? []) as Unidade[]}
           dependentes={(dependentes ?? []) as DependenteColaborador[]}
           restrito={restrito}
+          contratoLiberado={contratoLiberado}
         />
       </div>
     </div>

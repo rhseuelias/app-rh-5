@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
+import { contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
 import type { Colaborador, DependenteColaborador, DiaSemana, Empresa, Unidade } from "@/types/db";
 import {
   ESTADO_CIVIL_LABEL,
@@ -100,7 +101,11 @@ export async function buscarFichaAdmissao(colaboradorId: string): Promise<FichaA
     { label: "Contato de emergência", valor: c.nome_contato_emergencia ? `${c.nome_contato_emergencia} — ${c.telefone_contato_emergencia ?? "—"}` : "—" },
   ];
 
-  const funcional: CampoFicha[] = [
+  // Perfil assistente: o "Salário base" só aparece na ficha enquanto o colaborador está no
+  // processo de integração com a etapa Contrato ainda não concluída (mesma regra da tela).
+  const mostrarSalario = await contratoCLTLiberadoParaUsuario(colaboradorId);
+
+  const funcionalCompleto: CampoFicha[] = [
     { label: "Tipo", valor: TIPO_COLABORADOR_LABEL[c.tipo] ?? c.tipo },
     { label: "Cargo", valor: c.cargo ?? "—" },
     { label: "Departamento", valor: c.departamento ?? "—" },
@@ -115,6 +120,8 @@ export async function buscarFichaAdmissao(colaboradorId: string): Promise<FichaA
     { label: "Quebra de caixa", valor: simNao(c.quebra_caixa) },
     { label: "Gratificação de função (40%)", valor: simNao(c.gratificacao_funcao) },
   ];
+
+  const funcional = funcionalCompleto.filter((f) => mostrarSalario || f.label !== "Salário base");
 
   const bancarios: CampoFicha[] = [
     { label: "Banco", valor: c.banco ?? "—" },

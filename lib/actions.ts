@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
+import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
 import { calcularFimExperiencia, calcularPeriodoAquisitivo, formatarDataBR } from "@/lib/calculos";
 import { addDays, addMonths, differenceInCalendarDays } from "date-fns";
 import {
@@ -52,6 +53,26 @@ function str(formData: FormData, campo: string): string | null {
 function bool(formData: FormData, campo: string): boolean {
   return formData.get(campo) === "on" || formData.get(campo) === "true";
 }
+
+/** Campos do bloco "Contrato e remuneração (CLT)" da ficha. */
+const CAMPOS_CONTRATO_REMUNERACAO_CLT = [
+  "data_admissao",
+  "data_fim_experiencia",
+  "contrato_experiencia",
+  "salario_base",
+  "comissao_media",
+  "auxilio_outros",
+  "custo_vt",
+  "custo_va_vr",
+  "custo_assist_medica",
+  "custo_assist_psicologica",
+  "adiantamento_salario",
+  "primeiro_emprego",
+  "insalubridade",
+  "periculosidade",
+  "quebra_caixa",
+  "gratificacao_funcao",
+];
 
 export async function salvarColaborador(formData: FormData) {
   const supabase = createClient();
@@ -129,7 +150,18 @@ export async function salvarColaborador(formData: FormData) {
   let colaboradorId = id;
 
   if (id) {
-    await supabase.from("colaboradores").update(payload).eq("id", id);
+    // Perfil assistente: se o bloco "Contrato e remuneração (CLT)" está oculto pra ela
+    // (colaborador fora do processo de integração, ou com a etapa Contrato já concluída),
+    // esses campos não são alterados de jeito nenhum, mesmo que venham no formulário.
+    const dados: Record<string, unknown> = { ...payload };
+    if (await souAssistente()) {
+      const { data: atual } = await supabase.from("colaboradores").select("tipo").eq("id", id).single();
+      const ehCLT = atual?.tipo === "CLT" || payload.tipo === "CLT";
+      if (ehCLT && !(await contratoCLTLiberadoParaUsuario(id))) {
+        for (const campo of CAMPOS_CONTRATO_REMUNERACAO_CLT) delete dados[campo];
+      }
+    }
+    await supabase.from("colaboradores").update(dados).eq("id", id);
     await sincronizarDependentes(supabase, id, str(formData, "dependentes_json"));
   } else {
     const { data, error } = await supabase

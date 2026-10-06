@@ -1,0 +1,181 @@
+diff --git a/app/(app)/colaboradores/[id]/page.tsx b/app/(app)/colaboradores/[id]/page.tsx
+index 31fe3b2..1c62dd8 100644
+--- a/app/(app)/colaboradores/[id]/page.tsx
++++ b/app/(app)/colaboradores/[id]/page.tsx
+@@ -35,7 +35,7 @@ import PeriodoAquisitivoAcoes from "@/components/PeriodoAquisitivoAcoes";
+ import GerarPrevisaoPdfBotao from "@/components/GerarPrevisaoPdfBotao";
+ import ExcluirHistoricoFeriasBotao from "@/components/ExcluirHistoricoFeriasBotao";
+ import { autoGerarProximosPeriodosVencidos } from "@/lib/actions";
+-import { souAssistente } from "@/lib/permissoes";
++import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
+ 
+ export const dynamic = "force-dynamic";
+ 
+@@ -140,6 +140,9 @@ export default async function ColaboradorPage({ params }: { params: { id: string
+   await autoGerarProximosPeriodosVencidos();
+ 
+   const restrito = await souAssistente();
++  // assistente: "Contrato e remuneração (CLT)" só aparece enquanto o colaborador está no processo
++  // de integração e a etapa Contrato não foi concluída (para os demais perfis é sempre true)
++  const contratoLiberado = await contratoCLTLiberadoParaUsuario(params.id);
+ 
+   const [
+     { data: colaborador },
+@@ -460,7 +463,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
+             <dl>
+               <Linha rotulo="Tipo de contrato">{TIPO_COLABORADOR_LABEL[c.tipo] ?? c.tipo}</Linha>
+               <Linha rotulo="Cargo">{c.cargo || "Sem cargo"}</Linha>
+-              {!restrito && (
++              {(!restrito || (!ehPJ && c.tipo === "CLT" && contratoLiberado)) && (
+                 <Linha rotulo={ehPJ ? "Valor da nota fiscal" : "Salário base"}>
+                   {ehPJ
+                     ? c.valor_nota_fiscal
+@@ -756,6 +759,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
+           unidades={(unidades ?? []) as Unidade[]}
+           dependentes={(dependentes ?? []) as DependenteColaborador[]}
+           restrito={restrito}
++          contratoLiberado={contratoLiberado}
+         />
+       </div>
+     </div>
+diff --git a/components/ColaboradorForm.tsx b/components/ColaboradorForm.tsx
+index f9aae73..ff72b10 100644
+--- a/components/ColaboradorForm.tsx
++++ b/components/ColaboradorForm.tsx
+@@ -41,6 +41,7 @@ export default function ColaboradorForm({
+   unidades = [],
+   dependentes: dependentesDoColaborador,
+   restrito = false,
++  contratoLiberado = false,
+ }: {
+   colaborador?: Colaborador;
+   empresas: Empresa[];
+@@ -50,9 +51,14 @@ export default function ColaboradorForm({
+    * salário (é ela quem faz a admissão); depois de criado, esses campos ficam ocultos pra ela — o
+    * valor salvo continua indo no formulário escondido, só não aparece na tela. */
+   restrito?: boolean;
++  /** Só vale pro perfil restrito: true = o bloco "Contrato e remuneração (CLT)" está liberado pra ela
++   * (colaborador no processo de integração e etapa Contrato ainda não concluída). Quando false, o
++   * bloco CLT some por inteiro depois que o colaborador já existe. */
++  contratoLiberado?: boolean;
+ }) {
+-  const ocultarFinanceiro = restrito && !!colaborador;
+   const [tipo, setTipo] = useState<"CLT" | "PJ" | "Estagio">(colaborador?.tipo ?? "CLT");
++  const ocultarContratoCLT = restrito && !!colaborador && !contratoLiberado;
++  const ocultarFinanceiro = restrito && !!colaborador && !(tipo === "CLT" && contratoLiberado);
+   const [empresaId, setEmpresaId] = useState(colaborador?.empresa_id ?? "");
+   const [dependentes, setDependentes] = useState<Dependente[]>(
+     dependentesIniciais(dependentesDoColaborador)
+@@ -229,6 +235,7 @@ export default function ColaboradorForm({
+       </section>
+ 
+       {tipo === "CLT" ? (
++        ocultarContratoCLT ? null : (
+         <section className="card space-y-4">
+           <h2 className="font-medium text-slate-900">Contrato e remuneração (CLT)</h2>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+@@ -307,6 +314,7 @@ export default function ColaboradorForm({
+             <Flag label="Gratificação de função (40%)" name="gratificacao_funcao" defaultChecked={colaborador?.gratificacao_funcao} />
+           </div>
+         </section>
++        )
+       ) : tipo === "PJ" ? (
+         <section className="card space-y-4">
+           <h2 className="font-medium text-slate-900">Contrato (PJ)</h2>
+diff --git a/lib/actions.ts b/lib/actions.ts
+index 54153ed..9436a74 100644
+--- a/lib/actions.ts
++++ b/lib/actions.ts
+@@ -3,6 +3,7 @@
+ import { revalidatePath } from "next/cache";
+ import { redirect } from "next/navigation";
+ import { createClient } from "@/lib/supabase-server";
++import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
+ import { calcularFimExperiencia, calcularPeriodoAquisitivo, formatarDataBR } from "@/lib/calculos";
+ import { addDays, addMonths, differenceInCalendarDays } from "date-fns";
+ import {
+@@ -53,6 +54,26 @@ function bool(formData: FormData, campo: string): boolean {
+   return formData.get(campo) === "on" || formData.get(campo) === "true";
+ }
+ 
++/** Campos do bloco "Contrato e remuneração (CLT)" da ficha. */
++const CAMPOS_CONTRATO_REMUNERACAO_CLT = [
++  "data_admissao",
++  "data_fim_experiencia",
++  "contrato_experiencia",
++  "salario_base",
++  "comissao_media",
++  "auxilio_outros",
++  "custo_vt",
++  "custo_va_vr",
++  "custo_assist_medica",
++  "custo_assist_psicologica",
++  "adiantamento_salario",
++  "primeiro_emprego",
++  "insalubridade",
++  "periculosidade",
++  "quebra_caixa",
++  "gratificacao_funcao",
++];
++
+ export async function salvarColaborador(formData: FormData) {
+   const supabase = createClient();
+   const id = str(formData, "id");
+@@ -129,7 +150,18 @@ export async function salvarColaborador(formData: FormData) {
+   let colaboradorId = id;
+ 
+   if (id) {
+-    await supabase.from("colaboradores").update(payload).eq("id", id);
++    // Perfil assistente: se o bloco "Contrato e remuneração (CLT)" está oculto pra ela
++    // (colaborador fora do processo de integração, ou com a etapa Contrato já concluída),
++    // esses campos não são alterados de jeito nenhum, mesmo que venham no formulário.
++    const dados: Record<string, unknown> = { ...payload };
++    if (await souAssistente()) {
++      const { data: atual } = await supabase.from("colaboradores").select("tipo").eq("id", id).single();
++      const ehCLT = atual?.tipo === "CLT" || payload.tipo === "CLT";
++      if (ehCLT && !(await contratoCLTLiberadoParaUsuario(id))) {
++        for (const campo of CAMPOS_CONTRATO_REMUNERACAO_CLT) delete dados[campo];
++      }
++    }
++    await supabase.from("colaboradores").update(dados).eq("id", id);
+     await sincronizarDependentes(supabase, id, str(formData, "dependentes_json"));
+   } else {
+     const { data, error } = await supabase
+diff --git a/lib/permissoes.ts b/lib/permissoes.ts
+index a78ac9f..3a2e2ab 100644
+--- a/lib/permissoes.ts
++++ b/lib/permissoes.ts
+@@ -23,3 +23,33 @@ export async function souAssistente(): Promise<boolean> {
+   const papel = await obterPapelUsuarioLogado();
+   return papel === "assistente";
+ }
++
++/**
++ * Regra do bloco "Contrato e remuneração (CLT)" para o perfil "assistente":
++ * só fica liberado enquanto o colaborador está no Processo de Integração e a
++ * etapa "Contrato" ainda NÃO foi concluída. Fora do processo (ou depois do
++ * Contrato concluído), o bloco fica totalmente oculto pra ela.
++ * Para os demais perfis (RH, gestor, admin) sempre devolve true.
++ */
++export async function contratoCLTLiberadoParaUsuario(colaboradorId: string): Promise<boolean> {
++  const papel = await obterPapelUsuarioLogado();
++  if (papel !== "assistente") return true;
++
++  const supabase = createClient();
++  const { data: processo } = await supabase
++    .from("processos_integracao")
++    .select("id")
++    .eq("colaborador_id", colaboradorId)
++    .maybeSingle();
++  if (!processo) return false;
++
++  const { data: etapa } = await supabase
++    .from("etapas_processo")
++    .select("status")
++    .eq("processo_id", processo.id)
++    .eq("chave", "contrato")
++    .maybeSingle();
++  if (!etapa) return false;
++
++  return etapa.status !== "realizado";
++}
