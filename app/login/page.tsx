@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
+import LogoAppliq from "@/components/LogoAppliq";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,17 +35,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-ink-900 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-[#FAF6F0] px-4">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand-500/15 border border-brand-400/40 text-2xl mb-4">
-            👥
-          </div>
-          <h1 className="text-3xl font-display font-bold text-white">AppliQ RH</h1>
-          <p className="text-slate-400 text-xs mt-1">
-            Gestão de pessoas que gera resultados
-          </p>
-          <p className="text-slate-400 text-sm mt-2">
+        <div className="flex flex-col items-center text-center mb-8">
+          <LogoAppliq tamanho={44} slogan />
+          <p className="text-stone-600 text-sm mt-5">
             Entre com sua conta de acesso
           </p>
         </div>
@@ -80,10 +75,6 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-xs text-slate-500 text-center mt-6">
-          As 3 contas de acesso do RH são criadas manualmente no painel do
-          Supabase (Authentication → Users) — veja o README.
-        </p>
       </div>
     </div>
   );

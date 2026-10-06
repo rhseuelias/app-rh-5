@@ -11,29 +11,29 @@ const config: Config = {
         // Pêssego — cor de destaque principal (links, foco, ícones, estado ativo)
         // Tons 50–400 são o pêssego claro; 500–700 são laranja escuro, bons para texto sobre fundo branco
         brand: {
-          50: "#fff3e6",
-          100: "#ffe9d2",
-          200: "#ffd5aa",
-          300: "#fdc48a",
-          400: "#fbb26e",
-          500: "#f0913f",
-          600: "#b85c12",
-          700: "#93440c",
+          50: "#fdf6ee",
+          100: "#f9e8d2",
+          200: "#f0d0ac",
+          300: "#e0a874",
+          400: "#c9763a",
+          500: "#a85822",
+          600: "#8f4a1b",
+          700: "#703914",
         },
         // Grafite — superfícies escuras (sidebar, cabeçalhos, seções de destaque)
         ink: {
-          900: "#262626",
-          800: "#3d3d3d",
-          700: "#4a4a4a",
-          600: "#5c5c5c",
-          500: "#737373",
+          900: "#2b2118",
+          800: "#3d3027",
+          700: "#4f4237",
+          600: "#5f5246",
+          500: "#7a6c5f",
         },
         // Pêssego vivo — reservado para a ação de maior destaque de cada tela
         gold: {
-          300: "#fdcb9a",
-          400: "#fbb26e",
-          500: "#f59e4a",
-          600: "#d97f27",
+          300: "#e0a874",
+          400: "#a85822",
+          500: "#8f4a1b",
+          600: "#703914",
         },
       },
       fontFamily: {

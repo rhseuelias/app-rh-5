@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { logout } from "@/lib/actions";
+import LogoAppliq from "@/components/LogoAppliq";
 
 type IconeNome =
   | "dashboard"
@@ -178,7 +179,7 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
 
   return (
     <aside
-      className={`${recolhido ? "w-[68px]" : "w-64"} shrink-0 bg-[#262626] min-h-screen flex flex-col transition-[width] duration-200 print:hidden`}
+      className={`${recolhido ? "w-[68px]" : "w-64"} shrink-0 bg-[#2B2118] min-h-screen flex flex-col transition-[width] duration-200 print:hidden`}
     >
       <div className={`border-b border-white/10 ${recolhido ? "px-2 py-4 flex justify-center" : "px-5 py-6"}`}>
         {recolhido ? (
@@ -195,17 +196,7 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
           </button>
         ) : (
           <div className="flex items-start justify-between gap-2">
-            <div>
-              <p
-                role="heading"
-                aria-level={1}
-                className="font-display font-semibold text-white text-2xl leading-tight uppercase flex items-center gap-2"
-              >
-                <span className="inline-block w-[10px] h-[10px] bg-[#fbb26e] shrink-0" aria-hidden="true" />
-                AppliQ RH
-              </p>
-              <p className="text-xs text-[#a39a91] mt-1">Gestão de pessoas que gera resultados</p>
-            </div>
+            <LogoAppliq escuro tamanho={26} slogan />
             <button
               type="button"
               onClick={alternarMenu}
@@ -231,7 +222,7 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
               aria-label={recolhido ? item.label : undefined}
               className={`flex items-center rounded-[9px] text-sm font-medium transition-colors ${
                 recolhido ? "justify-center py-2.5" : "gap-3 px-3.5 py-2.5"
-              } ${ativo ? "bg-[#fbb26e] text-[#262626]" : "text-[#d9d2ca] hover:bg-white/[.06]"}`}
+              } ${ativo ? "bg-[#A85822] text-white" : "text-[#d9d2ca] hover:bg-white/[.06]"}`}
             >
               <span className="shrink-0">
                 <Icone nome={item.icon} />
