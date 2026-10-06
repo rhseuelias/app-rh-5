@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase-server";
 import { buscarFichaAdmissao, type CampoFicha } from "@/lib/ficha-admissao";
+import { assistenteSemAcessoAoContrato } from "@/lib/acesso-assistente";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const supabase = createClient();
@@ -9,6 +10,11 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
+
+  // assistente só baixa a ficha enquanto o colaborador está antes da etapa Contrato
+  if (await assistenteSemAcessoAoContrato(params.id)) {
+    return NextResponse.json({ error: "sem permissão para esta ficha" }, { status: 403 });
+  }
 
   const dados = await buscarFichaAdmissao(params.id);
   if (!dados) return NextResponse.json({ error: "colaborador não encontrado" }, { status: 404 });
