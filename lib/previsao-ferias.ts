@@ -69,6 +69,69 @@ function limiteDoPeriodo(fim: string): string {
   return alvo.toISOString().slice(0, 10);
 }
 
+interface PeriodoMin {
+  id: string;
+  inicio: string;
+  fim: string;
+  limite_concessao: string;
+  status: string;
+}
+interface FeriasMin {
+  periodo_aquisitivo_id: string | null;
+  dias: number;
+  status: string;
+  vendeu_abono: boolean;
+}
+
+/**
+ * Regra de cálculo de UMA pessoa (usada no relatório e no histórico de férias
+ * do colaborador): recebe os períodos e as férias reais (não simuladas e não
+ * canceladas) dela.
+ */
+export function calcularPrevisaoColaborador(
+  c: { nome: string; matricula?: string | null; data_admissao: string | null },
+  periodos: PeriodoMin[],
+  ferias: FeriasMin[],
+  hoje: string
+): LinhaPrevisao | null {
+  if (!c.data_admissao) return null;
+  // saldo "da contabilidade": só conta o que já foi baixado (concluído) + abono vendido
+  const saldoDe = (periodoId: string): number => {
+    const lista = ferias.filter((f) => f.periodo_aquisitivo_id === periodoId);
+    const gozados = lista.filter((f) => f.status === "concluido").reduce((s, f) => s + (f.dias || 0), 0);
+    const abono = lista.some((f) => f.vendeu_abono) ? 10 : 0;
+    return Math.max(0, 30 - gozados - abono);
+  };
+  const dele = periodos.slice().sort((a, b) => (a.inicio < b.inicio ? -1 : 1));
+  const foco = dele.find((p) => {
+    if (p.status === "gozado") return false;
+    // período já encerrado e sem saldo: está quitado mesmo que não esteja marcado
+    return !(dia(p.fim) < hoje && saldoDe(p.id) <= 0);
+  });
+  let inicio: string, fim: string, limite: string, dias: number;
+  if (foco) {
+    inicio = dia(foco.inicio);
+    fim = dia(foco.fim);
+    limite = dia(foco.limite_concessao);
+    dias = fim < hoje ? saldoDe(foco.id) : 0;
+  } else {
+    inicio = dele.length ? somarDias(dia(dele[dele.length - 1].fim), 1) : dia(c.data_admissao);
+    fim = fimDoPeriodo(inicio);
+    limite = limiteDoPeriodo(fim);
+    dias = 0;
+  }
+  return {
+    nome: c.nome,
+    codigo: c.matricula ?? "",
+    admissao: dia(c.data_admissao),
+    periodoInicio: inicio,
+    vencimento: fim,
+    dias,
+    previsao: somarDias(fim, 1),
+    limite,
+  };
+}
+
 export async function buscarPrevisaoVencimento(filtroEmpresa?: string): Promise<DadosPrevisao> {
   const supabase = createClient();
   const hoje = hojeEmBrasilia();
@@ -105,51 +168,13 @@ export async function buscarPrevisaoVencimento(filtroEmpresa?: string): Promise<
     if (!periodosPor.has(p.colaborador_id)) periodosPor.set(p.colaborador_id, []);
     periodosPor.get(p.colaborador_id)!.push(p);
   }
-  const feriasPorPeriodo = new Map<string, FerRow[]>();
+  const feriasPor = new Map<string, FerRow[]>();
   for (const f of ferias) {
-    if (!f.periodo_aquisitivo_id) continue;
-    if (!feriasPorPeriodo.has(f.periodo_aquisitivo_id)) feriasPorPeriodo.set(f.periodo_aquisitivo_id, []);
-    feriasPorPeriodo.get(f.periodo_aquisitivo_id)!.push(f);
+    if (!feriasPor.has(f.colaborador_id)) feriasPor.set(f.colaborador_id, []);
+    feriasPor.get(f.colaborador_id)!.push(f);
   }
-  // saldo "da contabilidade": só conta o que já foi baixado (concluído) + abono vendido
-  const saldoDe = (periodoId: string): number => {
-    const lista = feriasPorPeriodo.get(periodoId) ?? [];
-    const gozados = lista.filter((f) => f.status === "concluido").reduce((s, f) => s + (f.dias || 0), 0);
-    const abono = lista.some((f) => f.vendeu_abono) ? 10 : 0;
-    return Math.max(0, 30 - gozados - abono);
-  };
-
-  const montar = (c: (typeof colaboradores)[number]): LinhaPrevisao | null => {
-    if (!c.data_admissao) return null;
-    const dele = (periodosPor.get(c.id) ?? []).slice().sort((a, b) => (a.inicio < b.inicio ? -1 : 1));
-    const foco = dele.find((p) => {
-      if (p.status === "gozado") return false;
-      // período já encerrado e sem saldo: está quitado mesmo que não esteja marcado
-      return !(dia(p.fim) < hoje && saldoDe(p.id) <= 0);
-    });
-    let inicio: string, fim: string, limite: string, dias: number;
-    if (foco) {
-      inicio = dia(foco.inicio);
-      fim = dia(foco.fim);
-      limite = dia(foco.limite_concessao);
-      dias = fim < hoje ? saldoDe(foco.id) : 0;
-    } else {
-      inicio = dele.length ? somarDias(dia(dele[dele.length - 1].fim), 1) : dia(c.data_admissao);
-      fim = fimDoPeriodo(inicio);
-      limite = limiteDoPeriodo(fim);
-      dias = 0;
-    }
-    return {
-      nome: c.nome,
-      codigo: c.matricula ?? "",
-      admissao: dia(c.data_admissao),
-      periodoInicio: inicio,
-      vencimento: fim,
-      dias,
-      previsao: somarDias(fim, 1),
-      limite,
-    };
-  };
+  const montar = (c: (typeof colaboradores)[number]): LinhaPrevisao | null =>
+    calcularPrevisaoColaborador(c, periodosPor.get(c.id) ?? [], feriasPor.get(c.id) ?? [], hoje);
 
   const grupos: GrupoPrevisao[] = [];
   const ordemEmpresas = empresas

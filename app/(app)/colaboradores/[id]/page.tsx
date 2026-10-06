@@ -15,7 +15,6 @@ import {
   custoMensalColaborador,
   ETAPAS_ONBOARDING_LABEL,
   CATEGORIA_EVENTO_LABEL,
-  diasParaVencerFerias,
   formatarDataBR,
   FERIAS_STATUS_LABEL,
   TIPO_COLABORADOR_LABEL,
@@ -31,10 +30,11 @@ import HistoricoContratoPJAcoes from "@/components/HistoricoContratoPJAcoes";
 import { ehAlphaville } from "@/lib/contrato-pj";
 import IncluirNoProcessoBotao from "@/components/integracao/IncluirNoProcessoBotao";
 import GerarPrimeiroPeriodoAquisitivoBotao from "@/components/GerarPrimeiroPeriodoAquisitivoBotao";
-import PeriodoAquisitivoAcoes from "@/components/PeriodoAquisitivoAcoes";
 import GerarPrevisaoPdfBotao from "@/components/GerarPrevisaoPdfBotao";
 import ExcluirHistoricoFeriasBotao from "@/components/ExcluirHistoricoFeriasBotao";
 import { autoGerarProximosPeriodosVencidos } from "@/lib/actions";
+import { calcularPrevisaoColaborador } from "@/lib/previsao-ferias";
+import { hojeEmBrasilia } from "@/lib/ferias-regras";
 import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
 
 export const dynamic = "force-dynamic";
@@ -155,6 +155,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
     { data: processo },
     { data: historicoContratosPJ },
     { data: eventosFuturos },
+    { data: registroFerias },
   ] = await Promise.all([
     supabase.from("colaboradores").select("*").eq("id", params.id).single(),
     supabase.from("empresas").select("*"),
@@ -180,6 +181,13 @@ export default async function ColaboradorPage({ params }: { params: { id: string
       .gte("data_inicio", new Date().toISOString().slice(0, 10))
       .order("data_inicio", { ascending: true })
       .limit(5),
+    supabase
+      .from("historico_colaborador")
+      .select("id, tipo, descricao, created_at")
+      .eq("colaborador_id", params.id)
+      .or("tipo.like.ferias_*,tipo.like.periodo_*")
+      .order("created_at", { ascending: false })
+      .limit(100),
   ]);
 
   if (!colaborador) notFound();
@@ -213,6 +221,15 @@ export default async function ColaboradorPage({ params }: { params: { id: string
   const jaTemFeriasSalvasAberto = periodoAberto
     ? feriasReaisAtivas.some((f) => f.periodo_aquisitivo_id === periodoAberto.id)
     : false;
+
+  // mesma conta do relatório "Previsão de Vencimento de Férias"
+  const previsao = calcularPrevisaoColaborador(
+    { nome: c.nome, matricula: (c as unknown as { matricula?: string | null }).matricula ?? null, data_admissao: c.data_admissao },
+    aquisitivosLista,
+    feriasReaisAtivas,
+    hojeEmBrasilia()
+  );
+  const registroLista = (registroFerias ?? []) as { id: string; tipo: string; descricao: string; created_at: string }[];
 
   const status = STATUS_COLABORADOR[c.status] ?? { label: c.status, classe: "bg-slate-100 text-slate-600" };
   const empresa = ((empresas ?? []) as Empresa[]).find((e) => e.id === c.empresa_id) ?? null;
@@ -654,7 +671,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
       {c.tipo !== "PJ" && (
       <div id="ferias" className="card scroll-mt-6">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-          <h2 className="text-sm font-semibold text-slate-800">🏖️ Situação aquisitiva de férias</h2>
+          <h2 className="text-sm font-semibold text-slate-800">🏖️ Histórico de férias</h2>
           <GerarPrevisaoPdfBotao
             colaboradorId={c.id}
             periodoAberto={periodoAberto}
@@ -662,70 +679,47 @@ export default async function ColaboradorPage({ params }: { params: { id: string
             jaTemFeriasSalvas={jaTemFeriasSalvasAberto}
           />
         </div>
-        {aquisitivosLista.length === 0 ? (
-          <div className="space-y-2">
+
+        {aquisitivosLista.length === 0 && (
+          <div className="space-y-2 mb-4">
             <p className="text-sm text-slate-400">Nenhum período aquisitivo registrado.</p>
             <GerarPrimeiroPeriodoAquisitivoBotao colaboradorId={c.id} />
           </div>
-        ) : (
-          <div className="overflow-x-auto -mx-1">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 font-medium">
-                  <th className="py-2 px-1 font-medium">Seq.</th>
-                  <th className="py-2 px-1 font-medium">Período aquisitivo</th>
-                  <th className="py-2 px-1 font-medium">Status</th>
-                  <th className="py-2 px-1 font-medium">Limite</th>
-                  <th className="py-2 px-1 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {aquisitivosLista.map((p, i) => {
-                  const saldo = saldoDoPeriodo(p.id);
-                  const dias = diasParaVencerFerias(p.limite_concessao);
-                  const completo = p.status === "gozado" || saldo <= 0;
-                  return (
-                    <tr key={p.id}>
-                      <td className="py-2.5 px-1 text-slate-400">{i + 1}</td>
-                      <td className="py-2.5 px-1 whitespace-nowrap text-slate-700">
-                        {formatarDataBR(p.inicio)}–{formatarDataBR(p.fim)}
-                      </td>
-                      <td className="py-2.5 px-1">
-                        {p.status === "vencido" ? (
-                          <span className="badge bg-red-50 text-red-600">Vencido</span>
-                        ) : completo ? (
-                          <span className="badge bg-emerald-50 text-emerald-600">Completo</span>
-                        ) : (
-                          <span className="badge bg-amber-50 text-amber-600">
-                            faltam {saldo} dia{saldo !== 1 ? "s" : ""}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-1">
-                        {completo ? (
-                          <span className="text-slate-300">—</span>
-                        ) : (
-                          <span className={dias < 0 ? "text-red-600 font-medium" : dias <= 60 ? "text-red-600" : "text-slate-400"}>
-                            {dias < 0 ? `vencido há ${Math.abs(dias)} dias` : `vence em ${dias} dias`}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-1">
-                        <PeriodoAquisitivoAcoes periodo={p} colaboradorId={c.id} saldo={saldo} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        )}
+
+        {previsao && (
+          <div className="mb-5 rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs font-semibold text-slate-600">Previsão de vencimento de férias</p>
+              <Link href="/previsao-ferias" className="text-xs text-brand-600 hover:underline">
+                Ver relatório completo
+              </Link>
+            </div>
+            <dl className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+              <div>
+                <dt className="text-[11px] uppercase tracking-wide text-slate-400">Pér. aquisit.</dt>
+                <dd className="text-slate-700">{formatarDataBR(previsao.periodoInicio)}</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] uppercase tracking-wide text-slate-400">Venc. férias</dt>
+                <dd className="text-slate-700">{formatarDataBR(previsao.vencimento)}</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] uppercase tracking-wide text-slate-400">Dias a gozar</dt>
+                <dd className="text-slate-700 font-semibold">{previsao.dias}</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] uppercase tracking-wide text-slate-400">Prev. férias</dt>
+                <dd className="text-slate-700">{formatarDataBR(previsao.previsao)}</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] uppercase tracking-wide text-slate-400">Data limite</dt>
+                <dd className="text-slate-700">{formatarDataBR(previsao.limite)}</dd>
+              </div>
+            </dl>
           </div>
         )}
-      </div>
-      )}
 
-      {c.tipo !== "PJ" && (
-      <div className="card">
-        <h2 className="text-sm font-semibold text-slate-800 mb-4">🏖️ Histórico de férias</h2>
         {(ferias ?? []).length === 0 ? (
           <p className="text-sm text-slate-400">Nenhuma férias registrada.</p>
         ) : (
@@ -746,6 +740,33 @@ export default async function ColaboradorPage({ params }: { params: { id: string
             ))}
           </ul>
         )}
+
+        <div className="mt-6">
+          <h3 className="text-xs font-semibold text-slate-600 mb-2">Registro de alterações</h3>
+          {registroLista.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              Nada registrado ainda. Daqui para frente, tudo que for gerado, editado ou excluído em Férias aparece aqui.
+            </p>
+          ) : (
+            <ul className="divide-y divide-slate-100 text-sm">
+              {registroLista.map((r) => (
+                <li key={r.id} className="flex items-start gap-3 py-2">
+                  <span className="shrink-0 w-[118px] text-xs text-slate-400 pt-0.5">
+                    {new Date(r.created_at).toLocaleString("pt-BR", {
+                      timeZone: "America/Sao_Paulo",
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                  <span className="text-slate-700">{r.descricao}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
       )}
 
