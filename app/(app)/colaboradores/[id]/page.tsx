@@ -547,12 +547,12 @@ export default async function ColaboradorPage({ params }: { params: { id: string
                   <AtalhoAcao href="#contrato-pj" icone="🔄" texto="Renovar contrato" />
                   <AtalhoAcao href="#contrato-pj" icone="📑" texto="Emitir contrato" />
                 </>
-              ) : (
+              ) : contratoLiberado ? (
                 <>
                   <AtalhoAcao href={`/api/ficha-admissao/${c.id}/pdf`} icone="⬇️" texto="Ficha de admissão (PDF)" />
                   <AtalhoAcao href={`/api/ficha-admissao/${c.id}/excel`} icone="📊" texto="Ficha de admissão (Excel)" />
                 </>
-              )}
+              ) : null}
               {processo && <AtalhoAcao href={`/onboarding/${c.id}`} icone="✅" texto="Processo de integração" />}
             </div>
           </div>
