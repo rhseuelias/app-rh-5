@@ -152,10 +152,10 @@ export function calcularPrevisaoColaborador(
     limite = dia(foco.limite_concessao);
     if (foco.dias_direito != null) {
       // vem do relatório das barbearias; abate só o que foi baixado depois dele
-      const depois = Math.max(0, usadoDe(foco.id) - (foco.dias_direito_base ?? 0));
+      const depois = Math.max(0, programadoDe(foco.id) - (foco.dias_direito_base ?? 0));
       dias = Math.max(0, Number(foco.dias_direito) - depois);
     } else {
-      dias = fim < hoje ? saldoDe(foco.id) : 0;
+      dias = fim < hoje ? Math.max(0, 30 - programadoDe(foco.id)) : 0; // férias lançadas já abatem
     }
   } else {
     inicio = dele.length ? somarDias(dia(dele[dele.length - 1].fim), 1) : dia(c.data_admissao);
@@ -205,7 +205,11 @@ export async function buscarOpcoesPrevisao(): Promise<OpcaoEmpresa[]> {
   }));
 }
 
-export async function buscarPrevisaoVencimento(filtroEmpresa?: string, filtroUnidade?: string): Promise<DadosPrevisao> {
+export async function buscarPrevisaoVencimento(
+  filtroEmpresa?: string,
+  filtroUnidade?: string,
+  ordem?: string
+): Promise<DadosPrevisao> {
   const supabase = createClient();
   const hoje = hojeEmBrasilia();
 
@@ -257,7 +261,13 @@ export async function buscarPrevisaoVencimento(filtroEmpresa?: string, filtroUni
   }
   const montar = (c: Colab): LinhaPrevisao | null =>
     calcularPrevisaoColaborador(c, periodosPor.get(c.id) ?? [], feriasPor.get(c.id) ?? [], hoje);
-  const porNome = (a: LinhaPrevisao, b: LinhaPrevisao) => a.nome.localeCompare(b.nome, "pt-BR");
+  // ordem=limite: Data Limite mais próxima primeiro (empate: por nome)
+  const porNome = (a: LinhaPrevisao, b: LinhaPrevisao) =>
+    ordem === "limite" && a.limite !== b.limite
+      ? a.limite < b.limite
+        ? -1
+        : 1
+      : a.nome.localeCompare(b.nome, "pt-BR");
   const linhasDe = (lista: Colab[]) =>
     lista.map(montar).filter((l): l is LinhaPrevisao => l !== null).sort(porNome);
 

@@ -45,7 +45,7 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const empresa = sp.get("empresa") ?? undefined;
   const unidade = sp.get("unidade") ?? undefined;
-  const dados = await buscarPrevisaoVencimento(empresa || undefined, unidade || undefined);
+  const dados = await buscarPrevisaoVencimento(empresa || undefined, unidade || undefined, sp.get("ordem") ?? undefined);
 
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);

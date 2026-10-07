@@ -6,7 +6,7 @@ import BotaoPdf from "@/components/BotaoPdf";
 
 export const dynamic = "force-dynamic";
 
-function Tabela({ linhas }: { linhas: LinhaPrevisao[] }) {
+function Tabela({ linhas, hrefLimite, ordenado }: { linhas: LinhaPrevisao[]; hrefLimite: string; ordenado: boolean }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -19,7 +19,16 @@ function Tabela({ linhas }: { linhas: LinhaPrevisao[] }) {
             <th className="px-2 py-2">Venc. Férias</th>
             <th className="px-2 py-2 text-right">Dias</th>
             <th className="px-2 py-2">Prev. Férias</th>
-            <th className="px-2 py-2">Data Limite</th>
+            <th className="px-2 py-2">
+              <Link
+                href={hrefLimite}
+                scroll={false}
+                title={ordenado ? "Voltar à ordem por nome" : "Ordenar pela Data Limite mais próxima"}
+                className={`inline-flex items-center gap-1 hover:underline ${ordenado ? "text-[#2B2118] font-bold" : ""}`}
+              >
+                Data Limite {ordenado ? "▲" : "↕"}
+              </Link>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -58,7 +67,7 @@ function Chip({ href, ativo, children }: { href: string; ativo: boolean; childre
 export default async function PrevisaoFeriasPage({
   searchParams,
 }: {
-  searchParams: { empresa?: string; unidade?: string };
+  searchParams: { empresa?: string; unidade?: string; ordem?: string };
 }) {
   const opcoes = await buscarOpcoesPrevisao();
   const unidadeValida = opcoes.flatMap((e) => e.unidades.map((u) => ({ ...u, empresaId: e.id }))).find((u) => u.id === searchParams.unidade);
@@ -69,11 +78,20 @@ export default async function PrevisaoFeriasPage({
       : "";
   const unidade = unidadeValida?.id ?? "";
 
-  const dados = await buscarPrevisaoVencimento(empresa || undefined, unidade || undefined);
+  const ordenado = searchParams.ordem === "limite";
+  const dados = await buscarPrevisaoVencimento(empresa || undefined, unidade || undefined, ordenado ? "limite" : undefined);
   const params = new URLSearchParams();
   if (unidade) params.set("unidade", unidade);
   else if (empresa) params.set("empresa", empresa);
+  if (ordenado) params.set("ordem", "limite");
   const qs = params.toString() ? `?${params.toString()}` : "";
+  // link do cabeçalho "Data Limite": liga/desliga a ordem
+  const semOrdem = new URLSearchParams(params);
+  semOrdem.delete("ordem");
+  const comOrdem = new URLSearchParams(semOrdem);
+  comOrdem.set("ordem", "limite");
+  const alvo = ordenado ? semOrdem : comOrdem;
+  const hrefLimite = `/previsao-ferias${alvo.toString() ? `?${alvo.toString()}` : ""}`;
 
   const empresaAtual = opcoes.find((e) => e.id === empresa);
   const comUnidades = opcoes.filter((e) => e.unidades.length >= 2);
@@ -107,11 +125,11 @@ export default async function PrevisaoFeriasPage({
       {/* Escolha automática: clicou, já mostra (sem botão "Filtrar") */}
       <div className="space-y-3 print:hidden">
         <div className="flex flex-wrap gap-2">
-          <Chip href="/previsao-ferias" ativo={!empresa && !unidade}>
+          <Chip href={`/previsao-ferias${ordenado ? "?ordem=limite" : ""}`} ativo={!empresa && !unidade}>
             Todas as empresas
           </Chip>
           {opcoes.map((e) => (
-            <Chip key={e.id} href={`/previsao-ferias?empresa=${e.id}`} ativo={e.id === empresa && !unidade}>
+            <Chip key={e.id} href={`/previsao-ferias?empresa=${e.id}${ordenado ? "&ordem=limite" : ""}`} ativo={e.id === empresa && !unidade}>
               {e.unidades.length >= 2 ? `${e.nome} — todas as unidades` : e.nome}
             </Chip>
           ))}
@@ -120,7 +138,7 @@ export default async function PrevisaoFeriasPage({
           <div key={e.id} className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-gray-500 mr-1">Unidades de {e.nome}:</span>
             {e.unidades.map((u) => (
-              <Chip key={u.id} href={`/previsao-ferias?unidade=${u.id}`} ativo={u.id === unidade}>
+              <Chip key={u.id} href={`/previsao-ferias?unidade=${u.id}${ordenado ? "&ordem=limite" : ""}`} ativo={u.id === unidade}>
                 {u.nome}
               </Chip>
             ))}
@@ -143,12 +161,12 @@ export default async function PrevisaoFeriasPage({
                   Unidade: {u.unidadeNome}
                   {u.cnpj ? ` - CNPJ: ${formatarCNPJ(u.cnpj)}` : ""}
                 </h3>
-                <Tabela linhas={u.linhas} />
+                <Tabela linhas={u.linhas} hrefLimite={hrefLimite} ordenado={ordenado} />
                 <p className="px-4 py-2 text-xs text-gray-500">{u.linhas.length} registro(s) nesta unidade</p>
               </div>
             ))
           ) : (
-            <Tabela linhas={g.linhas} />
+            <Tabela linhas={g.linhas} hrefLimite={hrefLimite} ordenado={ordenado} />
           )}
           <p className="px-4 py-2 text-xs font-semibold text-gray-600 border-t border-gray-100">
             {g.linhas.length} registro(s) em {g.empresaNome}

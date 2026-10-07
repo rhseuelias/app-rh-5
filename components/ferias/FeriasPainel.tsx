@@ -304,7 +304,7 @@ export default function FeriasPainel({
       cor: COR.texto,
       sub: mostrarValores ? `${Math.round((aPagar / Math.max(1, totalCusto)) * 100)}% ainda por pagar` : "valores ocultos",
     },
-  ];
+  ].filter((k) => mostrarValores || !k.label.startsWith("Custo estimado")); // assistente não vê o cartão de custo
 
   // ------------------------------------------------------------
   // Painel de lançamento
@@ -604,7 +604,7 @@ export default function FeriasPainel({
       </div>
 
       {/* KPIs */}
-      <div className={`${cartao} grid grid-cols-2 lg:grid-cols-5 overflow-hidden`}>
+      <div className={`${cartao} grid grid-cols-2 ${kpis.length >= 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"} overflow-hidden`}>
         {kpis.map((k, i) => (
           <div key={k.label} className={`px-6 py-5 flex flex-col gap-1.5 min-w-0 ${i < kpis.length - 1 ? "lg:border-r border-[#f4ebe1]" : ""} ${i < 4 ? "border-b lg:border-b-0 border-[#f4ebe1]" : ""}`}>
             <div className={rotuloMini}>{k.label}</div>
