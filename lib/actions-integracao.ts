@@ -310,6 +310,211 @@ export async function atualizarStatusEtapa(formData: FormData) {
 }
 
 // ------------------------------------------------------------
+// Atalhos do Painel de Integração: concluir / voltar / finalizar todas
+// ------------------------------------------------------------
+
+export interface RespostaIntegracao {
+  ok: boolean;
+  mensagem: string;
+}
+
+type EtapaRow = {
+  id: string;
+  processo_id: string;
+  chave: string;
+  ordem: number;
+  nome: string;
+  status: string;
+  bloqueada: boolean;
+  data_inicio: string | null;
+};
+
+const etapaFeita = (e: { status: string }) => e.status === "realizado" || e.status === "em_experiencia";
+
+async function carregarEtapas(supabase: ReturnType<typeof createClient>, processoId: string): Promise<EtapaRow[]> {
+  const { data } = await supabase
+    .from("etapas_processo")
+    .select("*")
+    .eq("processo_id", processoId)
+    .order("ordem", { ascending: true });
+  return (data ?? []) as EtapaRow[];
+}
+
+function atualizarPaineis(colaboradorId: string) {
+  revalidatePath("/onboarding");
+  revalidatePath(`/onboarding/${colaboradorId}`);
+}
+
+/** Conclui uma etapa com os mesmos efeitos automáticos do clique na ficha. */
+async function concluirInterno(supabase: ReturnType<typeof createClient>, etapa: EtapaRow, usuario: string, observacao: string) {
+  const agora = new Date().toISOString();
+  await supabase
+    .from("etapas_processo")
+    .update({
+      status: "realizado",
+      bloqueada: false,
+      data_conclusao: agora,
+      concluido_por: usuario,
+      ...(etapa.data_inicio ? {} : { data_inicio: agora }),
+    })
+    .eq("id", etapa.id);
+  await supabase.from("historico_etapas").insert({
+    etapa_processo_id: etapa.id,
+    usuario,
+    status_anterior: etapa.status,
+    status_novo: "realizado",
+    observacao,
+  });
+  await desbloquearProximaEtapa(supabase, etapa);
+  await tratarEfeitoEspecial(supabase, etapa, null);
+}
+
+/** "Concluir etapa": conclui a etapa atual do colaborador. */
+export async function concluirEtapaAtual(processoId: string, colaboradorId: string): Promise<RespostaIntegracao> {
+  const supabase = createClient();
+  const usuario = await usuarioAtual(supabase);
+  const etapas = await carregarEtapas(supabase, processoId);
+
+  const atual = etapas.find((e) => !etapaFeita(e) && !e.bloqueada);
+  if (atual) {
+    if (atual.chave === "avaliacao_90_dias") {
+      return {
+        ok: false,
+        mensagem: "A avaliação dos 90 dias precisa do resultado (Efetivado ou Não efetivado). Abra a ficha para registrar.",
+      };
+    }
+    await concluirInterno(supabase, atual, usuario, "Concluída pelo Painel de Integração.");
+    atualizarPaineis(colaboradorId);
+    return { ok: true, mensagem: `Etapa "${atual.nome}" concluída.` };
+  }
+
+  // só resta a Experiência: encerra e libera a avaliação dos 90 dias
+  const avaliacao = etapas.find((e) => e.chave === "avaliacao_90_dias");
+  if (avaliacao && avaliacao.bloqueada && !etapaFeita(avaliacao)) {
+    await supabase.from("etapas_processo").update({ bloqueada: false, status: "pendente" }).eq("id", avaliacao.id);
+    await supabase.from("historico_etapas").insert({
+      etapa_processo_id: avaliacao.id,
+      usuario,
+      status_anterior: avaliacao.status,
+      status_novo: "pendente",
+      observacao: "Experiência encerrada pelo Painel de Integração; avaliação liberada.",
+    });
+    atualizarPaineis(colaboradorId);
+    return { ok: true, mensagem: "Experiência encerrada. Falta registrar o resultado da avaliação (abra a ficha)." };
+  }
+  return { ok: false, mensagem: "Não há etapa para concluir." };
+}
+
+/** "Voltar etapa": reabre a última etapa concluída (e refaz o bloqueio das seguintes). */
+export async function voltarEtapa(processoId: string, colaboradorId: string): Promise<RespostaIntegracao> {
+  const supabase = createClient();
+  const usuario = await usuarioAtual(supabase);
+  let etapas = await carregarEtapas(supabase, processoId);
+
+  const ultimaFeita = () =>
+    [...etapas].reverse().find((e) => e.chave !== "pre_cadastro" && etapaFeita(e));
+
+  let alvo = ultimaFeita();
+  if (!alvo) return { ok: false, mensagem: "Não há etapa concluída para voltar." };
+
+  let voltouExperiencia = false;
+  // a Experiência (em curso) não é "concluída": desfaz ela e volta a etapa anterior de verdade
+  if (alvo.status === "em_experiencia") {
+    voltouExperiencia = true;
+    await supabase
+      .from("etapas_processo")
+      .update({ status: "nao_iniciado", bloqueada: true, data_inicio: null })
+      .eq("id", alvo.id);
+    const aval = etapas.find((e) => e.chave === "avaliacao_90_dias");
+    if (aval && !etapaFeita(aval)) {
+      await supabase.from("etapas_processo").update({ status: "nao_iniciado", bloqueada: true }).eq("id", aval.id);
+    }
+    etapas = await carregarEtapas(supabase, processoId);
+    alvo = ultimaFeita();
+    if (!alvo) {
+      await supabase.from("processos_integracao").update({ status_geral: "integracao", data_fim_experiencia: null }).eq("id", processoId);
+      atualizarPaineis(colaboradorId);
+      return { ok: true, mensagem: "Experiência desfeita." };
+    }
+  }
+
+  await supabase
+    .from("etapas_processo")
+    .update({ status: "pendente", bloqueada: false, data_conclusao: null, concluido_por: null })
+    .eq("id", alvo.id);
+  await supabase.from("historico_etapas").insert({
+    etapa_processo_id: alvo.id,
+    usuario,
+    status_anterior: alvo.status,
+    status_novo: "pendente",
+    observacao: "Etapa reaberta pelo Painel de Integração (voltar etapa).",
+  });
+
+  // as etapas depois dela voltam a ficar bloqueadas (se ainda não foram mexidas)
+  for (const e of etapas.filter((x) => x.ordem > alvo!.ordem)) {
+    if (e.status === "em_experiencia") {
+      voltouExperiencia = true;
+      await supabase.from("etapas_processo").update({ status: "nao_iniciado", bloqueada: true, data_inicio: null }).eq("id", e.id);
+    } else if ((e.status === "pendente" || e.status === "nao_iniciado") && !e.data_inicio) {
+      await supabase.from("etapas_processo").update({ status: "nao_iniciado", bloqueada: true }).eq("id", e.id);
+    }
+  }
+
+  if (alvo.chave === "pesquisa_onboarding" || voltouExperiencia) {
+    await supabase.from("processos_integracao").update({ status_geral: "integracao", data_fim_experiencia: null }).eq("id", processoId);
+    const { data: proc } = await supabase.from("processos_integracao").select("colaborador_id").eq("id", processoId).single();
+    if (proc) {
+      await supabase
+        .from("eventos_calendario")
+        .delete()
+        .eq("colaborador_id", proc.colaborador_id)
+        .like("titulo", "Avaliação dos 90 dias%");
+    }
+  }
+
+  atualizarPaineis(colaboradorId);
+  return { ok: true, mensagem: `Voltou para a etapa "${alvo.nome}".` };
+}
+
+/**
+ * "Finalizar todas as etapas": conclui tudo que falta, na ordem. A avaliação dos 90 dias
+ * não é concluída aqui porque depende do resultado (Efetivado / Não efetivado) — ela fica
+ * liberada para você registrar na ficha.
+ */
+export async function finalizarTodasEtapas(processoId: string, colaboradorId: string): Promise<RespostaIntegracao> {
+  const supabase = createClient();
+  const usuario = await usuarioAtual(supabase);
+  const etapas = await carregarEtapas(supabase, processoId);
+
+  let feitas = 0;
+  for (const e of etapas) {
+    if (e.chave === "avaliacao_90_dias" || e.chave === "experiencia") continue;
+    const { data: fresca } = await supabase.from("etapas_processo").select("*").eq("id", e.id).single();
+    if (!fresca || etapaFeita(fresca as EtapaRow)) continue;
+    await concluirInterno(supabase, fresca as EtapaRow, usuario, "Concluída em lote pelo Painel de Integração (finalizar todas).");
+    feitas++;
+  }
+
+  const avaliacao = (await carregarEtapas(supabase, processoId)).find((e) => e.chave === "avaliacao_90_dias");
+  let pendenteAvaliacao = false;
+  if (avaliacao && !etapaFeita(avaliacao)) {
+    pendenteAvaliacao = true;
+    if (avaliacao.bloqueada) {
+      await supabase.from("etapas_processo").update({ bloqueada: false, status: "pendente" }).eq("id", avaliacao.id);
+    }
+  }
+
+  atualizarPaineis(colaboradorId);
+  if (feitas === 0 && !pendenteAvaliacao) return { ok: false, mensagem: "Todas as etapas já estavam concluídas." };
+  return {
+    ok: true,
+    mensagem:
+      `${feitas} etapa${feitas !== 1 ? "s" : ""} concluída${feitas !== 1 ? "s" : ""}.` +
+      (pendenteAvaliacao ? " Falta só o resultado da avaliação dos 90 dias (abra a ficha)." : ""),
+  };
+}
+
+// ------------------------------------------------------------
 // Avaliação dos 90 dias — encerra o processo
 // ------------------------------------------------------------
 

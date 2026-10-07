@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { concluirEtapaAtual, finalizarTodasEtapas, voltarEtapa } from "@/lib/actions-integracao";
 import type { CSSProperties, ReactNode } from "react";
 
 export type EstadoEtapa = "done" | "progress" | "late" | "attention" | "pending" | "na";
@@ -657,11 +658,7 @@ function Detalhe({ l }: { l: LinhaTimeline }) {
           </div>
         )}
         <div className="flex flex-wrap gap-2" style={{ marginTop: 14 }}>
-          {l.atual && (
-            <Link href={abrirFicha} style={{ ...botao, background: "#262626", borderColor: "#262626", color: "#fff" }}>
-              Concluir etapa
-            </Link>
-          )}
+          <AcoesEtapa l={l} botao={botao} />
           <BotaoCobrar l={l} estilo={botao} />
           <Link href={abrirFicha} style={botao}>
             Abrir ficha
@@ -729,5 +726,57 @@ function BotaoCobrar({ l, estilo }: { l: LinhaTimeline; estilo: CSSProperties })
     <button type="button" onClick={copiar} style={estilo} title="Copia uma mensagem pronta para colar no WhatsApp ou e-mail">
       {estado === "copiado" ? "Mensagem copiada" : estado === "erro" ? "Não consegui copiar" : `Cobrar ${alvo}`}
     </button>
+  );
+}
+
+/** Concluir etapa · Voltar etapa · Finalizar todas as etapas */
+function AcoesEtapa({ l, botao }: { l: LinhaTimeline; botao: CSSProperties }) {
+  const [pendente, iniciar] = useTransition();
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
+
+  function rodar(acao: (processoId: string, colaboradorId: string) => Promise<{ ok: boolean; mensagem: string }>) {
+    setMsg(null);
+    iniciar(async () => {
+      try {
+        const r = await acao(l.id, l.colaboradorId);
+        setMsg({ ok: r.ok, texto: r.mensagem });
+      } catch {
+        setMsg({ ok: false, texto: "Não consegui fazer isso agora. Tente de novo." });
+      }
+    });
+  }
+
+  const desligado: CSSProperties = pendente ? { opacity: 0.6, cursor: "wait" } : {};
+  return (
+    <>
+      <button
+        type="button"
+        disabled={pendente}
+        onClick={() => rodar(concluirEtapaAtual)}
+        style={{ ...botao, background: "#262626", borderColor: "#262626", color: "#fff", ...desligado }}
+      >
+        Concluir etapa
+      </button>
+      <button type="button" disabled={pendente} onClick={() => rodar(voltarEtapa)} style={{ ...botao, ...desligado }}>
+        Voltar etapa
+      </button>
+      <button
+        type="button"
+        disabled={pendente}
+        onClick={() => {
+          if (window.confirm(`Finalizar todas as etapas de ${l.nome}?\n\nA avaliação dos 90 dias fica por sua conta (precisa do resultado).`)) {
+            rodar(finalizarTodasEtapas);
+          }
+        }}
+        style={{ ...botao, ...desligado }}
+      >
+        Finalizar todas as etapas
+      </button>
+      {msg && (
+        <span role="status" style={{ flexBasis: "100%", fontSize: 12, fontWeight: 600, color: msg.ok ? "#1f7a52" : "#b42318" }}>
+          {msg.texto}
+        </span>
+      )}
+    </>
   );
 }
