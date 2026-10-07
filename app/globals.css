@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -75,4 +75,12 @@ h2 {
 /* Chip de ícone redondo, em pêssego claro com ícone grafite */
 .icon-chip {
   @apply inline-flex items-center justify-center w-10 h-10 rounded-full bg-brand-100 text-ink-800 text-lg shrink-0;
+}
+
+/* Tela Previsão de Férias: fonte de leitura fácil (Atkinson Hyperlegible) */
+.ferias-leg,
+.ferias-leg h1,
+.ferias-leg h2,
+.ferias-leg h3 {
+  font-family: "Atkinson Hyperlegible", Verdana, ui-sans-serif, system-ui, sans-serif;
 }
