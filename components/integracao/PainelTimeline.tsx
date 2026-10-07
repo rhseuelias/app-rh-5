@@ -94,9 +94,11 @@ function iniciais(nome: string) {
 export default function PainelTimeline({
   linhas,
   gruposNomes,
+  somenteLeitura = false,
 }: {
   linhas: LinhaTimeline[];
   gruposNomes: string[];
+  somenteLeitura?: boolean;
 }) {
   const [filtros, setFiltros] = useState<Filtros>(VAZIO);
   const [quick, setQuick] = useState<Quick>("");
@@ -476,7 +478,7 @@ export default function PainelTimeline({
                       </span>
                     </div>
 
-                    {open && <Detalhe l={l} />}
+                    {open && <Detalhe l={l} somenteLeitura={somenteLeitura} />}
                   </div>
                 );
               })
@@ -581,7 +583,7 @@ function Legenda({ cor, texto }: { cor: string; texto: string }) {
 
 const SUBTITULO: CSSProperties = { ...CABECALHO, marginBottom: 10 };
 
-function Detalhe({ l }: { l: LinhaTimeline }) {
+function Detalhe({ l, somenteLeitura }: { l: LinhaTimeline; somenteLeitura: boolean }) {
   const abrirFicha = `/onboarding/${l.colaboradorId}`;
   const botao: CSSProperties = {
     fontFamily: INTER,
@@ -657,6 +659,7 @@ function Detalhe({ l }: { l: LinhaTimeline }) {
             ))}
           </div>
         )}
+        {!somenteLeitura && (
         <div className="flex flex-wrap gap-2" style={{ marginTop: 14 }}>
           <AcoesEtapa l={l} botao={botao} />
           <BotaoCobrar l={l} estilo={botao} />
@@ -664,6 +667,7 @@ function Detalhe({ l }: { l: LinhaTimeline }) {
             Abrir ficha
           </Link>
         </div>
+        )}
       </div>
 
       {/* Últimas movimentações */}
