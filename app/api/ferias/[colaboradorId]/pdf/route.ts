@@ -3,6 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { createClient } from "@/lib/supabase-server";
 import { buscarPrevisaoFerias } from "@/lib/ferias-relatorio";
 import { formatarReais } from "@/lib/formatadores";
+import { disposicaoPdf } from "@/lib/pdf-disposicao";
 
 const MARGEM = 48;
 const LARGURA = 595.28; // A4 retrato
@@ -118,7 +119,7 @@ export async function GET(req: Request, { params }: { params: { colaboradorId: s
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${nomeArquivo}"`,
+      "Content-Disposition": disposicaoPdf(req, nomeArquivo),
     },
   });
 }

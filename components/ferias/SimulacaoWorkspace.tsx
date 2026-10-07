@@ -19,6 +19,7 @@ import {
 } from "@/lib/actions";
 import DateInput from "@/components/DateInput";
 import { fDM, fDMA, somarDias } from "@/lib/ferias-regras";
+import BotaoPdf from "@/components/BotaoPdf";
 
 /* ------------------------------------------------------------------ */
 /* Tipos (a página servidor monta tudo e entrega pronto)               */
@@ -428,9 +429,9 @@ export default function SimulacaoWorkspace({
           <button type="button" onClick={duplicar} disabled={ocupado} style={{ ...BTN_SEC, opacity: ocupado ? 0.6 : 1 }}>
             Duplicar
           </button>
-          <a href={`/api/ferias/simulacao/${cenario.id}/pdf`} style={BTN_SEC}>
+          <BotaoPdf href={`/api/ferias/simulacao/${cenario.id}/pdf`} style={BTN_SEC} titulo="Simulação de férias — PDF">
             PDF
-          </a>
+          </BotaoPdf>
           <a href={`/api/ferias/simulacao/${cenario.id}/excel`} style={BTN_SEC}>
             Excel
           </a>

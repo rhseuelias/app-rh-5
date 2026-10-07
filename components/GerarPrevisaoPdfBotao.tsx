@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { PeriodoAquisitivo } from "@/types/db";
 import { formatarDataBR } from "@/lib/calculos";
+import BotaoPdf from "@/components/BotaoPdf";
 
 /**
  * Antes de baixar o PDF de previsão de férias, mostra qual período
@@ -94,16 +95,18 @@ export default function GerarPrevisaoPdfBotao({
               )}
 
               {podeEscolherDias || jaTemFeriasSalvas ? (
-                <a
-                  href={href}
+                <BotaoPdf
+                  href={href ?? "#"}
+                  desabilitado={!podeGerar}
+                  titulo="Previsão de férias — PDF"
                   className={`mt-1 block text-center w-full text-xs font-semibold rounded-full px-2.5 py-1.5 ${
                     podeGerar
                       ? "text-white bg-brand-600 hover:bg-brand-700"
                       : "text-slate-400 bg-slate-100 cursor-not-allowed pointer-events-none"
                   }`}
                 >
-                  ⬇️ Baixar PDF
-                </a>
+                  👁️ Ver e baixar PDF
+                </BotaoPdf>
               ) : null}
             </>
           )}

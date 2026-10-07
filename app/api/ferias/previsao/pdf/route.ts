@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { createClient } from "@/lib/supabase-server";
 import { buscarPrevisaoVencimento } from "@/lib/previsao-ferias";
+import { disposicaoPdf } from "@/lib/pdf-disposicao";
 import { fDMA } from "@/lib/ferias-regras";
 import { formatarCNPJ } from "@/lib/formatadores";
 
@@ -41,8 +42,10 @@ export async function GET(req: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
 
-  const empresa = new URL(req.url).searchParams.get("empresa") ?? undefined;
-  const dados = await buscarPrevisaoVencimento(empresa || undefined);
+  const sp = new URL(req.url).searchParams;
+  const empresa = sp.get("empresa") ?? undefined;
+  const unidade = sp.get("unidade") ?? undefined;
+  const dados = await buscarPrevisaoVencimento(empresa || undefined, unidade || undefined);
 
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -54,7 +57,7 @@ export async function GET(req: Request) {
 
   const titulo = (p: PDFPage) => {
     p.drawText("Previsão de Vencimento de Férias", { x: M, y: ALT - M, size: 15, font: bold, color: COR_TIT });
-    p.drawText(`${empresa ? "Empresa selecionada" : "Todas as empresas"} — posição em ${fDMA(dados.hoje)} — ${dados.total} registro(s)`, {
+    p.drawText(`${unidade ? "Unidade selecionada" : empresa ? "Empresa selecionada" : "Todas as empresas"} — posição em ${fDMA(dados.hoje)} — ${dados.total} registro(s)`, {
       x: M, y: ALT - M - 14, size: 8, font, color: COR_LAB,
     });
   };
@@ -84,14 +87,8 @@ export async function GET(req: Request) {
     page.drawText("Nenhum colaborador encontrado.", { x: M, y: y - 10, size: 9, font, color: COR_LAB });
   }
 
-  for (const g of dados.grupos) {
-    if (y < M + 16 * 4) novaPagina();
-    const rotulo = `Empresa: ${g.empresaNome}${g.cnpj ? ` - CNPJ: ${formatarCNPJ(g.cnpj)}` : ""}`;
-    page.drawText(rotulo, { x: M, y: y - 10, size: 9.5, font: bold, color: COR_TIT });
-    y -= 20;
-    cabecalhoColunas();
-
-    for (const l of g.linhas) {
+  const desenharLinhas = (linhas: typeof dados.grupos[number]["linhas"]) => {
+    for (const l of linhas) {
       if (y - 16 < M + 14) {
         novaPagina();
         cabecalhoColunas();
@@ -109,8 +106,34 @@ export async function GET(req: Request) {
       y -= 16;
       page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
     }
-    page.drawText(`${g.linhas.length} registro(s)`, { x: M, y: y - 12, size: 8, font, color: COR_LAB });
-    y -= 28;
+  };
+
+  for (const g of dados.grupos) {
+    if (y < M + 16 * 4) novaPagina();
+    const rotulo = `Empresa: ${g.empresaNome}${g.cnpj ? ` - CNPJ: ${formatarCNPJ(g.cnpj)}` : ""}`;
+    page.drawText(rotulo, { x: M, y: y - 10, size: 9.5, font: bold, color: COR_TIT });
+    y -= 20;
+
+    if (g.unidades.length > 0) {
+      for (const u of g.unidades) {
+        if (y < M + 16 * 5) novaPagina();
+        const rotU = `Unidade: ${u.unidadeNome}${u.cnpj ? ` - CNPJ: ${formatarCNPJ(u.cnpj)}` : ""}`;
+        page.drawText(rotU, { x: M + 6, y: y - 9, size: 9, font: bold, color: COR_LAB });
+        y -= 16;
+        cabecalhoColunas();
+        desenharLinhas(u.linhas);
+        page.drawText(`${u.linhas.length} registro(s) nesta unidade`, { x: M, y: y - 12, size: 8, font, color: COR_LAB });
+        y -= 24;
+      }
+      if (y < M + 30) novaPagina();
+      page.drawText(`${g.linhas.length} registro(s) em ${g.empresaNome}`, { x: M, y: y - 10, size: 8.5, font: bold, color: COR_TXT });
+      y -= 28;
+    } else {
+      cabecalhoColunas();
+      desenharLinhas(g.linhas);
+      page.drawText(`${g.linhas.length} registro(s)`, { x: M, y: y - 12, size: 8, font, color: COR_LAB });
+      y -= 28;
+    }
   }
 
   const agora = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
@@ -124,7 +147,7 @@ export async function GET(req: Request) {
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="previsao-vencimento-ferias.pdf"`,
+      "Content-Disposition": disposicaoPdf(req, "previsao-vencimento-ferias.pdf"),
     },
   });
 }

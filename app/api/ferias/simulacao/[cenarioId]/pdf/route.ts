@@ -3,8 +3,9 @@ import { createClient } from "@/lib/supabase-server";
 import { buscarDadosExportacaoSimulacao } from "@/lib/exportacao-simulacao";
 import { gerarPdfSimulacao } from "@/lib/exportacao-simulacao-pdf";
 import { nomeArquivoExportacao } from "@/lib/exportacao-simulacao-util";
+import { disposicaoPdf } from "@/lib/pdf-disposicao";
 
-export async function GET(_req: Request, { params }: { params: { cenarioId: string } }) {
+export async function GET(req: Request, { params }: { params: { cenarioId: string } }) {
   const supabase = createClient();
   const {
     data: { user },
@@ -18,7 +19,7 @@ export async function GET(_req: Request, { params }: { params: { cenarioId: stri
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${nomeArquivoExportacao(dados.cabecalho, "pdf")}"`,
+      "Content-Disposition": disposicaoPdf(req, nomeArquivoExportacao(dados.cabecalho, "pdf")),
     },
   });
 }

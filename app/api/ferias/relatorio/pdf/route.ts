@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase-server";
 import { buscarLinhasRelatorioFerias } from "@/lib/ferias-relatorio";
 import { formatarReais } from "@/lib/formatadores";
 import { FERIAS_STATUS_LABEL, formatarDataBR } from "@/lib/calculos";
+import { disposicaoPdf } from "@/lib/pdf-disposicao";
 
 const MARGEM = 40;
 const LARGURA = 841.89; // A4 paisagem — cabe mais colunas
@@ -107,7 +108,7 @@ export async function GET(req: Request) {
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="relatorio-ferias.pdf"`,
+      "Content-Disposition": disposicaoPdf(req, "relatorio-ferias.pdf"),
     },
   });
 }

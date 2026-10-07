@@ -19,6 +19,7 @@ import {
 } from "@/lib/ferias-regras";
 import { aprovarFeriasColaborador, excluirPeriodoFerias, lancarFeriasPainel } from "@/lib/actions-ferias-painel";
 import { amortizarFerias, excluirFeriasAmortizada } from "@/lib/actions-ferias-amortizar";
+import BotaoPdf from "@/components/BotaoPdf";
 
 // ------------------------------------------------------------
 // Tipos (o servidor monta isso em app/(app)/ferias/page.tsx)
@@ -579,9 +580,9 @@ export default function FeriasPainel({
               </option>
             ))}
           </select>
-          <a href={`/api/ferias/relatorio/pdf?${qs}`} className={botaoClaro}>
+          <BotaoPdf href={`/api/ferias/relatorio/pdf?${qs}`} className={botaoClaro} titulo="Relatório de férias — PDF">
             PDF
-          </a>
+          </BotaoPdf>
           <a href={`/api/ferias/relatorio/excel?${qs}`} className={botaoClaro}>
             Excel
           </a>
