@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase-server";
+import { amortizarFerias } from "@/lib/actions-ferias-amortizar";
 import {
   hojeEmBrasilia,
   mapaDeFeriados,
@@ -42,6 +43,19 @@ export async function lancarFeriasPainel(e: EntradaLancamento): Promise<Resposta
 
   if (!e.colaboradorId || !e.periodoId) {
     return { ok: false, mensagem: "Esse colaborador não tem período aquisitivo aberto." };
+  }
+
+  // datas que já passaram = férias já gozadas: registra com baixa (mesma regra de "Amortizar férias antigas")
+  const diasPrevistos = Math.round(Number(e.dias) || 0);
+  if (e.inicio && diasPrevistos >= 1 && somarDias(e.inicio, diasPrevistos - 1) < hojeEmBrasilia()) {
+    return amortizarFerias({
+      colaboradorId: e.colaboradorId,
+      periodoId: e.periodoId,
+      feriasId: e.feriasId ?? null,
+      inicio: e.inicio,
+      fim: somarDias(e.inicio, diasPrevistos - 1),
+      abono: !!e.abono,
+    });
   }
 
   const [{ data: periodo }, { data: colaborador }, { data: feriadosBanco }, { data: existentes }] = await Promise.all([

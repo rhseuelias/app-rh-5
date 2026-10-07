@@ -1107,7 +1107,6 @@ export default function FeriasPainel({
                       <input
                         type="date"
                         value={dr.inicio}
-                        min={hoje}
                         onChange={(e) => patch({ inicio: e.target.value })}
                         className="text-[14px] font-medium px-3 py-[9px] border border-[#e7ddd2] rounded-lg"
                       />

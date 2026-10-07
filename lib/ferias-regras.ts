@@ -137,11 +137,16 @@ export function validarLancamento(e: EntradaValidacao): ResultadoValidacao {
 
   let fim = "";
   if (e.inicio) {
-    if (e.inicio < e.hoje) erros.push("A data de início já passou.");
-    const motivo = motivoInicioInvalido(e.inicio, e.feriados);
-    if (motivo) erros.push(`Início inválido: ${motivo}.`);
     fim = somarDias(e.inicio, Math.max(dias, 1) - 1);
-    if (e.limite && fim > e.limite) {
+    const passou = fim < e.hoje;
+    // datas passadas são aceitas (registro de férias já tiradas); a regra de início só vale para datas futuras
+    if (!passou) {
+      const motivo = motivoInicioInvalido(e.inicio, e.feriados);
+      if (motivo) erros.push(`Início inválido: ${motivo}.`);
+    } else {
+      avisos.push("Data passada: será registrada como férias já gozadas (com baixa).");
+    }
+    if (!passou && e.limite && fim > e.limite) {
       avisos.push(`Termina depois do limite de concessão (${fDMA(e.limite)}). Os dias após o limite são pagos em dobro.`);
     }
     if (e.inicio >= e.hoje && difDias(e.hoje, e.inicio) < 30) {
