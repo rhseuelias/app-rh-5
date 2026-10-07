@@ -31,6 +31,7 @@ function atualizarTelas() {
   revalidatePath("/ferias");
   revalidatePath("/calendario");
   revalidatePath("/dashboard");
+  revalidatePath("/previsao-ferias");
 }
 
 /** Lança (ou remarca) um período de férias. Valida as regras da CLT de novo no servidor. */

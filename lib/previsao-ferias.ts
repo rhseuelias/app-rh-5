@@ -65,6 +65,7 @@ interface PerRow {
   dias_direito_base?: number | null;
 }
 interface FerRow {
+  data_inicio?: string | null;
   colaborador_id: string;
   periodo_aquisitivo_id: string | null;
   dias: number;
@@ -105,6 +106,7 @@ export function fDias(n: number): string {
   return Number.isInteger(n) ? String(n) : String(n).replace(".", ",");
 }
 interface FeriasMin {
+  data_inicio?: string | null;
   periodo_aquisitivo_id: string | null;
   dias: number;
   status: string;
@@ -155,6 +157,16 @@ export function calcularPrevisaoColaborador(
     limite = limiteDoPeriodo(fim);
     dias = 0;
   }
+  // "Prev. Férias": se já há férias lançadas (planejada/solicitada/aprovada) e ainda não gozadas
+  // neste período, mostra a data de início da próxima; senão, o dia seguinte ao vencimento
+  let previsao = somarDias(fim, 1);
+  if (foco) {
+    const futuras = ferias
+      .filter((f) => f.periodo_aquisitivo_id === foco.id && f.status !== "concluido" && f.data_inicio)
+      .map((f) => dia(f.data_inicio as string))
+      .sort();
+    if (futuras.length > 0) previsao = futuras[0];
+  }
   return {
     nome: c.nome,
     codigo: c.matricula ?? "",
@@ -162,7 +174,7 @@ export function calcularPrevisaoColaborador(
     periodoInicio: inicio,
     vencimento: fim,
     dias,
-    previsao: somarDias(fim, 1),
+    previsao,
     limite,
   };
 }
@@ -202,7 +214,7 @@ export async function buscarPrevisaoVencimento(filtroEmpresa?: string, filtroUni
     supabase.from("periodos_aquisitivos").select("*"),
     supabase
       .from("ferias")
-      .select("colaborador_id, periodo_aquisitivo_id, dias, status, vendeu_abono")
+      .select("colaborador_id, periodo_aquisitivo_id, data_inicio, dias, status, vendeu_abono")
       .neq("status", "cancelado")
       .eq("simulacao", false),
   ]);

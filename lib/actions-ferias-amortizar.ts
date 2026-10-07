@@ -21,6 +21,7 @@ export interface EntradaAmortizar {
 
 function atualizarTelas(colaboradorId: string) {
   revalidatePath("/ferias");
+  revalidatePath("/previsao-ferias");
   revalidatePath("/calendario");
   revalidatePath("/dashboard");
   revalidatePath("/colaboradores");
