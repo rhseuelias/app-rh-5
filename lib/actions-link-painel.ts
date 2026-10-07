@@ -24,6 +24,7 @@ const SEM_LOGIN: RespostaLinkPainel = { ok: false, token: null, selecionados: nu
 const ERRO_TABELA: RespostaLinkPainel = {
   ok: false,
   token: null,
+  selecionados: null,
   mensagem: "Não consegui. Rode o arquivo migration_020_link_painel_integracao.sql no Supabase e tente de novo.",
 };
 
