@@ -11,26 +11,41 @@ function diasAte(hoje: string, alvo: string): number {
   return Math.round((t(alvo) - t(hoje)) / 86400000);
 }
 
+// Etiqueta de situação: escura = vencida, pêssego = vence em até 30 dias, branca = no prazo
 function Situacao({ hoje, vencimento }: { hoje: string; vencimento: string }) {
   const d = diasAte(hoje, vencimento);
   const plural = (n: number) => `${n} ${n === 1 ? "dia" : "dias"}`;
+  const base = "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold";
   if (d < 0)
-    return <span className="mt-1 inline-flex rounded-full bg-[#2B2118] px-3 py-1 text-sm font-bold text-white">▲ Vencida há {plural(-d)}</span>;
-  if (d <= 30)
     return (
-      <span className="mt-1 inline-flex rounded-full bg-[#e6ded3] px-3 py-1 text-sm font-bold text-[#2B2118] ring-2 ring-inset ring-[#2B2118]">
-        ◆ {d === 0 ? "Vence hoje" : `Vence em ${plural(d)}`}
+      <span className={`${base} bg-[#2B2118] text-white`}>
+        <span className="h-[5px] w-[5px] rounded-full bg-[#FBB26E]" />
+        Vencida há {plural(-d)}
       </span>
     );
-  return <span className="mt-1 inline-flex rounded-full border border-gray-300 bg-white px-3 py-1 text-sm font-bold text-gray-600">✓ No prazo</span>;
+  if (d <= 30)
+    return (
+      <span className={`${base} bg-[#FDE0C0] text-[#7A3A00]`}>
+        <span className="h-[5px] w-[5px] rounded-full bg-current" />
+        {d === 0 ? "Vence hoje" : `Vence em ${plural(d)}`}
+      </span>
+    );
+  return (
+    <span className={`${base} border border-[#DDD3C7] bg-white text-[#2B2118]`}>
+      <span className="h-[5px] w-[5px] rounded-full bg-current" />
+      No prazo
+    </span>
+  );
 }
 
 function Kpi({ titulo, valor, sub }: { titulo: string; valor: string | number; sub: string }) {
   return (
-    <div className="min-w-0 border-l border-gray-200 px-6 py-5 first:border-l-0">
-      <p className="text-sm font-bold uppercase tracking-wide text-gray-500">{titulo}</p>
-      <p className="mt-1 text-4xl font-bold text-[#2B2118]">{valor}</p>
-      <p className="mt-1 break-words text-base text-gray-600">{sub}</p>
+    <div className="min-w-0 border-l border-[#ECE4DA] px-4 py-3 first:border-l-0">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">{titulo}</p>
+      <p className="mt-1 flex items-baseline gap-2">
+        <span className="font-display text-[22px] font-semibold leading-none text-[#2B2118]">{valor}</span>
+        <span className="min-w-0 truncate text-[11.5px] text-slate-600">{sub}</span>
+      </p>
     </div>
   );
 }
@@ -38,22 +53,22 @@ function Kpi({ titulo, valor, sub }: { titulo: string; valor: string | number; s
 function Tabela({ linhas, hrefLimite, ordenado, hoje }: { linhas: LinhaPrevisao[]; hrefLimite: string; ordenado: boolean; hoje: string }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1100px] text-[19px]">
+      <table className="w-full min-w-[860px] text-[12px]">
         <thead>
-          <tr className="text-left text-base font-bold text-gray-600 border-b border-gray-200">
-            <th className="px-6 py-3">Empregado</th>
-            <th className="px-3 py-3 text-right">Código</th>
-            <th className="px-3 py-3">Admissão</th>
-            <th className="px-3 py-3">Pér. Aquisit.</th>
-            <th className="px-3 py-3">Venc. Férias</th>
-            <th className="px-3 py-3 text-right">Dias</th>
-            <th className="px-3 py-3">Prev. Férias</th>
-            <th className="px-3 py-3">
+          <tr className="text-left text-[10.5px] font-semibold text-slate-600">
+            <th className="px-4 py-2">Empregado</th>
+            <th className="px-2 py-2 text-right">Código</th>
+            <th className="px-2 py-2">Admissão</th>
+            <th className="px-2 py-2">Pér. Aquisit.</th>
+            <th className="px-2 py-2">Venc. Férias</th>
+            <th className="px-2 py-2 text-right">Dias</th>
+            <th className="px-2 py-2">Prev. Férias</th>
+            <th className="px-2 py-2 pr-4">
               <Link
                 href={hrefLimite}
                 scroll={false}
                 title={ordenado ? "Voltar à ordem por nome" : "Ordenar pela Data Limite mais próxima"}
-                className={`inline-flex items-center gap-1 hover:underline ${ordenado ? "text-[#2B2118] font-bold" : ""}`}
+                className={`inline-flex items-center gap-1 hover:underline ${ordenado ? "font-bold text-[#2B2118]" : ""}`}
               >
                 Data Limite {ordenado ? "▲" : "↕"}
               </Link>
@@ -62,15 +77,20 @@ function Tabela({ linhas, hrefLimite, ordenado, hoje }: { linhas: LinhaPrevisao[
         </thead>
         <tbody>
           {linhas.map((l, i) => (
-            <tr key={i} className="border-b border-gray-100 last:border-0">
-              <td className="px-6 py-4 font-bold">{l.nome}</td>
-              <td className="px-3 py-4 text-right">{l.codigo}</td>
-              <td className="px-3 py-4">{fDMA(l.admissao)}</td>
-              <td className="px-3 py-4">{fDMA(l.periodoInicio)}</td>
-              <td className="px-3 py-4">{fDMA(l.vencimento)}<br /><Situacao hoje={hoje} vencimento={l.vencimento} /></td>
-              <td className="px-3 py-4 text-right text-xl font-bold">{fDias(l.dias)}</td>
-              <td className="px-3 py-4">{fDMA(l.previsao)}</td>
-              <td className="px-3 py-4 font-bold">{fDMA(l.limite)}</td>
+            <tr key={i} className="border-t border-[#ECE4DA] leading-snug">
+              <td className="px-4 py-1.5 text-[11.5px] font-bold uppercase tracking-[0.01em]">{l.nome}</td>
+              <td className="px-2 py-1.5 text-right">{l.codigo}</td>
+              <td className="whitespace-nowrap px-2 py-1.5">{fDMA(l.admissao)}</td>
+              <td className="whitespace-nowrap px-2 py-1.5">{fDMA(l.periodoInicio)}</td>
+              <td className="px-2 py-1.5">
+                <div className="flex items-center gap-2 whitespace-nowrap">
+                  <span>{fDMA(l.vencimento)}</span>
+                  <Situacao hoje={hoje} vencimento={l.vencimento} />
+                </div>
+              </td>
+              <td className="px-2 py-1.5 text-right">{fDias(l.dias)}</td>
+              <td className="whitespace-nowrap px-2 py-1.5">{fDMA(l.previsao)}</td>
+              <td className="whitespace-nowrap px-2 py-1.5 pr-4 font-bold">{fDMA(l.limite)}</td>
             </tr>
           ))}
         </tbody>
@@ -79,13 +99,13 @@ function Tabela({ linhas, hrefLimite, ordenado, hoje }: { linhas: LinhaPrevisao[
   );
 }
 
-function Chip({ href, ativo, children }: { href: string; ativo: boolean; children: React.ReactNode }) {
+function Chip({ href, ativo, pequeno, children }: { href: string; ativo: boolean; pequeno?: boolean; children: React.ReactNode }) {
   return (
     <Link
       href={href}
       scroll={false}
-      className={`rounded-full border px-5 py-3 text-lg font-bold whitespace-nowrap ${
-        ativo ? "bg-[#2B2118] text-white border-[#2B2118]" : "bg-white text-[#2B2118] border-gray-300 hover:bg-gray-50"
+      className={`rounded-full border font-semibold whitespace-nowrap ${pequeno ? "px-2.5 py-1 text-[10.5px]" : "px-3 py-1.5 text-[11.5px]"} ${
+        ativo ? "border-[#2B2118] bg-[#2B2118] text-white" : "border-[#ECE4DA] bg-white text-[#2B2118] hover:bg-gray-50"
       }`}
     >
       {children}
@@ -135,33 +155,29 @@ export default async function PrevisaoFeriasPage({
     .filter((l) => diasAte(dados.hoje, l.vencimento) >= 0)
     .sort((a, b) => a.vencimento.localeCompare(b.vencimento))[0];
 
+  const btn =
+    "rounded-lg border border-[#ECE4DA] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#2B2118] hover:bg-gray-50";
+
   return (
-    <div className="ferias-leg space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="space-y-3.5 text-[12px]">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold text-[#2B2118]">Previsão de Vencimento de Férias</h1>
-          <p className="text-lg text-gray-600 mt-1">
+          <h1 className="text-[22px] font-semibold leading-tight text-[#2B2118]">Previsão de vencimento de férias</h1>
+          <p className="mt-0.5 text-[12px] text-slate-600">
             Posição em {fDMA(dados.hoje)} — {dados.total} registro(s). Mesmo modelo do relatório da contabilidade.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 print:hidden">
-          <BotaoPdf
-            href={`/api/ferias/previsao/pdf${qs}`}
-            titulo="Previsão de Vencimento de Férias — PDF"
-            className="rounded-lg border border-gray-300 bg-white px-5 py-3 text-lg font-bold text-[#2B2118] hover:bg-gray-50"
-          >
+          <BotaoPdf href={`/api/ferias/previsao/pdf${qs}`} titulo="Previsão de Vencimento de Férias — PDF" className={btn}>
             Ver / Baixar PDF
           </BotaoPdf>
-          <a
-            href={`/api/ferias/previsao/excel${qs}`}
-            className="rounded-lg border border-gray-300 bg-white px-5 py-3 text-lg font-bold text-[#2B2118] hover:bg-gray-50"
-          >
+          <a href={`/api/ferias/previsao/excel${qs}`} className={btn}>
             Baixar Excel
           </a>
         </div>
       </div>
 
-      <section className="grid grid-cols-2 overflow-hidden rounded-xl border border-gray-200 bg-white md:grid-cols-4 print:hidden">
+      <section className="grid grid-cols-2 overflow-hidden rounded-xl border border-[#ECE4DA] bg-white md:grid-cols-4 print:hidden">
         <Kpi titulo="Registros" valor={dados.total} sub="nesta seleção" />
         <Kpi titulo="Vencidas" valor={vencidas} sub="com vencimento passado" />
         <Kpi titulo="Vencem em 30 dias" valor={em30} sub="precisam de atenção" />
@@ -169,22 +185,21 @@ export default async function PrevisaoFeriasPage({
       </section>
 
       {/* Escolha automática: clicou, já mostra (sem botão "Filtrar") */}
-      <div className="space-y-3 print:hidden">
-        <div className="flex flex-wrap gap-2">
-          <Chip href={`/previsao-ferias${ordenado ? "?ordem=limite" : ""}`} ativo={!empresa && !unidade}>
-            Todas as empresas
+      <div className="flex flex-wrap items-center gap-1.5 print:hidden">
+        <Chip href={`/previsao-ferias${ordenado ? "?ordem=limite" : ""}`} ativo={!empresa && !unidade}>
+          Todas as empresas
+        </Chip>
+        {opcoes.map((e) => (
+          <Chip key={e.id} href={`/previsao-ferias?empresa=${e.id}${ordenado ? "&ordem=limite" : ""}`} ativo={e.id === empresa && !unidade}>
+            {e.unidades.length >= 2 ? `${e.nome} — todas as unidades` : e.nome}
           </Chip>
-          {opcoes.map((e) => (
-            <Chip key={e.id} href={`/previsao-ferias?empresa=${e.id}${ordenado ? "&ordem=limite" : ""}`} ativo={e.id === empresa && !unidade}>
-              {e.unidades.length >= 2 ? `${e.nome} — todas as unidades` : e.nome}
-            </Chip>
-          ))}
-        </div>
+        ))}
         {(empresa ? (empresaAtual && empresaAtual.unidades.length >= 2 ? [empresaAtual] : []) : comUnidades).map((e) => (
-          <div key={e.id} className="flex flex-wrap items-center gap-2">
-            <span className="text-base font-bold text-gray-600 mr-1">Unidades de {e.nome}:</span>
+          <div key={e.id} className="flex flex-wrap items-center gap-1.5">
+            <span className="mx-1.5 h-[18px] w-px bg-[#ECE4DA]" />
+            <span className="text-[11.5px] font-semibold text-slate-600">Unidades de {e.nome}:</span>
             {e.unidades.map((u) => (
-              <Chip key={u.id} href={`/previsao-ferias?unidade=${u.id}${ordenado ? "&ordem=limite" : ""}`} ativo={u.id === unidade}>
+              <Chip key={u.id} pequeno href={`/previsao-ferias?unidade=${u.id}${ordenado ? "&ordem=limite" : ""}`} ativo={u.id === unidade}>
                 {u.nome}
               </Chip>
             ))}
@@ -192,31 +207,31 @@ export default async function PrevisaoFeriasPage({
         ))}
       </div>
 
-      {dados.grupos.length === 0 && <p className="text-lg text-gray-600">Nenhum colaborador encontrado.</p>}
+      {dados.grupos.length === 0 && <p className="text-[12px] text-slate-600">Nenhum colaborador encontrado.</p>}
 
       {dados.grupos.map((g) => (
-        <section key={g.empresaId ?? "sem"} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-          <h2 className="px-6 py-4 text-2xl font-bold text-[#2B2118] bg-[#f3eee8]">
-            Empresa: {g.empresaNome}
-            {g.cnpj ? ` - CNPJ: ${formatarCNPJ(g.cnpj)}` : ""}
+        <section key={g.empresaId ?? "sem"} className="overflow-hidden rounded-xl border border-[#ECE4DA] bg-white">
+          <h2 className="flex items-center justify-between bg-[#f3eee8] px-4 py-2 font-sans text-[11.5px] font-bold uppercase tracking-wide text-[#2B2118]">
+            <span>
+              Empresa: {g.empresaNome}
+              {g.cnpj ? ` — CNPJ: ${formatarCNPJ(g.cnpj)}` : ""}
+            </span>
+            <span className="font-medium normal-case tracking-normal text-slate-600">{g.linhas.length} registro(s)</span>
           </h2>
           {g.unidades.length > 0 ? (
             g.unidades.map((u) => (
-              <div key={u.unidadeId ?? "sem"} className="border-t border-gray-200 first:border-t-0">
-                <h3 className="px-6 py-3 text-xl font-bold text-[#2B2118] bg-[#faf7f3]">
+              <div key={u.unidadeId ?? "sem"} className="border-t border-[#ECE4DA] first:border-t-0">
+                <h3 className="bg-[#faf7f3] px-4 py-1.5 font-sans text-[11px] font-semibold uppercase tracking-wide text-[#2B2118]">
                   Unidade: {u.unidadeNome}
-                  {u.cnpj ? ` - CNPJ: ${formatarCNPJ(u.cnpj)}` : ""}
+                  {u.cnpj ? ` — CNPJ: ${formatarCNPJ(u.cnpj)}` : ""}
+                  <span className="ml-2 font-medium normal-case tracking-normal text-slate-600">{u.linhas.length} registro(s)</span>
                 </h3>
                 <Tabela linhas={u.linhas} hrefLimite={hrefLimite} ordenado={ordenado} hoje={dados.hoje} />
-                <p className="px-6 py-3 text-base text-gray-600">{u.linhas.length} registro(s) nesta unidade</p>
               </div>
             ))
           ) : (
             <Tabela linhas={g.linhas} hrefLimite={hrefLimite} ordenado={ordenado} hoje={dados.hoje} />
           )}
-          <p className="px-6 py-3 text-base font-bold text-gray-700 border-t border-gray-100">
-            {g.linhas.length} registro(s) em {g.empresaNome}
-          </p>
         </section>
       ))}
     </div>
