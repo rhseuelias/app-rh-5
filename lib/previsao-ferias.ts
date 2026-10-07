@@ -61,6 +61,8 @@ interface PerRow {
   fim: string;
   limite_concessao: string;
   status: string;
+  dias_direito?: number | null;
+  dias_direito_base?: number | null;
 }
 interface FerRow {
   colaborador_id: string;
@@ -93,6 +95,14 @@ interface PeriodoMin {
   fim: string;
   limite_concessao: string;
   status: string;
+  /** "Dias Direito" do relatório das barbearias (BSE); vazio = calcula pelo saldo */
+  dias_direito?: number | null;
+  dias_direito_base?: number | null;
+}
+
+/** 12,5 → "12,5" · 30 → "30" */
+export function fDias(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(n).replace(".", ",");
 }
 interface FeriasMin {
   periodo_aquisitivo_id: string | null;
@@ -114,12 +124,13 @@ export function calcularPrevisaoColaborador(
 ): LinhaPrevisao | null {
   if (!c.data_admissao) return null;
   // saldo "da contabilidade": só conta o que já foi baixado (concluído) + abono vendido
-  const saldoDe = (periodoId: string): number => {
+  const usadoDe = (periodoId: string): number => {
     const lista = ferias.filter((f) => f.periodo_aquisitivo_id === periodoId);
     const gozados = lista.filter((f) => f.status === "concluido").reduce((s, f) => s + (f.dias || 0), 0);
     const abono = lista.some((f) => f.vendeu_abono) ? 10 : 0;
-    return Math.max(0, 30 - gozados - abono);
+    return gozados + abono;
   };
+  const saldoDe = (periodoId: string): number => Math.max(0, 30 - usadoDe(periodoId));
   const dele = periodos.slice().sort((a, b) => (a.inicio < b.inicio ? -1 : 1));
   const foco = dele.find((p) => {
     if (p.status === "gozado") return false;
@@ -131,7 +142,13 @@ export function calcularPrevisaoColaborador(
     inicio = dia(foco.inicio);
     fim = dia(foco.fim);
     limite = dia(foco.limite_concessao);
-    dias = fim < hoje ? saldoDe(foco.id) : 0;
+    if (foco.dias_direito != null) {
+      // vem do relatório das barbearias; abate só o que foi baixado depois dele
+      const depois = Math.max(0, usadoDe(foco.id) - (foco.dias_direito_base ?? 0));
+      dias = Math.max(0, Number(foco.dias_direito) - depois);
+    } else {
+      dias = fim < hoje ? saldoDe(foco.id) : 0;
+    }
   } else {
     inicio = dele.length ? somarDias(dia(dele[dele.length - 1].fim), 1) : dia(c.data_admissao);
     fim = fimDoPeriodo(inicio);
@@ -182,7 +199,7 @@ export async function buscarPrevisaoVencimento(filtroEmpresa?: string, filtroUni
       .neq("status", "desligado"),
     supabase.from("empresas").select("id, nome, cnpj"),
     supabase.from("unidades").select("id, nome, cnpj, empresa_id"),
-    supabase.from("periodos_aquisitivos").select("id, colaborador_id, inicio, fim, limite_concessao, status"),
+    supabase.from("periodos_aquisitivos").select("*"),
     supabase
       .from("ferias")
       .select("colaborador_id, periodo_aquisitivo_id, dias, status, vendeu_abono")

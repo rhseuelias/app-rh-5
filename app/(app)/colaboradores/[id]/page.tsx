@@ -33,7 +33,7 @@ import GerarPrimeiroPeriodoAquisitivoBotao from "@/components/GerarPrimeiroPerio
 import GerarPrevisaoPdfBotao from "@/components/GerarPrevisaoPdfBotao";
 import ExcluirHistoricoFeriasBotao from "@/components/ExcluirHistoricoFeriasBotao";
 import { autoGerarProximosPeriodosVencidos } from "@/lib/actions";
-import { calcularPrevisaoColaborador } from "@/lib/previsao-ferias";
+import { calcularPrevisaoColaborador, fDias } from "@/lib/previsao-ferias";
 import { hojeEmBrasilia } from "@/lib/ferias-regras";
 import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
 
@@ -706,7 +706,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
               </div>
               <div>
                 <dt className="text-[11px] uppercase tracking-wide text-slate-400">Dias a gozar</dt>
-                <dd className="text-slate-700 font-semibold">{previsao.dias}</dd>
+                <dd className="text-slate-700 font-semibold">{fDias(previsao.dias)}</dd>
               </div>
               <div>
                 <dt className="text-[11px] uppercase tracking-wide text-slate-400">Prev. férias</dt>

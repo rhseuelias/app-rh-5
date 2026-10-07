@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { buscarOpcoesPrevisao, buscarPrevisaoVencimento, type LinhaPrevisao } from "@/lib/previsao-ferias";
+import { buscarOpcoesPrevisao, buscarPrevisaoVencimento, fDias, type LinhaPrevisao } from "@/lib/previsao-ferias";
 import { fDMA } from "@/lib/ferias-regras";
 import { formatarCNPJ } from "@/lib/formatadores";
 import BotaoPdf from "@/components/BotaoPdf";
@@ -30,7 +30,7 @@ function Tabela({ linhas }: { linhas: LinhaPrevisao[] }) {
               <td className="px-2 py-2">{fDMA(l.admissao)}</td>
               <td className="px-2 py-2">{fDMA(l.periodoInicio)}</td>
               <td className="px-2 py-2">{fDMA(l.vencimento)}</td>
-              <td className="px-2 py-2 text-right font-semibold">{l.dias}</td>
+              <td className="px-2 py-2 text-right font-semibold">{fDias(l.dias)}</td>
               <td className="px-2 py-2">{fDMA(l.previsao)}</td>
               <td className="px-2 py-2">{fDMA(l.limite)}</td>
             </tr>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { createClient } from "@/lib/supabase-server";
-import { buscarPrevisaoVencimento } from "@/lib/previsao-ferias";
+import { buscarPrevisaoVencimento, fDias } from "@/lib/previsao-ferias";
 import { disposicaoPdf } from "@/lib/pdf-disposicao";
 import { fDMA } from "@/lib/ferias-regras";
 import { formatarCNPJ } from "@/lib/formatadores";
@@ -93,7 +93,7 @@ export async function GET(req: Request) {
         novaPagina();
         cabecalhoColunas();
       }
-      const vals = [l.nome, l.codigo, fDMA(l.admissao), fDMA(l.periodoInicio), fDMA(l.vencimento), String(l.dias), fDMA(l.previsao), fDMA(l.limite)];
+      const vals = [l.nome, l.codigo, fDMA(l.admissao), fDMA(l.periodoInicio), fDMA(l.vencimento), fDias(l.dias), fDMA(l.previsao), fDMA(l.limite)];
       let x = M;
       COLS.forEach((c, i) => {
         const w = c.w * UTIL;

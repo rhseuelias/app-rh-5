@@ -68,7 +68,7 @@ export async function GET(req: Request) {
           fDMA(l.admissao),
           fDMA(l.periodoInicio),
           fDMA(l.vencimento),
-          l.dias,
+          l.dias, // número (aceita 12,5)
           fDMA(l.previsao),
           fDMA(l.limite),
         ]);
