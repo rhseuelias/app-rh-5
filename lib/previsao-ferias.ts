@@ -133,9 +133,15 @@ export function calcularPrevisaoColaborador(
     return gozados + abono;
   };
   const saldoDe = (periodoId: string): number => Math.max(0, 30 - usadoDe(periodoId));
+  // tudo já programado (gozado + aprovado/planejado + abono): o período está "quitado", como na contabilidade
+  const programadoDe = (periodoId: string): number => {
+    const lista = ferias.filter((f) => f.periodo_aquisitivo_id === periodoId);
+    return lista.reduce((s, f) => s + (f.dias || 0), 0) + (lista.some((f) => f.vendeu_abono) ? 10 : 0);
+  };
   const dele = periodos.slice().sort((a, b) => (a.inicio < b.inicio ? -1 : 1));
   const foco = dele.find((p) => {
     if (p.status === "gozado") return false;
+    if (programadoDe(p.id) >= 30) return false;
     // período já encerrado e sem saldo: está quitado mesmo que não esteja marcado
     return !(dia(p.fim) < hoje && saldoDe(p.id) <= 0);
   });
