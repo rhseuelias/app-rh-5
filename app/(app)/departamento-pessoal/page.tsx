@@ -33,6 +33,17 @@ export default function DepartamentoPessoalPage() {
             empresas, com colunas que você mesmo cria e reordena.
           </span>
         </Link>
+
+        <Link
+          href="/departamento-pessoal/vale-transporte"
+          className="card hover:border-brand-300 transition-colors flex flex-col gap-2"
+        >
+          <span className="text-2xl">🚌</span>
+          <span className="text-lg font-bold text-slate-900">Vale Transporte</span>
+          <span className="text-sm text-slate-500">
+            Lançamento e controle de recarga por unidade: BHBUS, SEMPARAR, ÓTIMO e CAJU, com total, saldo e carga de cada cartão.
+          </span>
+        </Link>
       </div>
     </div>
   );
