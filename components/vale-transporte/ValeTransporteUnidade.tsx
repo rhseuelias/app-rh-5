@@ -37,6 +37,8 @@ export interface OpcaoColaborador {
 
 interface Props {
   competencia: string;
+  /** Nome do mês, ex.: "Outubro/2026" */
+  rotuloMes: string;
   grupo: string;
   linhas: LinhaTela[];
   colaboradores: OpcaoColaborador[];
@@ -47,9 +49,9 @@ interface Props {
 const campo =
   "w-full min-w-[56px] rounded-md border border-stone-300 bg-white px-2 py-1 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-400";
 
-export default function ValeTransporteUnidade({ competencia, grupo, linhas, colaboradores, temMesAnterior, linkExcel }: Props) {
+export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, linhas, colaboradores, temMesAnterior, linkExcel }: Props) {
   const primeira = OPERADORAS.find((o) => linhas.some((l) => l.operadora === o)) ?? "BHBUS";
-  const [abertas, setAbertas] = useState<Record<string, boolean>>({ [primeira]: true });
+  const [ativa, setAtiva] = useState<OperadoraVT>(primeira);
   const [diasMes, setDiasMes] = useState("26");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [pendente, iniciar] = useTransition();
@@ -80,9 +82,18 @@ export default function ValeTransporteUnidade({ competencia, grupo, linhas, cola
     });
   }
 
+  const corAtiva = COR_OPERADORA[ativa];
+
   return (
-    <div className="space-y-4">
-      <div className="card flex flex-wrap items-end justify-between gap-4 !p-4">
+    <section className="card overflow-hidden !p-0">
+      {/* Cabeçalho: unidade, mês e controles */}
+      <div className="flex flex-wrap items-end justify-between gap-4 px-6 pb-4 pt-6">
+        <div>
+          <h2 className="text-2xl font-semibold text-slate-900">{grupo}</h2>
+          <p className="text-sm text-stone-600">
+            {new Set(linhas.map((l) => l.colaborador_id)).size} colaborador(es) com cartão · {rotuloMes}
+          </p>
+        </div>
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="label" htmlFor="dias-mes">
@@ -104,10 +115,10 @@ export default function ValeTransporteUnidade({ competencia, grupo, linhas, cola
               Copiar cartões do mês anterior
             </button>
           )}
+          <a href={linkExcel} className="btn-primary no-underline">
+            Exportar Excel
+          </a>
         </div>
-        <a href={linkExcel} className="btn-secondary no-underline">
-          Exportar Excel
-        </a>
         {msg && (
           <p role="status" className={`basis-full text-sm font-medium ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>
             {msg.texto}
@@ -115,76 +126,82 @@ export default function ValeTransporteUnidade({ competencia, grupo, linhas, cola
         )}
       </div>
 
-      {OPERADORAS.map((op) => (
+      {/* Abas das operadoras */}
+      <div role="tablist" aria-label="Operadoras" className="flex flex-wrap gap-1 border-b border-brand-200/70 px-6">
+        {OPERADORAS.map((op) => {
+          const doOp = linhas.filter((l) => l.operadora === op);
+          const s = somaVT(doOp);
+          const selecionada = op === ativa;
+          const c = COR_OPERADORA[op];
+          return (
+            <button
+              key={op}
+              type="button"
+              role="tab"
+              id={`aba-vt-${op}`}
+              aria-selected={selecionada}
+              aria-controls="painel-vt"
+              onClick={() => setAtiva(op)}
+              className={`-mb-px flex flex-col items-start rounded-t-lg border-b-4 px-5 py-3 text-left ${
+                selecionada ? `${c.fundo} ${c.texto} border-current` : "border-transparent text-stone-700 hover:bg-brand-50"
+              }`}
+            >
+              <span className="text-base font-bold">{ROTULO_OPERADORA[op]}</span>
+              <span className={`text-xs ${selecionada ? "" : "text-stone-500"}`}>
+                {doOp.length} cartão{doOp.length !== 1 ? "ões" : ""} · {moedaVT(s.carga)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div id="painel-vt" role="tabpanel" aria-labelledby={`aba-vt-${ativa}`}>
         <SecaoOperadora
-          key={op}
-          operadora={op}
+          key={ativa}
+          operadora={ativa}
+          cor={corAtiva}
           competencia={competencia}
           grupo={grupo}
-          linhas={linhas.filter((l) => l.operadora === op)}
+          linhas={linhas.filter((l) => l.operadora === ativa)}
           colaboradores={colaboradores}
-          aberta={!!abertas[op]}
-          alternar={() => setAbertas((a) => ({ ...a, [op]: !a[op] }))}
           diasPadrao={diasMes}
         />
-      ))}
-    </div>
+      </div>
+    </section>
   );
 }
 
 function SecaoOperadora({
   operadora,
+  cor,
   competencia,
   grupo,
   linhas,
   colaboradores,
-  aberta,
-  alternar,
   diasPadrao,
 }: {
   operadora: OperadoraVT;
+  cor: { fundo: string; texto: string; faixa: string };
   competencia: string;
   grupo: string;
   linhas: LinhaTela[];
   colaboradores: OpcaoColaborador[];
-  aberta: boolean;
-  alternar: () => void;
   diasPadrao: string;
 }) {
-  const cor = COR_OPERADORA[operadora];
   const soma = somaVT(linhas);
   const [adicionando, setAdicionando] = useState(false);
 
   return (
-    <section className={`overflow-hidden rounded-2xl border border-brand-200/70 bg-white shadow-card`}>
-      <button
-        type="button"
-        onClick={alternar}
-        aria-expanded={aberta}
-        className={`flex w-full flex-wrap items-center justify-between gap-2 px-5 py-3.5 text-left ${cor.fundo}`}
-      >
-        <span className="flex items-center gap-3">
-          <span className={`text-base font-bold ${cor.texto}`}>
-            {aberta ? "▾" : "▸"} {ROTULO_OPERADORA[operadora]}
-          </span>
-          <span className="text-xs text-stone-600">
-            {linhas.length} cartão{linhas.length !== 1 ? "ões" : ""}
-          </span>
-        </span>
-        <span className={`text-sm font-semibold ${cor.texto}`}>
-          Total {moedaVT(soma.total)} · Saldo {moedaVT(soma.saldo)} · Carga {moedaVT(soma.carga)}
-        </span>
-      </button>
-
-      {aberta && (
+    <div>
+      <div>
         <div>
           {operadora === "CAJU" && (
-            <p className="border-b border-brand-100 bg-blue-50/40 px-5 py-2 text-xs text-stone-600">
+            <p className="border-b border-brand-100 bg-blue-50/40 px-6 py-3 text-sm text-stone-600">
               No CAJU o Total soma transporte + alimentação + prêmio. Se você também lança alimentação e prêmio no Controle de Benefícios, não repita aqui para não contar duas vezes.
             </p>
           )}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-sm">
+            <table className={`w-full text-sm ${operadora === "CAJU" ? "min-w-[1040px]" : "min-w-[900px]"}`}>
               <thead>
                 <tr className="bg-brand-50/60 text-left text-[11px] font-semibold uppercase tracking-wide text-stone-600">
                   <th className="px-3 py-2">Nome</th>
@@ -215,7 +232,7 @@ function SecaoOperadora({
               </tbody>
               {linhas.length > 0 && (
                 <tfoot>
-                  <tr className="bg-brand-50/60 font-semibold">
+                  <tr className={`border-t-2 border-current font-semibold ${cor.fundo} ${cor.texto}`}>
                     <td className="px-3 py-2.5" colSpan={operadora === "CAJU" ? 8 : 6}>
                       TOTAL — {ROTULO_OPERADORA[operadora]} · {grupo}
                     </td>
@@ -229,7 +246,7 @@ function SecaoOperadora({
             </table>
           </div>
 
-          <div className="border-t border-brand-100 px-5 py-3">
+          <div className="border-t border-brand-100 px-6 py-4">
             {adicionando ? (
               <FormNovoCartao
                 operadora={operadora}
@@ -245,8 +262,8 @@ function SecaoOperadora({
             )}
           </div>
         </div>
-      )}
-    </section>
+      </div>
+    </div>
   );
 }
 

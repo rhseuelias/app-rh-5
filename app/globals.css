@@ -84,3 +84,8 @@ h2 {
 .ferias-leg h3 {
   font-family: "Atkinson Hyperlegible", Verdana, ui-sans-serif, system-ui, sans-serif;
 }
+
+/* Tela Vale Transporte: usa a largura toda da tela (as outras telas continuam como estão) */
+main:has(> .vt-largo) {
+  max-width: 1760px;
+}

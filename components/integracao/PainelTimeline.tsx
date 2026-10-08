@@ -694,6 +694,12 @@ function Detalhe({ l, somenteLeitura }: { l: LinhaTimeline; somenteLeitura: bool
           <Link href={abrirFicha} style={botao}>
             Abrir ficha
           </Link>
+          <a href={`/api/ficha-admissao/${l.colaboradorId}/pdf`} style={botao} title="Baixar a ficha de admissão em PDF">
+            Ficha de admissão (PDF)
+          </a>
+          <a href={`/api/ficha-admissao/${l.colaboradorId}/excel`} style={botao} title="Baixar a ficha de admissão em Excel">
+            Ficha de admissão (Excel)
+          </a>
         </div>
         )}
       </div>

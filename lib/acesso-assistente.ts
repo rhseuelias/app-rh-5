@@ -67,3 +67,26 @@ export async function assistenteSemAcessoAoContrato(colaboradorId: string): Prom
   const supabase = createClient();
   return !(await assistentePodeVerContratoRemuneracao(supabase, colaboradorId));
 }
+
+/**
+ * Ficha de admissão: a assistente pode gerar (PDF/Excel) para qualquer colaborador que esteja
+ * no Processo de Integração (em integração ou em experiência, não arquivado).
+ * O "Salário base" continua sendo omitido da ficha dela depois da etapa Contrato
+ * (regra em lib/ficha-admissao.ts), então só os dados cadastrais aparecem.
+ */
+export async function assistentePodeGerarFicha(supabase: Supabase, colaboradorId: string): Promise<boolean> {
+  const { data: processo } = await supabase
+    .from("processos_integracao")
+    .select("id, arquivado, status_geral")
+    .eq("colaborador_id", colaboradorId)
+    .maybeSingle();
+  if (!processo || processo.arquivado) return false;
+  return processo.status_geral === "integracao" || processo.status_geral === "experiencia";
+}
+
+/** true = quem está logado é a assistente E ela não pode gerar a ficha desse colaborador (fora do processo). */
+export async function assistenteSemAcessoAFicha(colaboradorId: string): Promise<boolean> {
+  if (!(await souAssistente())) return false;
+  const supabase = createClient();
+  return !(await assistentePodeGerarFicha(supabase, colaboradorId));
+}

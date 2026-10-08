@@ -36,6 +36,7 @@ import { autoGerarProximosPeriodosVencidos } from "@/lib/actions";
 import { calcularPrevisaoColaborador, fDias } from "@/lib/previsao-ferias";
 import { hojeEmBrasilia } from "@/lib/ferias-regras";
 import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
+import { assistentePodeGerarFicha } from "@/lib/acesso-assistente";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +144,8 @@ export default async function ColaboradorPage({ params }: { params: { id: string
   // assistente: "Contrato e remuneração (CLT)" só aparece enquanto o colaborador está no processo
   // de integração e a etapa Contrato não foi concluída (para os demais perfis é sempre true)
   const contratoLiberado = await contratoCLTLiberadoParaUsuario(params.id);
+  // a assistente também baixa a ficha de admissão (sem o salário) de quem está no processo de integração
+  const podeBaixarFicha = contratoLiberado || (await assistentePodeGerarFicha(supabase, params.id));
 
   const [
     { data: colaborador },
@@ -564,7 +567,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
                   <AtalhoAcao href="#contrato-pj" icone="🔄" texto="Renovar contrato" />
                   <AtalhoAcao href="#contrato-pj" icone="📑" texto="Emitir contrato" />
                 </>
-              ) : contratoLiberado ? (
+              ) : podeBaixarFicha ? (
                 <>
                   <AtalhoAcao href={`/api/ficha-admissao/${c.id}/pdf`} icone="⬇️" texto="Ficha de admissão (PDF)" />
                   <AtalhoAcao href={`/api/ficha-admissao/${c.id}/excel`} icone="📊" texto="Ficha de admissão (Excel)" />

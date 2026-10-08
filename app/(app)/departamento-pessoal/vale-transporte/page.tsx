@@ -4,9 +4,6 @@ import type { Colaborador, Empresa, Unidade } from "@/types/db";
 import { compararGrupos } from "@/lib/folha-calculos";
 import { rotuloCompetencia } from "@/lib/beneficios-calculos";
 import {
-  COR_OPERADORA,
-  OPERADORAS,
-  ROTULO_OPERADORA,
   competenciaAtualSP,
   deslocarCompetencia,
   elegivelVT,
@@ -17,6 +14,7 @@ import {
 } from "@/lib/vale-transporte";
 import { copiaAutomaticaVT } from "@/lib/vt-copia-mes-anterior";
 import ValeTransporteUnidade, { type LinhaTela } from "@/components/vale-transporte/ValeTransporteUnidade";
+import SeletorUnidadeVT from "@/components/vale-transporte/SeletorUnidadeVT";
 
 export const dynamic = "force-dynamic";
 
@@ -125,11 +123,10 @@ export default async function ValeTransportePage({
 
   const linhasEscolhido = linhasPorGrupo.get(escolhido) ?? [];
   const somaEscolhido = somaVT(linhasEscolhido);
-  const porOperadora = OPERADORAS.map((op) => ({
-    op,
-    qtd: linhasEscolhido.filter((l) => l.operadora === op).length,
-    soma: somaVT(linhasEscolhido.filter((l) => l.operadora === op)),
-  }));
+  const opcoesUnidade = grupos.map((g) => {
+    const lista = linhasPorGrupo.get(g) ?? [];
+    return { nome: g, carga: lista.length > 0 ? moedaVT(somaVT(lista).carga) : "—" };
+  });
 
   const href = (comp: string, unidade: string) =>
     `/departamento-pessoal/vale-transporte?competencia=${comp}&unidade=${encodeURIComponent(unidade)}`;
@@ -137,7 +134,7 @@ export default async function ValeTransportePage({
   const linkExcelTodas = `/api/vale-transporte/excel?competencia=${competencia}`;
 
   return (
-    <div className="space-y-5">
+    <div className="vt-largo space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <Link href="/departamento-pessoal" className="text-xs font-medium text-brand-600 hover:underline">
@@ -162,55 +159,19 @@ export default async function ValeTransportePage({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-start gap-5">
-        <nav aria-label="Unidades" className="card w-full shrink-0 space-y-1 !p-3 md:w-64">
-          <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-stone-500">Unidades</div>
-          {grupos.length === 0 && <p className="px-3 py-2 text-sm text-stone-500">Nenhuma unidade encontrada.</p>}
-          {grupos.map((g) => {
-            const s = somaVT(linhasPorGrupo.get(g) ?? []);
-            const ativo = g === escolhido;
-            const tem = (linhasPorGrupo.get(g) ?? []).length > 0;
-            return (
-              <Link
-                key={g}
-                href={href(competencia, g)}
-                aria-current={ativo ? "page" : undefined}
-                className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm ${
-                  ativo ? "bg-ink-900 font-semibold text-white" : "text-stone-700 hover:bg-brand-50"
-                }`}
-              >
-                <span className="truncate">{g}</span>
-                <span className={`shrink-0 text-xs ${ativo ? "text-white" : "text-stone-500"}`}>{tem ? moedaVT(s.carga) : "—"}</span>
-              </Link>
-            );
-          })}
-          <p className="border-t border-brand-100 px-3 pb-1 pt-3 text-xs text-stone-500">
-            O valor ao lado é a carga a recarregar da unidade (todos os cartões).
-          </p>
-        </nav>
+      <div className="card flex flex-wrap items-end justify-between gap-4 !p-4">
+        <SeletorUnidadeVT opcoes={opcoesUnidade} atual={escolhido} competencia={competencia} />
+        <p className="max-w-md text-sm text-stone-600">
+          O valor ao lado do nome da unidade é a carga a recarregar (todos os cartões dela).
+        </p>
+      </div>
 
-        <div className="min-w-0 flex-1 basis-[560px] space-y-4">
-          {escolhido ? (
-            <>
-              <div className="card flex flex-wrap items-center justify-between gap-3 !p-4">
-                <div>
-                  <h2 className="text-2xl font-semibold text-slate-900">{escolhido}</h2>
-                  <p className="text-sm text-stone-600">
-                    {new Set(linhasEscolhido.map((l) => l.colaborador_id)).size} colaborador(es) com cartão · {rotuloCompetencia(competencia)}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {porOperadora.map(({ op, soma }) => (
-                    <span key={op} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${COR_OPERADORA[op].fundo} ${COR_OPERADORA[op].texto}`}>
-                      {ROTULO_OPERADORA[op]} {moedaVT(soma.carga)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
+      {escolhido ? (
+        <>
               <ValeTransporteUnidade
                 key={`${competencia}|${escolhido}`}
                 competencia={competencia}
+                rotuloMes={rotuloCompetencia(competencia)}
                 grupo={escolhido}
                 linhas={linhasEscolhido}
                 colaboradores={colabsPorGrupo.get(escolhido) ?? []}
@@ -223,15 +184,13 @@ export default async function ValeTransportePage({
                 <div className="flex flex-wrap items-baseline gap-5">
                   <span className="text-sm">Total {moedaVT(somaEscolhido.total)}</span>
                   <span className="text-sm">Saldo {moedaVT(somaEscolhido.saldo)}</span>
-                  <span className="font-display text-3xl font-semibold">{moedaVT(somaEscolhido.carga)}</span>
+                  <span className="text-3xl font-bold">{moedaVT(somaEscolhido.carga)}</span>
                 </div>
               </div>
             </>
-          ) : (
-            <div className="card text-sm text-stone-600">Cadastre colaboradores e unidades para começar o lançamento.</div>
-          )}
-        </div>
-      </div>
+      ) : (
+        <div className="card text-sm text-stone-600">Cadastre colaboradores e unidades para começar o lançamento.</div>
+      )}
     </div>
   );
 }
