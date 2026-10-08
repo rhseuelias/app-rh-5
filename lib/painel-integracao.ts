@@ -1,4 +1,4 @@
-import { differenceInCalendarDays } from "date-fns";
+import { addDays, differenceInCalendarDays } from "date-fns";
 import type { Colaborador, Empresa, EtapaProcesso, ProcessoIntegracao, Unidade } from "@/types/db";
 import { etapaAtrasada } from "@/lib/calculos";
 import type {
@@ -293,6 +293,13 @@ export async function montarPainelIntegracao(supabase: ClienteSupabase) {
     const base = parseData(colaborador?.data_admissao ?? p.created_at) ?? hojeLocal;
     const criado = parseData(p.created_at) ?? hojeLocal;
 
+    // Prazo final FIXO da efetivação: fim da experiência; se não houver, prazo da última etapa;
+    // se também não houver, admissão + 90 dias.
+    const fimData = parseData(p.data_fim_experiencia ?? ultimaEtapa?.prazo ?? null) ?? addDays(base, 90);
+    const diasFinal = differenceInCalendarDays(fimData, hojeLocal);
+    const prazoFinal = `${pad(fimData.getDate())}/${pad(fimData.getMonth() + 1)}/${fimData.getFullYear()}`;
+    const prazoFinalCurto = `${pad(fimData.getDate())}/${pad(fimData.getMonth() + 1)}`;
+
     return {
       id: p.id,
       colaboradorId: p.colaborador_id,
@@ -314,6 +321,9 @@ export async function montarPainelIntegracao(supabase: ClienteSupabase) {
       atual,
       responsavelAtual: atualRaw ? respLabel(atualRaw) : "RH",
       previsao,
+      prazoFinal,
+      prazoFinalCurto,
+      diasFinal,
       pendencias,
       etapas: etapasLista,
       movimentos,
