@@ -66,7 +66,7 @@ const VAZIO: Filtros = { org: "", lider: "", etapa: "", periodo: "", q: "" };
 
 const INTER = "'Inter', ui-sans-serif, system-ui, sans-serif";
 const OSWALD = "'Oswald', 'Arial Narrow', sans-serif";
-const COLUNAS = "minmax(220px,1.3fr) minmax(150px,1fr) 190px 112px 36px";
+const COLUNAS = "minmax(180px,1.1fr) minmax(330px,2.6fr) minmax(130px,1fr) 120px 112px";
 
 const TOM_PRAZO = {
   late: { fundo: "#fdecea", barra: "#d92d20", texto: "#b42318" },
@@ -316,229 +316,205 @@ export default function PainelTimeline({
         </div>
       )}
 
-      {/* Cartões: um por colaborador, com linha do tempo e prazo final fixo */}
-      <div className="overflow-x-auto">
-        <div className="flex flex-col gap-3" style={{ minWidth: 900 }}>
-          {linhas.length === 0 ? (
-            <p style={{ padding: 32, fontSize: 13, color: "#5c5c5c", textAlign: "center", background: "#fff", border: "1px solid #f1e4d6", borderRadius: 14 }}>
-              Nenhum processo de integração ainda. Para começar um, use &quot;+ Incluir colaborador&quot; ou abra a ficha
-              do colaborador.
-            </p>
-          ) : visiveis.length === 0 ? (
-            <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "#5c5c5c", background: "#fff", border: "1px solid #f1e4d6", borderRadius: 14 }}>
-              <p style={{ fontWeight: 600, color: "#262626" }}>Nenhum colaborador encontrado</p>
-              <p>Tente outros filtros ou limpe a busca.</p>
+      {/* Lista compacta: uma linha por colaborador, com linha do tempo e prazo final fixo */}
+      <div style={{ background: "#fff", border: "1px solid #f1e4d6", borderRadius: 12, overflow: "hidden" }}>
+        <div className="overflow-x-auto">
+          <div style={{ minWidth: 960 }}>
+            <div
+              style={{ display: "grid", gridTemplateColumns: COLUNAS, columnGap: 14, padding: "12px 20px 8px", alignItems: "center", background: "#fbf6f0" }}
+            >
+              <span style={CABECALHO}>Colaborador</span>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))" }}>
+                {gruposNomes.map((g) => (
+                  <span key={g} title={g} className="truncate" style={{ ...CABECALHO, fontSize: 10.5, letterSpacing: ".03em", paddingRight: 4 }}>
+                    {g}
+                  </span>
+                ))}
+              </div>
+              <span style={CABECALHO}>Etapa atual</span>
+              <span style={CABECALHO}>Prazo final</span>
+              <span style={CABECALHO}>Status</span>
             </div>
-          ) : (
-            visiveis.map((l, idx) => {
-              const pil = PILULA[l.status];
-              const open = aberto === l.id;
-              const pf = prazoFinalInfo(l);
-              const tomPf = TOM_PRAZO[pf.tom];
-              return (
-                <div key={l.id} style={{ background: "#fff", border: "1px solid #f1e4d6", borderRadius: 14, overflow: "hidden" }}>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    aria-expanded={open}
-                    onClick={() => setAberto(open ? null : l.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setAberto(open ? null : l.id);
-                      }
-                    }}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: COLUNAS,
-                      columnGap: 18,
-                      alignItems: "center",
-                      padding: "18px 24px 14px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: "50%",
-                          flexShrink: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 13,
-                          fontWeight: 600,
-                          background: idx % 2 ? "#262626" : "#fff3e6",
-                          color: idx % 2 ? "#fff" : "#93440c",
-                        }}
-                      >
-                        {iniciais(l.nome)}
-                      </span>
-                      <span className="min-w-0 flex flex-col">
-                        <span style={{ fontSize: 14, fontWeight: 700, textTransform: "uppercase" }} className="truncate" title={l.nome}>
-                          {l.nome}
-                        </span>
-                        <span style={{ fontSize: 12, color: "#737373", textTransform: "uppercase" }} className="truncate">
-                          {[l.cargo || "Cargo não informado", l.empresaNome, l.unidadeNome].filter(Boolean).join(" · ")}
-                        </span>
-                      </span>
-                    </div>
 
-                    <div className="min-w-0 flex flex-col">
-                      <span style={{ ...CABECALHO, marginBottom: 3 }}>Etapa atual</span>
-                      <span style={{ fontSize: 14, fontWeight: 600 }} className="truncate" title={l.atual?.nome}>
-                        {l.atual ? l.atual.nome : "Concluído"}
-                      </span>
-                      <span
-                        style={{ fontSize: 12, color: l.atual?.atrasada ? "#b42318" : "#737373" }}
-                        className="truncate"
-                        title={l.atual?.detalhe}
-                      >
-                        {l.atual ? l.atual.detalhe : "todas as etapas feitas"}
-                      </span>
-                    </div>
-
-                    {/* Prazo final fixo */}
-                    <div style={{ borderRadius: 10, padding: "9px 12px", background: tomPf.fundo, borderLeft: `5px solid ${tomPf.barra}` }}>
-                      <div style={{ ...CABECALHO, fontSize: 10, color: tomPf.texto }}>Prazo final · efetivação</div>
-                      <div style={{ fontFamily: OSWALD, fontWeight: 600, fontSize: 21, lineHeight: 1.15, marginTop: 2 }}>{l.prazoFinal}</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: tomPf.texto, marginTop: 1 }}>{pf.texto}</div>
-                    </div>
-
-                    <div>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          padding: "4px 11px",
-                          borderRadius: 10,
-                          whiteSpace: "nowrap",
-                          background: pil.fundo,
-                          color: pil.texto,
-                        }}
-                      >
-                        {pil.label}
-                      </span>
-                    </div>
-
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: 8,
-                        border: "1px solid #e7ddd2",
-                        background: "#fff",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 9,
-                        color: "#3d3d3d",
+            {linhas.length === 0 ? (
+              <p style={{ padding: 32, fontSize: 13, color: "#5c5c5c", textAlign: "center", borderTop: "1px solid #f4ebe1" }}>
+                Nenhum processo de integração ainda. Para começar um, use &quot;+ Incluir colaborador&quot; ou abra a ficha
+                do colaborador.
+              </p>
+            ) : visiveis.length === 0 ? (
+              <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "#5c5c5c", borderTop: "1px solid #f4ebe1" }}>
+                <p style={{ fontWeight: 600, color: "#262626" }}>Nenhum colaborador encontrado</p>
+                <p>Tente outros filtros ou limpe a busca.</p>
+              </div>
+            ) : (
+              visiveis.map((l, idx) => {
+                const pil = PILULA[l.status];
+                const open = aberto === l.id;
+                const pf = prazoFinalInfo(l);
+                const tomPf = TOM_PRAZO[pf.tom];
+                return (
+                  <div key={l.id} style={{ borderTop: "1px solid #f4ebe1" }}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={open}
+                      onClick={() => setAberto(open ? null : l.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setAberto(open ? null : l.id);
+                        }
                       }}
+                      style={{ display: "grid", gridTemplateColumns: COLUNAS, columnGap: 14, alignItems: "center", padding: "11px 20px", cursor: "pointer" }}
                     >
-                      {open ? "▲" : "▼"}
-                    </span>
-                  </div>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: "50%",
+                            flexShrink: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            background: idx % 2 ? "#262626" : "#fff3e6",
+                            color: idx % 2 ? "#fff" : "#93440c",
+                          }}
+                        >
+                          {iniciais(l.nome)}
+                        </span>
+                        <span className="min-w-0 flex flex-col">
+                          <span style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase" }} className="truncate" title={l.nome}>
+                            {l.nome}
+                          </span>
+                          <span style={{ fontSize: 11, color: "#737373", textTransform: "uppercase" }} className="truncate">
+                            {[l.cargo || "Cargo não informado", l.empresaNome, l.unidadeNome].filter(Boolean).join(" · ")}
+                          </span>
+                        </span>
+                      </div>
 
-                  {/* Linha do tempo: 6 fases; a última mostra sempre o prazo final */}
-                  <div
-                    style={{ display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", padding: "0 24px 20px" }}
-                    onClick={() => setAberto(open ? null : l.id)}
-                  >
-                    {l.grupos.map((g, gi) => {
-                      const ultimo = gi === l.grupos.length - 1;
-                      const cor =
-                        g.estado === "done" ? "#2f9e6b" : g.estado === "late" ? "#d92d20" : g.estado === "attention" ? "#f0913f" : g.estado === "progress" ? "#262626" : "#e3d8c9";
-                      return (
-                        <div key={g.nome} title={g.dica} style={{ position: "relative", paddingTop: 30, paddingRight: 8, minWidth: 0 }}>
-                          {!ultimo && (
-                            <span
-                              style={{
-                                position: "absolute",
-                                top: 9,
-                                left: 24,
-                                right: 2,
-                                height: 3,
-                                borderRadius: 2,
-                                background: g.estado === "done" ? "#2f9e6b" : "#e8ded0",
-                              }}
-                            />
-                          )}
-                          {ultimo ? (
-                            <svg
-                              width="22"
-                              height="22"
-                              viewBox="0 0 24 24"
-                              fill={tomPf.barra}
-                              stroke={tomPf.barra}
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              aria-hidden="true"
-                              style={{ position: "absolute", top: -3, left: 0 }}
-                            >
-                              <path d="M5 21V4" />
-                              <path d="M5 4h12l-2.5 4L17 12H5" />
-                            </svg>
-                          ) : (
-                            <span
-                              style={{
-                                position: "absolute",
-                                top: 0,
-                                left: 0,
-                                width: 21,
-                                height: 21,
-                                borderRadius: "50%",
-                                boxSizing: "border-box",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                background: g.estado === "progress" ? "#262626" : g.estado === "pending" || g.estado === "na" ? "#fff" : cor,
-                                border:
-                                  g.estado === "progress"
-                                    ? "3px solid #fff"
-                                    : g.estado === "pending"
-                                    ? "3px solid #e3d8c9"
-                                    : g.estado === "na"
-                                    ? "2px dashed #d9d2ca"
-                                    : `3px solid ${cor}`,
-                                boxShadow: g.estado === "progress" ? "0 0 0 2px #262626" : undefined,
-                              }}
-                            >
-                              {g.estado === "done" && (
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                  <polyline points="20 6 9 17 4 12" />
-                                </svg>
+                      {/* Linha do tempo compacta: bolinhas ligadas por uma linha; a última é o prazo final */}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))" }}>
+                        {l.grupos.map((g, gi) => {
+                          const ultimo = gi === l.grupos.length - 1;
+                          const cor =
+                            g.estado === "done" ? "#2f9e6b" : g.estado === "late" ? "#d92d20" : g.estado === "attention" ? "#f0913f" : g.estado === "progress" ? "#262626" : "#e3d8c9";
+                          return (
+                            <div key={g.nome} title={g.dica} style={{ position: "relative", paddingTop: 19, paddingRight: 4, minWidth: 0 }}>
+                              {!ultimo && (
+                                <span
+                                  style={{ position: "absolute", top: 6, left: 18, right: 2, height: 2, borderRadius: 1, background: g.estado === "done" ? "#2f9e6b" : "#ece3d8" }}
+                                />
                               )}
-                            </span>
-                          )}
-                          <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.2 }} className="truncate">
-                            {g.nome}
-                          </div>
-                          <div
-                            className="truncate"
-                            style={{
-                              fontSize: 12.5,
-                              marginTop: 1,
-                              minHeight: 16,
-                              fontWeight: ultimo || g.estado === "late" ? 700 : 400,
-                              color: ultimo ? tomPf.texto : g.estado === "late" ? "#b42318" : g.estado === "attention" ? "#93440c" : "#5c5c5c",
-                            }}
-                          >
-                            {ultimo ? `prazo final ${l.prazoFinalCurto}` : g.estado === "progress" ? "em curso" : g.estado === "na" ? "—" : g.sub}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                              {ultimo ? (
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill={tomPf.barra}
+                                  stroke={tomPf.barra}
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  aria-hidden="true"
+                                  style={{ position: "absolute", top: -1, left: 0 }}
+                                >
+                                  <path d="M5 21V4" />
+                                  <path d="M5 4h12l-2.5 4L17 12H5" />
+                                </svg>
+                              ) : (
+                                <span
+                                  style={{
+                                    position: "absolute",
+                                    top: 0,
+                                    left: 0,
+                                    width: 14,
+                                    height: 14,
+                                    borderRadius: "50%",
+                                    boxSizing: "border-box",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    background: g.estado === "progress" ? "#262626" : g.estado === "pending" || g.estado === "na" ? "#fff" : cor,
+                                    border:
+                                      g.estado === "progress"
+                                        ? "2px solid #fff"
+                                        : g.estado === "pending"
+                                        ? "2px solid #e3d8c9"
+                                        : g.estado === "na"
+                                        ? "1.5px dashed #d9d2ca"
+                                        : `2px solid ${cor}`,
+                                    boxShadow: g.estado === "progress" ? "0 0 0 1.5px #262626" : undefined,
+                                  }}
+                                >
+                                  {g.estado === "done" && (
+                                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                      <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                  )}
+                                </span>
+                              )}
+                              <div
+                                className="truncate"
+                                style={{
+                                  fontSize: 11.5,
+                                  lineHeight: "14px",
+                                  minHeight: 14,
+                                  fontWeight: ultimo || g.estado === "late" ? 700 : 400,
+                                  color: ultimo ? tomPf.texto : g.estado === "late" ? "#b42318" : g.estado === "attention" ? "#93440c" : "#5c5c5c",
+                                }}
+                              >
+                                {ultimo ? l.prazoFinalCurto : g.estado === "progress" ? "em curso" : g.estado === "na" ? "—" : g.sub}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
 
-                  {open && <Detalhe l={l} somenteLeitura={somenteLeitura} />}
-                </div>
-              );
-            })
-          )}
+                      <div className="min-w-0 flex flex-col">
+                        <span style={{ fontSize: 12.5, fontWeight: 600 }} className="truncate" title={l.atual?.nome}>
+                          {l.atual ? l.atual.nome : "Concluído"}
+                        </span>
+                        <span style={{ fontSize: 11.5, color: l.atual?.atrasada ? "#b42318" : "#737373" }} className="truncate" title={l.atual?.detalhe}>
+                          {l.atual ? l.atual.detalhe : "todas as etapas feitas"}
+                        </span>
+                      </div>
+
+                      {/* Prazo final fixo */}
+                      <div style={{ borderLeft: `3px solid ${tomPf.barra}`, paddingLeft: 9 }}>
+                        <div style={{ fontFamily: OSWALD, fontWeight: 600, fontSize: 16, lineHeight: 1.15 }}>{l.prazoFinal}</div>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: tomPf.texto }}>{pf.texto}</div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          style={{
+                            display: "inline-block",
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            padding: "3px 9px",
+                            borderRadius: 10,
+                            whiteSpace: "nowrap",
+                            background: pil.fundo,
+                            color: pil.texto,
+                          }}
+                        >
+                          {pil.label}
+                        </span>
+                        <span aria-hidden="true" style={{ fontSize: 9, color: "#5c5c5c" }}>
+                          {open ? "▲" : "▼"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {open && <Detalhe l={l} somenteLeitura={somenteLeitura} />}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
 
