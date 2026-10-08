@@ -153,3 +153,21 @@ export async function copiarMesAnteriorVT(competencia: string, colaboradorIds: s
   revalidatePath(CAMINHO);
   return { ok: true, aviso: `${r.copiados} cartão(ões) copiado(s). Atualize só os saldos.` };
 }
+
+/** Guarda os dias úteis do mês (um valor por mês, vale para todas as unidades). */
+export async function salvarDiasMesVT(competencia: string, dias: number): Promise<RespostaVT> {
+  if (!(await logado())) return { ok: false, erro: "Entre no sistema para fazer isso." };
+  if (!competenciaValida(competencia)) return { ok: false, erro: "Mês inválido." };
+  if (!numeroValido(dias, 31) || dias <= 0) return { ok: false, erro: "Dias úteis inválidos." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("vt_config_mes")
+    .upsert({ competencia, dias_uteis: Math.round(dias), updated_at: new Date().toISOString() }, { onConflict: "competencia" });
+  if (error) {
+    if (/does not exist|schema cache/i.test(error.message)) {
+      return { ok: false, erro: "Falta criar a tabela dos dias úteis no banco (migration 024)." };
+    }
+    return { ok: false, erro: mensagem(error.message) };
+  }
+  return { ok: true };
+}

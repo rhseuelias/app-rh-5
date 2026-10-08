@@ -15,6 +15,7 @@ import {
 import { copiaAutomaticaVT } from "@/lib/vt-copia-mes-anterior";
 import ValeTransporteUnidade, { type LinhaTela } from "@/components/vale-transporte/ValeTransporteUnidade";
 import SeletorUnidadeVT from "@/components/vale-transporte/SeletorUnidadeVT";
+import RelatorioPdfVT from "@/components/vale-transporte/RelatorioPdfVT";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,14 @@ export default async function ValeTransportePage({
     supabase.from("vt_lancamentos").select("*").eq("competencia", competencia),
     supabase.from("vt_lancamentos").select("id", { count: "exact", head: true }).eq("competencia", anterior),
   ]);
+
+  // Dias úteis do mês: o que foi salvo neste mês; senão o do mês anterior; senão 26.
+  const [cfgAtual, cfgAnterior] = await Promise.all([
+    supabase.from("vt_config_mes").select("dias_uteis").eq("competencia", competencia).maybeSingle(),
+    supabase.from("vt_config_mes").select("dias_uteis").eq("competencia", anterior).maybeSingle(),
+  ]);
+  const diasMes =
+    (!cfgAtual.error && Number(cfgAtual.data?.dias_uteis)) || (!cfgAnterior.error && Number(cfgAnterior.data?.dias_uteis)) || 26;
 
   if (lancRes.error) {
     const faltaTabela = /does not exist|schema cache/i.test(lancRes.error.message);
@@ -153,6 +162,7 @@ export default async function ValeTransportePage({
               ›
             </Link>
           </div>
+          <RelatorioPdfVT competencia={competencia} unidades={grupos.filter((g) => (linhasPorGrupo.get(g) ?? []).length > 0)} />
           <a href={linkExcelTodas} className="btn-secondary no-underline">
             Exportar todas as unidades
           </a>
@@ -177,6 +187,7 @@ export default async function ValeTransportePage({
                 colaboradores={colabsPorGrupo.get(escolhido) ?? []}
                 temMesAnterior={(antRes.count ?? 0) > 0}
                 linkExcel={linkExcel}
+                diasMesInicial={diasMes}
               />
 
               <div className="card-dark flex flex-wrap items-center justify-between gap-3 !py-4">

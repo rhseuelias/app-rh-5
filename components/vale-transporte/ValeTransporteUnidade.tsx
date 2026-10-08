@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   aplicarDiasUteisVT,
   copiarMesAnteriorVT,
   criarLinhaVT,
   excluirLinhaVT,
+  salvarDiasMesVT,
   salvarLinhaVT,
   type CamposLinhaVT,
 } from "@/lib/actions-vale-transporte";
@@ -44,15 +45,18 @@ interface Props {
   colaboradores: OpcaoColaborador[];
   temMesAnterior: boolean;
   linkExcel: string;
+  /** Dias úteis do mês já salvos (ou do mês anterior, ou 26). */
+  diasMesInicial: number;
 }
 
 const campo =
   "w-full min-w-[56px] rounded-md border border-stone-300 bg-white px-2 py-1 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-400";
 
-export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, linhas, colaboradores, temMesAnterior, linkExcel }: Props) {
+export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, linhas, colaboradores, temMesAnterior, linkExcel, diasMesInicial }: Props) {
   const primeira = OPERADORAS.find((o) => linhas.some((l) => l.operadora === o)) ?? "BHBUS";
   const [ativa, setAtiva] = useState<OperadoraVT>(primeira);
-  const [diasMes, setDiasMes] = useState("26");
+  const [diasMes, setDiasMes] = useState(String(diasMesInicial));
+  const temporizadorDias = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [pendente, iniciar] = useTransition();
 
@@ -68,8 +72,20 @@ export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, l
         linhas.map((l) => l.id),
         n
       );
+      await salvarDiasMesVT(competencia, n);
       avisar(r.ok, r.ok ? `Dias úteis ${n} aplicados a ${linhas.length} cartão(ões).` : r.erro);
     });
+  }
+
+  // O número de dias úteis do mês fica salvo sozinho (vale para o mês todo e passa para o mês seguinte).
+  function mudarDiasMes(texto: string) {
+    setDiasMes(texto);
+    if (temporizadorDias.current) clearTimeout(temporizadorDias.current);
+    const n = lerNumeroVT(texto);
+    if (n === null || n <= 0 || n > 31) return;
+    temporizadorDias.current = setTimeout(() => {
+      void salvarDiasMesVT(competencia, n);
+    }, 800);
   }
 
   function copiarAnterior() {
@@ -93,6 +109,7 @@ export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, l
           <p className="text-sm text-stone-600">
             {new Set(linhas.map((l) => l.colaborador_id)).size} colaborador(es) com cartão · {rotuloMes}
           </p>
+          <p className="text-xs text-stone-500">Tudo o que você digita é salvo automaticamente e repetido no mês seguinte (menos o saldo).</p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -104,7 +121,7 @@ export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, l
               className="input !w-24 text-right"
               inputMode="numeric"
               value={diasMes}
-              onChange={(e) => setDiasMes(e.target.value)}
+              onChange={(e) => mudarDiasMes(e.target.value)}
             />
           </div>
           <button type="button" className="btn-secondary" disabled={pendente || linhas.length === 0} onClick={aplicarDias}>
@@ -297,32 +314,80 @@ function LinhaEditavel({ linha, caju }: { linha: LinhaTela; caju: boolean }) {
     saldo: nSaldo ?? 0,
   };
 
-  function guardar(campos: CamposLinhaVT) {
+  // Salvamento automático: 0,8 s depois de parar de digitar (e na hora, ao sair do campo).
+  const temporizadores = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const aguardando = useRef<Record<string, string>>({});
+  const salvos = useRef<Record<string, string>>({
+    cartao: (linha.cartao ?? "").trim(),
+    diaria: campoVT(linha.diaria),
+    valor_unit: campoVT(linha.valor_unit),
+    dias_uteis: campoVT(linha.dias_uteis),
+    saldo: campoVT(linha.saldo),
+    alimentacao: campoVT(linha.alimentacao ?? 0),
+    premio: campoVT(linha.premio ?? 0),
+  });
+
+  function gravar(nome: keyof CamposLinhaVT, texto: string) {
+    delete aguardando.current[nome];
+    const comparavel = texto.trim();
+    if (salvos.current[nome] === comparavel) return;
+    let campos: CamposLinhaVT;
+    if (nome === "cartao") {
+      campos = { cartao: texto };
+    } else {
+      const n = lerNumeroVT(texto);
+      if (n === null) {
+        setEstado("erro");
+        setErro("Número inválido.");
+        return;
+      }
+      campos = { [nome]: n } as CamposLinhaVT;
+    }
+    const anterior = salvos.current[nome];
+    salvos.current[nome] = comparavel;
     setEstado("salvando");
     setErro("");
     iniciar(async () => {
       const r = await salvarLinhaVT(linha.id, campos);
       if (r.ok) setEstado("salvo");
       else {
+        salvos.current[nome] = anterior === comparavel ? "__erro__" : anterior;
         setEstado("erro");
         setErro(r.erro);
       }
     });
   }
 
-  function aoSair(nome: keyof CamposLinhaVT, texto: string, original: number | string | null) {
-    if (nome === "cartao") {
-      if (texto.trim() !== (original ?? "")) guardar({ cartao: texto });
-      return;
-    }
-    const n = lerNumeroVT(texto);
-    if (n === null) {
-      setEstado("erro");
-      setErro("Número inválido.");
-      return;
-    }
-    if (n !== original) guardar({ [nome]: n } as CamposLinhaVT);
+  function digitou(nome: keyof CamposLinhaVT, texto: string, definir: (t: string) => void) {
+    definir(texto);
+    aguardando.current[nome] = texto;
+    clearTimeout(temporizadores.current[nome]);
+    temporizadores.current[nome] = setTimeout(() => gravar(nome, texto), 800);
   }
+
+  function aoSair(nome: keyof CamposLinhaVT, texto: string) {
+    clearTimeout(temporizadores.current[nome]);
+    gravar(nome, texto);
+  }
+
+  // Se a linha sair da tela (troca de aba) com algo ainda não salvo, salva na hora.
+  useEffect(() => {
+    const tempos = temporizadores.current;
+    const fila = aguardando.current;
+    const id = linha.id;
+    return () => {
+      for (const nome of Object.keys(fila)) {
+        clearTimeout(tempos[nome]);
+        const texto = fila[nome];
+        if (nome === "cartao") {
+          void salvarLinhaVT(id, { cartao: texto });
+        } else {
+          const n = lerNumeroVT(texto);
+          if (n !== null) void salvarLinhaVT(id, { [nome]: n } as CamposLinhaVT);
+        }
+      }
+    };
+  }, [linha.id]);
 
   function excluir() {
     if (!window.confirm(`Excluir o cartão de ${linha.nome} (${linha.cartao ?? "sem número"})?`)) return;
@@ -346,8 +411,8 @@ function LinhaEditavel({ linha, caju }: { linha: LinhaTela; caju: boolean }) {
             aria-label={`Cartão de ${linha.nome}`}
             className="w-44 rounded-md border border-stone-300 bg-white px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-400"
             value={cartao}
-            onChange={(e) => setCartao(e.target.value)}
-            onBlur={() => aoSair("cartao", cartao, linha.cartao)}
+            onChange={(e) => digitou("cartao", e.target.value, setCartao)}
+            onBlur={() => aoSair("cartao", cartao)}
           />
           {linha.repetido && (
             <span className="whitespace-nowrap rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800" title="Este número de cartão aparece em mais de um colaborador">
@@ -357,10 +422,10 @@ function LinhaEditavel({ linha, caju }: { linha: LinhaTela; caju: boolean }) {
         </div>
       </td>
       <td className="px-3 py-1.5">
-        <input aria-label="Diária" className={campo} inputMode="decimal" value={diaria} onChange={(e) => setDiaria(e.target.value)} onBlur={() => aoSair("diaria", diaria, linha.diaria)} />
+        <input aria-label="Diária" className={campo} inputMode="decimal" value={diaria} onChange={(e) => digitou("diaria", e.target.value, setDiaria)} onBlur={() => aoSair("diaria", diaria)} />
       </td>
       <td className="px-3 py-1.5">
-        <input aria-label="Valor unitário" className={campo} inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} onBlur={() => aoSair("valor_unit", valor, linha.valor_unit)} />
+        <input aria-label="Valor unitário" className={campo} inputMode="decimal" value={valor} onChange={(e) => digitou("valor_unit", e.target.value, setValor)} onBlur={() => aoSair("valor_unit", valor)} />
       </td>
       <td className="px-3 py-1.5 text-right tabular-nums">{numeroVT(valorDiarioVT(vivo))}</td>
       <td className="px-3 py-1.5">
@@ -369,23 +434,23 @@ function LinhaEditavel({ linha, caju }: { linha: LinhaTela; caju: boolean }) {
           className={`${campo} ${semDias ? "border-red-300 bg-red-50" : ""}`}
           inputMode="numeric"
           value={dias}
-          onChange={(e) => setDias(e.target.value)}
-          onBlur={() => aoSair("dias_uteis", dias, linha.dias_uteis)}
+          onChange={(e) => digitou("dias_uteis", e.target.value, setDias)}
+          onBlur={() => aoSair("dias_uteis", dias)}
         />
       </td>
       {caju && (
         <td className="px-3 py-1.5">
-          <input aria-label="Alimentação" className={campo} inputMode="decimal" value={alim} onChange={(e) => setAlim(e.target.value)} onBlur={() => aoSair("alimentacao", alim, linha.alimentacao ?? 0)} />
+          <input aria-label="Alimentação" className={campo} inputMode="decimal" value={alim} onChange={(e) => digitou("alimentacao", e.target.value, setAlim)} onBlur={() => aoSair("alimentacao", alim)} />
         </td>
       )}
       {caju && (
         <td className="px-3 py-1.5">
-          <input aria-label="Prêmio" className={campo} inputMode="decimal" value={premio} onChange={(e) => setPremio(e.target.value)} onBlur={() => aoSair("premio", premio, linha.premio ?? 0)} />
+          <input aria-label="Prêmio" className={campo} inputMode="decimal" value={premio} onChange={(e) => digitou("premio", e.target.value, setPremio)} onBlur={() => aoSair("premio", premio)} />
         </td>
       )}
       <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{numeroVT(ok ? totalVT(vivo) : 0)}</td>
       <td className="px-3 py-1.5">
-        <input aria-label="Saldo atual" className={campo} inputMode="decimal" value={saldo} onChange={(e) => setSaldo(e.target.value)} onBlur={() => aoSair("saldo", saldo, linha.saldo)} />
+        <input aria-label="Saldo atual" className={campo} inputMode="decimal" value={saldo} onChange={(e) => digitou("saldo", e.target.value, setSaldo)} onBlur={() => aoSair("saldo", saldo)} />
       </td>
       <td className="px-3 py-1.5 text-right font-bold tabular-nums text-red-700">{numeroVT(ok ? cargaVT(vivo) : 0)}</td>
       <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs">
