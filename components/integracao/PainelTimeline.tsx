@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { concluirEtapaAtual, finalizarTodasEtapas, voltarEtapa } from "@/lib/actions-integracao";
+import { concluirEtapaAtual, finalizarTodasEtapas, removerDoPainelIntegracao, voltarEtapa } from "@/lib/actions-integracao";
 import type { CSSProperties, ReactNode } from "react";
 
 export type EstadoEtapa = "done" | "progress" | "late" | "attention" | "pending" | "na";
@@ -52,6 +52,9 @@ export interface LinhaTimeline {
   } | null;
   responsavelAtual: string;
   previsao: string;
+  prazoFinal: string; // dd/mm/aaaa — prazo final fixo da efetivação
+  prazoFinalCurto: string; // dd/mm
+  diasFinal: number; // dias até o prazo final (negativo = passou)
   pendencias: { nome: string; atrasada: boolean; resp: string }[];
   etapas: { nome: string; resp: string; estado: "done" | "progress" | "late" | "pending"; direita: string }[];
   movimentos: { data: string; texto: string; quem: string }[];
@@ -63,7 +66,23 @@ const VAZIO: Filtros = { org: "", lider: "", etapa: "", periodo: "", q: "" };
 
 const INTER = "'Inter', ui-sans-serif, system-ui, sans-serif";
 const OSWALD = "'Oswald', 'Arial Narrow', sans-serif";
-const COLUNAS = "230px minmax(0,1fr) 200px 110px 36px";
+const COLUNAS = "minmax(180px,1.1fr) minmax(330px,2.6fr) minmax(130px,1fr) 120px 112px";
+
+const TOM_PRAZO = {
+  late: { fundo: "#fdecea", barra: "#d92d20", texto: "#b42318" },
+  att: { fundo: "#fff3e6", barra: "#f0913f", texto: "#93440c" },
+  ok: { fundo: "#eef7f2", barra: "#2f9e6b", texto: "#1f7a52" },
+} as const;
+
+function prazoFinalInfo(l: LinhaTimeline): { tom: keyof typeof TOM_PRAZO; texto: string } {
+  const ultimo = l.grupos[l.grupos.length - 1];
+  if (ultimo && ultimo.estado === "done") return { tom: "ok", texto: "Concluída" };
+  const d = l.diasFinal;
+  if (d < 0) return { tom: "late", texto: `Atrasado há ${-d} dia${-d !== 1 ? "s" : ""}` };
+  if (d === 0) return { tom: "att", texto: "Vence hoje" };
+  if (d <= 15) return { tom: "att", texto: `Faltam ${d} dia${d !== 1 ? "s" : ""}` };
+  return { tom: "ok", texto: `Faltam ${d} dias` };
+}
 
 const PILULA: Record<StatusLinha, { label: string; fundo: string; texto: string }> = {
   atrasado: { label: "Atrasado", fundo: "#fdecea", texto: "#b42318" },
@@ -297,41 +316,24 @@ export default function PainelTimeline({
         </div>
       )}
 
-      {/* Tabela */}
+      {/* Lista compacta: uma linha por colaborador, com linha do tempo e prazo final fixo */}
       <div style={{ background: "#fff", border: "1px solid #f1e4d6", borderRadius: 12, overflow: "hidden" }}>
         <div className="overflow-x-auto">
-          <div style={{ minWidth: 1000 }}>
+          <div style={{ minWidth: 960 }}>
             <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: COLUNAS,
-                columnGap: 16,
-                padding: "14px 20px 10px",
-                alignItems: "center",
-              }}
+              style={{ display: "grid", gridTemplateColumns: COLUNAS, columnGap: 14, padding: "12px 20px 8px", alignItems: "center", background: "#fbf6f0" }}
             >
               <span style={CABECALHO}>Colaborador</span>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", gap: 4 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))" }}>
                 {gruposNomes.map((g) => (
-                  <span
-                    key={g}
-                    title={g}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: "#5c5c5c",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <span key={g} title={g} className="truncate" style={{ ...CABECALHO, fontSize: 10.5, letterSpacing: ".03em", paddingRight: 4 }}>
                     {g}
                   </span>
                 ))}
               </div>
               <span style={CABECALHO}>Etapa atual</span>
+              <span style={CABECALHO}>Prazo final</span>
               <span style={CABECALHO}>Status</span>
-              <span />
             </div>
 
             {linhas.length === 0 ? (
@@ -348,6 +350,8 @@ export default function PainelTimeline({
               visiveis.map((l, idx) => {
                 const pil = PILULA[l.status];
                 const open = aberto === l.id;
+                const pf = prazoFinalInfo(l);
+                const tomPf = TOM_PRAZO[pf.tom];
                 return (
                   <div key={l.id} style={{ borderTop: "1px solid #f4ebe1" }}>
                     <div
@@ -361,26 +365,19 @@ export default function PainelTimeline({
                           setAberto(open ? null : l.id);
                         }
                       }}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: COLUNAS,
-                        columnGap: 16,
-                        alignItems: "center",
-                        padding: "16px 20px",
-                        cursor: "pointer",
-                      }}
+                      style={{ display: "grid", gridTemplateColumns: COLUNAS, columnGap: 14, alignItems: "center", padding: "11px 20px", cursor: "pointer" }}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <span
                           style={{
-                            width: 36,
-                            height: 36,
+                            width: 32,
+                            height: 32,
                             borderRadius: "50%",
                             flexShrink: 0,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            fontSize: 12,
+                            fontSize: 11.5,
                             fontWeight: 600,
                             background: idx % 2 ? "#262626" : "#fff3e6",
                             color: idx % 2 ? "#fff" : "#93440c",
@@ -389,66 +386,115 @@ export default function PainelTimeline({
                           {iniciais(l.nome)}
                         </span>
                         <span className="min-w-0 flex flex-col">
-                          <span style={{ fontSize: 14, fontWeight: 600, textTransform: "none" }} className="truncate" title={l.nome}>
+                          <span style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase" }} className="truncate" title={l.nome}>
                             {l.nome}
                           </span>
-                          <span style={{ fontSize: 12, color: "#737373" }} className="truncate">
-                            {l.cargo || "Cargo não informado"}
-                            {l.empresaNome ? ` · ${l.empresaNome}` : ""}
-                            {l.unidadeNome ? ` · ${l.unidadeNome}` : ""}
+                          <span style={{ fontSize: 11, color: "#737373", textTransform: "uppercase" }} className="truncate">
+                            {[l.cargo || "Cargo não informado", l.empresaNome, l.unidadeNome].filter(Boolean).join(" · ")}
                           </span>
                         </span>
                       </div>
 
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", gap: 4 }}>
-                        {l.grupos.map((g) => (
-                          <div key={g.nome} title={g.dica} className="flex flex-col gap-1.5 min-w-0">
-                            <span
-                              style={{
-                                display: "block",
-                                height: 6,
-                                borderRadius: 3,
-                                background: COR_BARRA[g.estado],
-                                border: g.estado === "na" ? "1px dashed #d9d2ca" : undefined,
-                                boxSizing: "border-box",
-                              }}
-                            />
-                            <span
-                              style={{
-                                fontSize: 11,
-                                minHeight: 14,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                color: g.estado === "late" ? "#b42318" : g.estado === "attention" ? "#93440c" : "#5c5c5c",
-                              }}
-                            >
-                              {g.estado === "progress" ? "em curso" : g.sub}
-                            </span>
-                          </div>
-                        ))}
+                      {/* Linha do tempo compacta: bolinhas ligadas por uma linha; a última é o prazo final */}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))" }}>
+                        {l.grupos.map((g, gi) => {
+                          const ultimo = gi === l.grupos.length - 1;
+                          const cor =
+                            g.estado === "done" ? "#2f9e6b" : g.estado === "late" ? "#d92d20" : g.estado === "attention" ? "#f0913f" : g.estado === "progress" ? "#262626" : "#e3d8c9";
+                          return (
+                            <div key={g.nome} title={g.dica} style={{ position: "relative", paddingTop: 19, paddingRight: 4, minWidth: 0 }}>
+                              {!ultimo && (
+                                <span
+                                  style={{ position: "absolute", top: 6, left: 18, right: 2, height: 2, borderRadius: 1, background: g.estado === "done" ? "#2f9e6b" : "#ece3d8" }}
+                                />
+                              )}
+                              {ultimo ? (
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill={tomPf.barra}
+                                  stroke={tomPf.barra}
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  aria-hidden="true"
+                                  style={{ position: "absolute", top: -1, left: 0 }}
+                                >
+                                  <path d="M5 21V4" />
+                                  <path d="M5 4h12l-2.5 4L17 12H5" />
+                                </svg>
+                              ) : (
+                                <span
+                                  style={{
+                                    position: "absolute",
+                                    top: 0,
+                                    left: 0,
+                                    width: 14,
+                                    height: 14,
+                                    borderRadius: "50%",
+                                    boxSizing: "border-box",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    background: g.estado === "progress" ? "#262626" : g.estado === "pending" || g.estado === "na" ? "#fff" : cor,
+                                    border:
+                                      g.estado === "progress"
+                                        ? "2px solid #fff"
+                                        : g.estado === "pending"
+                                        ? "2px solid #e3d8c9"
+                                        : g.estado === "na"
+                                        ? "1.5px dashed #d9d2ca"
+                                        : `2px solid ${cor}`,
+                                    boxShadow: g.estado === "progress" ? "0 0 0 1.5px #262626" : undefined,
+                                  }}
+                                >
+                                  {g.estado === "done" && (
+                                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                      <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                  )}
+                                </span>
+                              )}
+                              <div
+                                className="truncate"
+                                style={{
+                                  fontSize: 11.5,
+                                  lineHeight: "14px",
+                                  minHeight: 14,
+                                  fontWeight: ultimo || g.estado === "late" ? 700 : 400,
+                                  color: ultimo ? tomPf.texto : g.estado === "late" ? "#b42318" : g.estado === "attention" ? "#93440c" : "#5c5c5c",
+                                }}
+                              >
+                                {ultimo ? l.prazoFinalCurto : g.estado === "progress" ? "em curso" : g.estado === "na" ? "—" : g.sub}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
 
                       <div className="min-w-0 flex flex-col">
-                        <span style={{ fontSize: 13, fontWeight: 600 }} className="truncate" title={l.atual?.nome}>
+                        <span style={{ fontSize: 12.5, fontWeight: 600 }} className="truncate" title={l.atual?.nome}>
                           {l.atual ? l.atual.nome : "Concluído"}
                         </span>
-                        <span
-                          style={{ fontSize: 12, color: l.atual?.atrasada ? "#b42318" : "#737373" }}
-                          className="truncate"
-                          title={l.atual?.detalhe}
-                        >
+                        <span style={{ fontSize: 11.5, color: l.atual?.atrasada ? "#b42318" : "#737373" }} className="truncate" title={l.atual?.detalhe}>
                           {l.atual ? l.atual.detalhe : "todas as etapas feitas"}
                         </span>
                       </div>
 
-                      <div>
+                      {/* Prazo final fixo */}
+                      <div style={{ borderLeft: `3px solid ${tomPf.barra}`, paddingLeft: 9 }}>
+                        <div style={{ fontFamily: OSWALD, fontWeight: 600, fontSize: 16, lineHeight: 1.15 }}>{l.prazoFinal}</div>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: tomPf.texto }}>{pf.texto}</div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
                         <span
                           style={{
                             display: "inline-block",
-                            fontSize: 12,
+                            fontSize: 11.5,
                             fontWeight: 600,
-                            padding: "3px 10px",
+                            padding: "3px 9px",
                             borderRadius: 10,
                             whiteSpace: "nowrap",
                             background: pil.fundo,
@@ -457,25 +503,10 @@ export default function PainelTimeline({
                         >
                           {pil.label}
                         </span>
+                        <span aria-hidden="true" style={{ fontSize: 9, color: "#5c5c5c" }}>
+                          {open ? "▲" : "▼"}
+                        </span>
                       </div>
-
-                      <span
-                        aria-hidden="true"
-                        style={{
-                          width: 30,
-                          height: 30,
-                          borderRadius: 8,
-                          border: "1px solid #e7ddd2",
-                          background: "#fff",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 9,
-                          color: "#3d3d3d",
-                        }}
-                      >
-                        {open ? "▲" : "▼"}
-                      </span>
                     </div>
 
                     {open && <Detalhe l={l} somenteLeitura={somenteLeitura} />}
@@ -485,21 +516,18 @@ export default function PainelTimeline({
             )}
           </div>
         </div>
+      </div>
 
-        {/* Rodapé */}
-        <div
-          className="flex flex-wrap items-center justify-between gap-2"
-          style={{ borderTop: "1px solid #f4ebe1", padding: "12px 20px", fontSize: 12, color: "#737373" }}
-        >
-          <span>Ordenado por urgência: atrasados primeiro</span>
-          <span className="flex flex-wrap items-center gap-4">
-            <Legenda cor="#2f9e6b" texto="Concluída" />
-            <Legenda cor="#3d3d3d" texto="Em andamento" />
-            <Legenda cor="#f0913f" texto="Atenção" />
-            <Legenda cor="#d92d20" texto="Atrasada" />
-            <Legenda cor="#f0e8df" texto="Pendente" />
-          </span>
-        </div>
+      {/* Rodapé */}
+      <div className="flex flex-wrap items-center justify-between gap-2" style={{ fontSize: 12, color: "#737373" }}>
+        <span>Ordenado por urgência: atrasados primeiro · Prazo final = fim do período de experiência (fixo)</span>
+        <span className="flex flex-wrap items-center gap-4">
+          <Legenda cor="#2f9e6b" texto="Concluída" />
+          <Legenda cor="#262626" texto="Em andamento" />
+          <Legenda cor="#f0913f" texto="Atenção" />
+          <Legenda cor="#d92d20" texto="Atrasada" />
+          <Legenda cor="#e3d8c9" texto="Ainda não chegou" />
+        </span>
       </div>
     </div>
   );
@@ -601,7 +629,7 @@ function Detalhe({ l, somenteLeitura }: { l: LinhaTimeline; somenteLeitura: bool
 
   return (
     <div
-      style={{ background: "#fffcf9", padding: "4px 20px 24px 68px", fontSize: 13 }}
+      style={{ background: "#fffcf9", padding: "20px 24px 26px", borderTop: "1px solid #f4ebe1", fontSize: 13 }}
       className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr_1fr] gap-8"
     >
       {/* Etapas do processo */}
@@ -775,6 +803,18 @@ function AcoesEtapa({ l, botao }: { l: LinhaTimeline; botao: CSSProperties }) {
         style={{ ...botao, ...desligado }}
       >
         Finalizar todas as etapas
+      </button>
+      <button
+        type="button"
+        disabled={pendente}
+        onClick={() => {
+          if (window.confirm(`Excluir ${l.nome} do Painel de Integração?\n\nO colaborador continua cadastrado no sistema. Só sai deste painel.`)) {
+            rodar(removerDoPainelIntegracao);
+          }
+        }}
+        style={{ ...botao, color: "#b42318", borderColor: "#f1c4bf", ...desligado }}
+      >
+        Excluir do painel
       </button>
       {msg && (
         <span role="status" style={{ flexBasis: "100%", fontSize: 12, fontWeight: 600, color: msg.ok ? "#1f7a52" : "#b42318" }}>

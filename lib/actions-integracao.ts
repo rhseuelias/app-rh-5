@@ -591,6 +591,27 @@ export async function arquivarProcessoIntegracao(processoId: string) {
   revalidatePath("/onboarding");
 }
 
+/** Tira o colaborador do Painel de Integração. Os dados do processo continuam guardados (arquivados). */
+export async function removerDoPainelIntegracao(processoId: string, colaboradorId: string): Promise<RespostaIntegracao> {
+  const supabase = createClient();
+  const usuario = await usuarioAtual(supabase);
+
+  const { error } = await supabase
+    .from("processos_integracao")
+    .update({
+      arquivado: true,
+      arquivado_em: new Date().toISOString(),
+      arquivado_por: usuario,
+    })
+    .eq("id", processoId);
+
+  if (error) return { ok: false, mensagem: "Não consegui tirar do painel agora. Tente de novo." };
+
+  revalidatePath("/onboarding");
+  revalidatePath(`/onboarding/${colaboradorId}`);
+  return { ok: true, mensagem: "Colaborador tirado do painel." };
+}
+
 // ------------------------------------------------------------
 // Configurações (Configurações → Processo de Integração)
 // ------------------------------------------------------------
