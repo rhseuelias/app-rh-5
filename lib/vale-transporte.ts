@@ -28,6 +28,9 @@ export interface LinhaVT {
   valor_unit: number;
   dias_uteis: number;
   saldo: number;
+  /** Só o CAJU usa estes dois. */
+  alimentacao: number;
+  premio: number;
 }
 
 const arred = (n: number) => Math.round(n * 100) / 100;
@@ -36,12 +39,25 @@ export function valorDiarioVT(l: Pick<LinhaVT, "diaria" | "valor_unit">): number
   return arred(l.diaria * l.valor_unit);
 }
 
-export function totalVT(l: Pick<LinhaVT, "diaria" | "valor_unit" | "dias_uteis">): number {
+/** Transporte do mês: diária × valor × dias úteis. */
+export function transporteVT(l: Pick<LinhaVT, "diaria" | "valor_unit" | "dias_uteis">): number {
   return arred(l.diaria * l.valor_unit * l.dias_uteis);
 }
 
+type CamposTotal = Pick<LinhaVT, "diaria" | "valor_unit" | "dias_uteis"> & {
+  operadora?: OperadoraVT;
+  alimentacao?: number;
+  premio?: number;
+};
+
+/** Total do mês. No CAJU soma também alimentação e prêmio. */
+export function totalVT(l: CamposTotal): number {
+  const extra = l.operadora === "CAJU" ? (l.alimentacao ?? 0) + (l.premio ?? 0) : 0;
+  return arred(transporteVT(l) + extra);
+}
+
 /** Quanto precisa recarregar: Total − Saldo (se o saldo cobre tudo, é zero). */
-export function cargaVT(l: Pick<LinhaVT, "diaria" | "valor_unit" | "dias_uteis" | "saldo">): number {
+export function cargaVT(l: CamposTotal & { saldo: number }): number {
   return Math.max(0, arred(totalVT(l) - l.saldo));
 }
 

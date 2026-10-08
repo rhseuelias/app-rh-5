@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase-server";
-import { OPERADORAS, deslocarCompetencia, type OperadoraVT } from "@/lib/vale-transporte";
+import { OPERADORAS, type OperadoraVT } from "@/lib/vale-transporte";
+import { copiarDoMesAnteriorVT } from "@/lib/vt-copia-mes-anterior";
 
 export type RespostaVT = { ok: true; aviso?: string } | { ok: false; erro: string };
 
@@ -35,6 +36,8 @@ export interface NovaLinhaVT {
   diaria: number;
   valorUnit: number;
   diasUteis: number;
+  alimentacao?: number;
+  premio?: number;
 }
 
 export async function criarLinhaVT(n: NovaLinhaVT): Promise<RespostaVT> {
@@ -44,6 +47,11 @@ export async function criarLinhaVT(n: NovaLinhaVT): Promise<RespostaVT> {
   if (!n.colaboradorId) return { ok: false, erro: "Escolha o colaborador." };
   if (!numeroValido(n.diaria, 20) || !numeroValido(n.valorUnit, 1000) || !numeroValido(n.diasUteis, 31)) {
     return { ok: false, erro: "Confira os números (diária, valor e dias úteis)." };
+  }
+  const alimentacao = n.alimentacao ?? 0;
+  const premio = n.premio ?? 0;
+  if (!numeroValido(alimentacao, 100000) || !numeroValido(premio, 100000)) {
+    return { ok: false, erro: "Confira os valores de alimentação e prêmio." };
   }
 
   const supabase = createClient();
@@ -55,6 +63,8 @@ export async function criarLinhaVT(n: NovaLinhaVT): Promise<RespostaVT> {
     diaria: n.diaria,
     valor_unit: n.valorUnit,
     dias_uteis: Math.round(n.diasUteis),
+    alimentacao: n.operadora === "CAJU" ? alimentacao : 0,
+    premio: n.operadora === "CAJU" ? premio : 0,
   });
   if (error) return { ok: false, erro: mensagem(error.message) };
   revalidatePath(CAMINHO);
@@ -67,6 +77,8 @@ export interface CamposLinhaVT {
   valor_unit?: number;
   dias_uteis?: number;
   saldo?: number;
+  alimentacao?: number;
+  premio?: number;
 }
 
 export async function salvarLinhaVT(id: string, campos: CamposLinhaVT): Promise<RespostaVT> {
@@ -88,6 +100,14 @@ export async function salvarLinhaVT(id: string, campos: CamposLinhaVT): Promise<
   if (campos.saldo !== undefined) {
     if (!numeroValido(campos.saldo, 100000)) return { ok: false, erro: "Saldo inválido." };
     atualizar.saldo = campos.saldo;
+  }
+  if (campos.alimentacao !== undefined) {
+    if (!numeroValido(campos.alimentacao, 100000)) return { ok: false, erro: "Alimentação inválida." };
+    atualizar.alimentacao = campos.alimentacao;
+  }
+  if (campos.premio !== undefined) {
+    if (!numeroValido(campos.premio, 100000)) return { ok: false, erro: "Prêmio inválido." };
+    atualizar.premio = campos.premio;
   }
 
   const supabase = createClient();
@@ -121,41 +141,15 @@ export async function aplicarDiasUteisVT(ids: string[], dias: number): Promise<R
   return { ok: true };
 }
 
-/** Copia os cartões do mês anterior (sem o saldo) dos colaboradores da unidade. */
+/** Copia os cartões do mês anterior (sem o saldo) dos colaboradores da unidade, só os que faltam. */
 export async function copiarMesAnteriorVT(competencia: string, colaboradorIds: string[]): Promise<RespostaVT> {
   if (!(await logado())) return { ok: false, erro: "Entre no sistema para fazer isso." };
   if (!competenciaValida(competencia)) return { ok: false, erro: "Mês inválido." };
   if (colaboradorIds.length === 0) return { ok: false, erro: "Não há colaboradores nesta unidade." };
 
-  const supabase = createClient();
-  const anterior = deslocarCompetencia(competencia, -1);
-  const [antRes, atualRes] = await Promise.all([
-    supabase.from("vt_lancamentos").select("*").eq("competencia", anterior).in("colaborador_id", colaboradorIds),
-    supabase.from("vt_lancamentos").select("colaborador_id, operadora, cartao").eq("competencia", competencia).in("colaborador_id", colaboradorIds),
-  ]);
-  if (antRes.error) return { ok: false, erro: mensagem(antRes.error.message) };
-  if (atualRes.error) return { ok: false, erro: mensagem(atualRes.error.message) };
-
-  const chave = (c: string, o: string, cartao: string | null) => `${c}|${o}|${cartao ?? ""}`;
-  const jaTem = new Set((atualRes.data ?? []).map((r) => chave(r.colaborador_id as string, r.operadora as string, r.cartao as string | null)));
-
-  const novas = (antRes.data ?? [])
-    .filter((r) => !jaTem.has(chave(r.colaborador_id as string, r.operadora as string, r.cartao as string | null)))
-    .map((r) => ({
-      competencia,
-      colaborador_id: r.colaborador_id,
-      operadora: r.operadora,
-      cartao: r.cartao,
-      diaria: r.diaria,
-      valor_unit: r.valor_unit,
-      dias_uteis: r.dias_uteis,
-      saldo: 0,
-    }));
-
-  if (novas.length === 0) return { ok: true, aviso: "Não havia nada novo para copiar do mês anterior." };
-
-  const { error } = await supabase.from("vt_lancamentos").insert(novas);
-  if (error) return { ok: false, erro: mensagem(error.message) };
+  const r = await copiarDoMesAnteriorVT(createClient(), competencia, colaboradorIds);
+  if (!r.ok) return { ok: false, erro: mensagem(r.erro) };
+  if (r.copiados === 0) return { ok: true, aviso: "Não havia nada novo para copiar do mês anterior." };
   revalidatePath(CAMINHO);
-  return { ok: true, aviso: `${novas.length} cartão(ões) copiado(s). Atualize só os saldos.` };
+  return { ok: true, aviso: `${r.copiados} cartão(ões) copiado(s). Atualize só os saldos.` };
 }

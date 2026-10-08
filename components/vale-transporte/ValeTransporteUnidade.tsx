@@ -180,7 +180,7 @@ function SecaoOperadora({
         <div>
           {operadora === "CAJU" && (
             <p className="border-b border-brand-100 bg-blue-50/40 px-5 py-2 text-xs text-stone-600">
-              Aqui entra só o transporte pago pelo cartão CAJU. Alimentação, prêmio e outros ficam no Controle de Benefícios.
+              No CAJU o Total soma transporte + alimentação + prêmio. Se você também lança alimentação e prêmio no Controle de Benefícios, não repita aqui para não contar duas vezes.
             </p>
           )}
           <div className="overflow-x-auto">
@@ -193,6 +193,8 @@ function SecaoOperadora({
                   <th className="px-3 py-2 text-right">Valor unit.</th>
                   <th className="px-3 py-2 text-right">Valor diário</th>
                   <th className="px-3 py-2 text-right">Dias úteis</th>
+                  {operadora === "CAJU" && <th className="px-3 py-2 text-right">Alimentação</th>}
+                  {operadora === "CAJU" && <th className="px-3 py-2 text-right">Prêmio</th>}
                   <th className="px-3 py-2 text-right">Total</th>
                   <th className="px-3 py-2 text-right">Saldo atual</th>
                   <th className="px-3 py-2 text-right">Carga</th>
@@ -202,19 +204,19 @@ function SecaoOperadora({
               <tbody>
                 {linhas.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-5 py-6 text-center text-sm text-stone-500">
+                    <td colSpan={12} className="px-5 py-6 text-center text-sm text-stone-500">
                       Nenhum cartão {ROTULO_OPERADORA[operadora]} lançado em {grupo} neste mês.
                     </td>
                   </tr>
                 )}
                 {linhas.map((l) => (
-                  <LinhaEditavel key={l.id} linha={l} />
+                  <LinhaEditavel key={l.id} linha={l} caju={operadora === "CAJU"} />
                 ))}
               </tbody>
               {linhas.length > 0 && (
                 <tfoot>
                   <tr className="bg-brand-50/60 font-semibold">
-                    <td className="px-3 py-2.5" colSpan={6}>
+                    <td className="px-3 py-2.5" colSpan={operadora === "CAJU" ? 8 : 6}>
                       TOTAL — {ROTULO_OPERADORA[operadora]} · {grupo}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(soma.total)}</td>
@@ -248,12 +250,14 @@ function SecaoOperadora({
   );
 }
 
-function LinhaEditavel({ linha }: { linha: LinhaTela }) {
+function LinhaEditavel({ linha, caju }: { linha: LinhaTela; caju: boolean }) {
   const [cartao, setCartao] = useState(linha.cartao ?? "");
   const [diaria, setDiaria] = useState(campoVT(linha.diaria));
   const [valor, setValor] = useState(campoVT(linha.valor_unit));
   const [dias, setDias] = useState(campoVT(linha.dias_uteis));
   const [saldo, setSaldo] = useState(campoVT(linha.saldo));
+  const [alim, setAlim] = useState(campoVT(linha.alimentacao ?? 0));
+  const [premio, setPremio] = useState(campoVT(linha.premio ?? 0));
   const [estado, setEstado] = useState<"" | "salvando" | "salvo" | "erro">("");
   const [erro, setErro] = useState("");
   const [pendente, iniciar] = useTransition();
@@ -262,9 +266,14 @@ function LinhaEditavel({ linha }: { linha: LinhaTela }) {
   const nValor = lerNumeroVT(valor);
   const nDias = lerNumeroVT(dias);
   const nSaldo = lerNumeroVT(saldo);
-  const ok = nDiaria !== null && nValor !== null && nDias !== null && nSaldo !== null;
+  const nAlim = lerNumeroVT(alim);
+  const nPremio = lerNumeroVT(premio);
+  const ok = nDiaria !== null && nValor !== null && nDias !== null && nSaldo !== null && nAlim !== null && nPremio !== null;
 
   const vivo = {
+    operadora: linha.operadora,
+    alimentacao: nAlim ?? 0,
+    premio: nPremio ?? 0,
     diaria: nDiaria ?? 0,
     valor_unit: nValor ?? 0,
     dias_uteis: nDias ?? 0,
@@ -347,6 +356,16 @@ function LinhaEditavel({ linha }: { linha: LinhaTela }) {
           onBlur={() => aoSair("dias_uteis", dias, linha.dias_uteis)}
         />
       </td>
+      {caju && (
+        <td className="px-3 py-1.5">
+          <input aria-label="Alimentação" className={campo} inputMode="decimal" value={alim} onChange={(e) => setAlim(e.target.value)} onBlur={() => aoSair("alimentacao", alim, linha.alimentacao ?? 0)} />
+        </td>
+      )}
+      {caju && (
+        <td className="px-3 py-1.5">
+          <input aria-label="Prêmio" className={campo} inputMode="decimal" value={premio} onChange={(e) => setPremio(e.target.value)} onBlur={() => aoSair("premio", premio, linha.premio ?? 0)} />
+        </td>
+      )}
       <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{numeroVT(ok ? totalVT(vivo) : 0)}</td>
       <td className="px-3 py-1.5">
         <input aria-label="Saldo atual" className={campo} inputMode="decimal" value={saldo} onChange={(e) => setSaldo(e.target.value)} onBlur={() => aoSair("saldo", saldo, linha.saldo)} />
@@ -382,6 +401,8 @@ function FormNovoCartao({
   const [diaria, setDiaria] = useState("2");
   const [valor, setValor] = useState("");
   const [dias, setDias] = useState(diasPadrao);
+  const [alim, setAlim] = useState("");
+  const [premio, setPremio] = useState("");
   const [erro, setErro] = useState("");
   const [pendente, iniciar] = useTransition();
 
@@ -389,8 +410,10 @@ function FormNovoCartao({
     const nDiaria = lerNumeroVT(diaria);
     const nValor = lerNumeroVT(valor);
     const nDias = lerNumeroVT(dias);
+    const nAlim = lerNumeroVT(alim);
+    const nPremio = lerNumeroVT(premio);
     if (!colab) return setErro("Escolha o colaborador.");
-    if (nDiaria === null || nValor === null || nDias === null) return setErro("Confira os números.");
+    if (nDiaria === null || nValor === null || nDias === null || nAlim === null || nPremio === null) return setErro("Confira os números.");
     setErro("");
     iniciar(async () => {
       const r = await criarLinhaVT({
@@ -401,6 +424,8 @@ function FormNovoCartao({
         diaria: nDiaria,
         valorUnit: nValor,
         diasUteis: nDias,
+        alimentacao: operadora === "CAJU" ? nAlim : 0,
+        premio: operadora === "CAJU" ? nPremio : 0,
       });
       if (r.ok) fechar();
       else setErro(r.erro);
@@ -446,6 +471,22 @@ function FormNovoCartao({
         </label>
         <input id={`nc-dias-${operadora}`} className="input text-right" inputMode="numeric" value={dias} onChange={(e) => setDias(e.target.value)} />
       </div>
+      {operadora === "CAJU" && (
+        <>
+          <div className="w-28">
+            <label className="label" htmlFor={`nc-alim-${operadora}`}>
+              Alimentação
+            </label>
+            <input id={`nc-alim-${operadora}`} className="input text-right" inputMode="decimal" value={alim} onChange={(e) => setAlim(e.target.value)} />
+          </div>
+          <div className="w-28">
+            <label className="label" htmlFor={`nc-premio-${operadora}`}>
+              Prêmio
+            </label>
+            <input id={`nc-premio-${operadora}`} className="input text-right" inputMode="decimal" value={premio} onChange={(e) => setPremio(e.target.value)} />
+          </div>
+        </>
+      )}
       <button type="button" className="btn-primary" disabled={pendente} onClick={adicionar}>
         {pendente ? "Salvando…" : "Adicionar"}
       </button>

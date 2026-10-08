@@ -15,6 +15,7 @@ import {
   somaVT,
   type LinhaVT,
 } from "@/lib/vale-transporte";
+import { copiaAutomaticaVT } from "@/lib/vt-copia-mes-anterior";
 import ValeTransporteUnidade, { type LinhaTela } from "@/components/vale-transporte/ValeTransporteUnidade";
 
 export const dynamic = "force-dynamic";
@@ -30,10 +31,23 @@ export default async function ValeTransportePage({
     : competenciaAtualSP();
   const anterior = deslocarCompetencia(competencia, -1);
 
-  const [empresasRes, unidadesRes, colaboradoresRes, lancRes, antRes] = await Promise.all([
+  const [empresasRes, unidadesRes, colaboradoresRes] = await Promise.all([
     supabase.from("empresas").select("*"),
     supabase.from("unidades").select("*"),
     supabase.from("colaboradores").select("*"),
+  ]);
+
+  // Mês novo: traz sozinho os cartões e valores do mês anterior (só na 1ª vez que o mês é aberto).
+  if (!colaboradoresRes.error) {
+    await copiaAutomaticaVT(
+      supabase,
+      competencia,
+      competenciaAtualSP(),
+      ((colaboradoresRes.data ?? []) as Colaborador[]).filter(elegivelVT).map((c) => c.id)
+    );
+  }
+
+  const [lancRes, antRes] = await Promise.all([
     supabase.from("vt_lancamentos").select("*").eq("competencia", competencia),
     supabase.from("vt_lancamentos").select("id", { count: "exact", head: true }).eq("competencia", anterior),
   ]);
@@ -45,7 +59,7 @@ export default async function ValeTransportePage({
         <h1 className="text-2xl font-semibold">Vale Transporte</h1>
         <p className="text-sm text-red-700">
           {faltaTabela
-            ? "Falta criar a tabela no banco. Rode o arquivo migration_022_vale_transporte.sql no Supabase (SQL Editor) e abra esta tela de novo."
+            ? "Falta criar a tabela no banco. Rode o arquivo migration_022_vale_transporte.sql e depois a migration_023_vale_transporte_caju.sql no Supabase (SQL Editor) e abra esta tela de novo."
             : `Não foi possível carregar: ${lancRes.error.message}`}
         </p>
       </div>

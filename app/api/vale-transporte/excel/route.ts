@@ -67,19 +67,11 @@ export async function GET(req: Request) {
     const ws = wb.addWorksheet(ROTULO_OPERADORA[op], {
       pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     });
-    ws.columns = [
-      { width: 30 },
-      { width: 24 },
-      { width: 14 },
-      { width: 12 },
-      { width: 13 },
-      { width: 11 },
-      { width: 13 },
-      { width: 13 },
-      { width: 13 },
-    ];
+    const caju = op === "CAJU";
+    const ultCol = caju ? "K" : "I";
+    ws.columns = (caju ? [30, 24, 14, 12, 13, 11, 13, 13, 13, 13, 13] : [30, 24, 14, 12, 13, 11, 13, 13, 13]).map((width) => ({ width }));
 
-    ws.mergeCells("A1:I1");
+    ws.mergeCells(`A1:${ultCol}1`);
     ws.getCell("A1").value = `${ROTULO_OPERADORA[op]} — ${rotuloCompetencia(competencia)}`;
     ws.getCell("A1").font = { bold: true, size: 16 };
 
@@ -93,14 +85,16 @@ export async function GET(req: Request) {
     for (const g of grupos) {
       const lista = porGrupo.get(g)!.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
-      ws.mergeCells(`A${linha}:I${linha}`);
+      ws.mergeCells(`A${linha}:${ultCol}${linha}`);
       ws.getCell(`A${linha}`).value = g;
       ws.getCell(`A${linha}`).font = { bold: true, size: 13 };
       ws.getCell(`A${linha}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_TITULO[op] } };
       linha++;
 
       const cab = ws.getRow(linha);
-      cab.values = ["NOME", "CARTÃO", "DIÁRIA (IDA E VOLTA)", "VALOR UNIT.", "VALOR DIÁRIO", "DIAS ÚTEIS", "TOTAL", "SALDO ATUAL", "CARGA"];
+      cab.values = caju
+        ? ["NOME", "CARTÃO", "DIÁRIA (IDA E VOLTA)", "VALOR UNIT.", "VALOR DIÁRIO", "DIAS ÚTEIS", "ALIMENTAÇÃO", "PRÊMIO", "TOTAL", "SALDO ATUAL", "CARGA"]
+        : ["NOME", "CARTÃO", "DIÁRIA (IDA E VOLTA)", "VALOR UNIT.", "VALOR DIÁRIO", "DIAS ÚTEIS", "TOTAL", "SALDO ATUAL", "CARGA"];
       cab.eachCell((cell) => {
         cell.font = { bold: true, size: 10, color: { argb: "FFFFFFFF" } };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF262626" } };
@@ -108,6 +102,12 @@ export async function GET(req: Request) {
       });
       linha++;
       const primeira = linha;
+
+      // posição das colunas (no CAJU entram Alimentação e Prêmio antes do Total)
+      const cTotal = caju ? 9 : 7;
+      const cSaldo = cTotal + 1;
+      const cCarga = cTotal + 2;
+      const letra = (n: number) => String.fromCharCode(64 + n);
 
       for (const { nome, l } of lista) {
         const r = ws.getRow(linha);
@@ -117,12 +117,23 @@ export async function GET(req: Request) {
         r.getCell(4).value = l.valor_unit;
         r.getCell(5).value = { formula: `C${linha}*D${linha}`, result: valorDiarioVT(l) };
         r.getCell(6).value = l.dias_uteis;
-        r.getCell(7).value = { formula: `E${linha}*F${linha}`, result: totalVT(l) };
-        r.getCell(8).value = l.saldo;
-        r.getCell(9).value = { formula: `MAX(0,G${linha}-H${linha})`, result: cargaVT(l) };
-        for (const col of [4, 5, 7, 8, 9]) r.getCell(col).numFmt = "#,##0.00";
-        r.getCell(9).font = { bold: true, color: { argb: "FFB42318" } };
-        r.getCell(7).font = { bold: true };
+        if (caju) {
+          r.getCell(7).value = l.alimentacao ?? 0;
+          r.getCell(8).value = l.premio ?? 0;
+        }
+        r.getCell(cTotal).value = {
+          formula: caju ? `E${linha}*F${linha}+G${linha}+H${linha}` : `E${linha}*F${linha}`,
+          result: totalVT(l),
+        };
+        r.getCell(cSaldo).value = l.saldo;
+        r.getCell(cCarga).value = {
+          formula: `MAX(0,${letra(cTotal)}${linha}-${letra(cSaldo)}${linha})`,
+          result: cargaVT(l),
+        };
+        const moeda = caju ? [4, 5, 7, 8, cTotal, cSaldo, cCarga] : [4, 5, cTotal, cSaldo, cCarga];
+        for (const col of moeda) r.getCell(col).numFmt = "#,##0.00";
+        r.getCell(cCarga).font = { bold: true, color: { argb: "FFB42318" } };
+        r.getCell(cTotal).font = { bold: true };
         for (const col of [3, 6]) r.getCell(col).alignment = { horizontal: "center" };
         linha++;
       }
@@ -130,18 +141,22 @@ export async function GET(req: Request) {
       const ultima = linha - 1;
       const tot = ws.getRow(linha);
       tot.getCell(1).value = `TOTAL — ${g}`;
-      const soma = (col: string, f: (x: LinhaVT) => number) => ({
-        formula: `SUM(${col}${primeira}:${col}${ultima})`,
+      const soma = (col: number, f: (x: LinhaVT) => number) => ({
+        formula: `SUM(${letra(col)}${primeira}:${letra(col)}${ultima})`,
         result: Math.round(lista.reduce((s, { l }) => s + f(l), 0) * 100) / 100,
       });
-      tot.getCell(7).value = soma("G", totalVT);
-      tot.getCell(8).value = soma("H", (x) => x.saldo);
-      tot.getCell(9).value = soma("I", cargaVT);
+      if (caju) {
+        tot.getCell(7).value = soma(7, (x) => x.alimentacao ?? 0);
+        tot.getCell(8).value = soma(8, (x) => x.premio ?? 0);
+      }
+      tot.getCell(cTotal).value = soma(cTotal, totalVT);
+      tot.getCell(cSaldo).value = soma(cSaldo, (x) => x.saldo);
+      tot.getCell(cCarga).value = soma(cCarga, cargaVT);
       tot.eachCell((cell) => {
         cell.font = { bold: true };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4EEE6" } };
       });
-      for (const col of [7, 8, 9]) tot.getCell(col).numFmt = "#,##0.00";
+      for (const col of caju ? [7, 8, cTotal, cSaldo, cCarga] : [cTotal, cSaldo, cCarga]) tot.getCell(col).numFmt = "#,##0.00";
       linha += 3;
     }
   }
