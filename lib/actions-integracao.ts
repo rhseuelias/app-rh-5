@@ -596,7 +596,7 @@ export async function removerDoPainelIntegracao(processoId: string, colaboradorI
   const supabase = createClient();
   const usuario = await usuarioAtual(supabase);
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from("processos_integracao")
     .update({
       arquivado: true,
@@ -605,7 +605,18 @@ export async function removerDoPainelIntegracao(processoId: string, colaboradorI
     })
     .eq("id", processoId);
 
-  if (error) return { ok: false, mensagem: "Não consegui tirar do painel agora. Tente de novo." };
+  // Se as colunas de data/usuário não existirem no banco, tenta só marcar como arquivado.
+  if (error) {
+    const segunda = await supabase.from("processos_integracao").update({ arquivado: true }).eq("id", processoId);
+    error = segunda.error;
+  }
+
+  if (error) {
+    return {
+      ok: false,
+      mensagem: `Não consegui tirar do painel. Motivo: ${error.message}. Rode o arquivo migration_005_arquivar_painel.sql no Supabase e tente de novo.`,
+    };
+  }
 
   revalidatePath("/onboarding");
   revalidatePath(`/onboarding/${colaboradorId}`);
