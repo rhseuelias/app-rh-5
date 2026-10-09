@@ -50,6 +50,12 @@ function str(formData: FormData, campo: string): string | null {
   return v && v !== "" ? String(v) : null;
 }
 
+// nomes de pessoas sempre em MAIÚSCULAS
+function maiusculo(v: string | null | undefined): string | null {
+  const t = (v ?? "").trim().replace(/\s+/g, " ");
+  return t ? t.toLocaleUpperCase("pt-BR") : null;
+}
+
 function bool(formData: FormData, campo: string): boolean {
   return formData.get(campo) === "on" || formData.get(campo) === "true";
 }
@@ -82,7 +88,7 @@ export async function salvarColaborador(formData: FormData) {
 
   const payload = {
     tipo: str(formData, "tipo") ?? "CLT",
-    nome: str(formData, "nome"),
+    nome: maiusculo(str(formData, "nome")),
     cpf_cnpj: str(formData, "cpf_cnpj"),
     cargo: str(formData, "cargo"),
     departamento: str(formData, "departamento"),
@@ -288,7 +294,7 @@ export async function importarColaboradoresCSV(formData: FormData): Promise<Resu
         : regimeNormalizado === "PJ"
           ? "PJ"
           : "CLT") as "CLT" | "PJ" | "Estagio",
-      nome: linha.nome,
+      nome: linha.nome.toLocaleUpperCase("pt-BR"),
       cargo: linha.cargo,
       departamento: linha.departamento,
       empresa_id: empresa?.id ?? null,
@@ -571,7 +577,7 @@ async function importarFichasGoogleForms(formData: FormData): Promise<ResultadoI
         semAcentos(nomeExistente) === chaveNome &&
         !/[^\x00-\x7F]/.test(ficha.nome) &&
         /[^\x00-\x7F]/.test(nomeExistente);
-      if (!mesmoNomeSemAcento) atualizacao.nome = ficha.nome;
+      if (!mesmoNomeSemAcento) atualizacao.nome = ficha.nome.toLocaleUpperCase("pt-BR");
       if (ficha.observacoes && !(existente.observacoes ?? "").includes(ficha.observacoes)) {
         atualizacao.observacoes = [existente.observacoes, ficha.observacoes].filter(Boolean).join("\n");
       }
@@ -600,7 +606,7 @@ async function importarFichasGoogleForms(formData: FormData): Promise<ResultadoI
         ...dadosDoFormulario,
         ...booleanos,
         tipo,
-        nome: ficha.nome,
+        nome: ficha.nome.toLocaleUpperCase("pt-BR"),
         salario_base: ficha.salario_base ?? 0,
         comissao_media: ficha.comissao_media ?? 0,
         auxilio_outros: ficha.auxilio_outros ?? 0,

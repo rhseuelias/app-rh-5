@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import MaiusculaAutomatica from "@/components/MaiusculaAutomatica";
 
 export const metadata: Metadata = {
   title: "AppliQ RH",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        <MaiusculaAutomatica />
+        {children}
+      </body>
     </html>
   );
 }

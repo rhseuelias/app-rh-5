@@ -64,6 +64,18 @@ h2 {
   @apply w-full rounded-xl border border-stone-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition-shadow;
 }
 
+/* Campos de texto sempre em MAIÚSCULAS (a digitação também é convertida por
+   components/MaiusculaAutomatica.tsx). Ficam de fora e-mail, senha, endereços
+   de site, buscas e campos marcados com data-sem-maiuscula. */
+input:not([type]):not([data-sem-maiuscula]):not([name*="mail" i]):not([name*="senha" i]):not([name*="link" i]):not([name*="url" i]):not([name*="busca" i]),
+input[type="text"]:not([data-sem-maiuscula]):not([name*="mail" i]):not([name*="senha" i]):not([name*="link" i]):not([name*="url" i]):not([name*="busca" i]) {
+  text-transform: uppercase;
+}
+input::placeholder,
+textarea::placeholder {
+  text-transform: none;
+}
+
 .label {
   @apply block text-sm font-medium text-stone-600 mb-1;
 }
