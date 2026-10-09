@@ -28,6 +28,7 @@ import {
 
 export interface LinhaTela extends LinhaVT {
   nome: string;
+  matricula: string | null;
   repetido: boolean;
 }
 
@@ -45,6 +46,7 @@ interface Props {
   colaboradores: OpcaoColaborador[];
   temMesAnterior: boolean;
   linkExcel: string;
+  linkCsvBhbus: string;
   /** Dias úteis do mês já salvos (ou do mês anterior, ou 26). */
   diasMesInicial: number;
 }
@@ -52,7 +54,7 @@ interface Props {
 const campo =
   "w-full min-w-[56px] rounded-md border border-stone-300 bg-white px-2 py-1 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-400";
 
-export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, linhas, colaboradores, temMesAnterior, linkExcel, diasMesInicial }: Props) {
+export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, linhas, colaboradores, temMesAnterior, linkExcel, linkCsvBhbus, diasMesInicial }: Props) {
   const primeira = OPERADORAS.find((o) => linhas.some((l) => l.operadora === o)) ?? "BHBUS";
   const [ativa, setAtiva] = useState<OperadoraVT>(primeira);
   const [diasMes, setDiasMes] = useState(String(diasMesInicial));
@@ -135,6 +137,11 @@ export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, l
           <a href={linkExcel} className="btn-primary no-underline">
             Exportar Excel
           </a>
+          {ativa === "BHBUS" && (
+            <a href={linkCsvBhbus} className="btn-secondary no-underline">
+              CSV de recarga BHBUS
+            </a>
+          )}
         </div>
         {msg && (
           <p role="status" className={`basis-full text-sm font-medium ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>
@@ -206,6 +213,7 @@ function SecaoOperadora({
   diasPadrao: string;
 }) {
   const soma = somaVT(linhas);
+  const comMatricula = operadora === "BHBUS" || operadora === "OTIMO";
   const [adicionando, setAdicionando] = useState(false);
 
   return (
@@ -218,9 +226,10 @@ function SecaoOperadora({
             </p>
           )}
           <div className="overflow-x-auto">
-            <table className={`w-full text-sm ${operadora === "CAJU" ? "min-w-[1040px]" : "min-w-[900px]"}`}>
+            <table className={`w-full text-sm ${operadora === "CAJU" ? "min-w-[1040px]" : comMatricula ? "min-w-[980px]" : "min-w-[900px]"}`}>
               <thead>
                 <tr className="bg-brand-50/60 text-left text-[11px] font-semibold uppercase tracking-wide text-stone-600">
+                  {comMatricula && <th className="px-3 py-2">Matrícula</th>}
                   <th className="px-3 py-2">Nome</th>
                   <th className="px-3 py-2">Cartão</th>
                   <th className="px-3 py-2 text-right">Diária</th>
@@ -238,19 +247,19 @@ function SecaoOperadora({
               <tbody>
                 {linhas.length === 0 && (
                   <tr>
-                    <td colSpan={12} className="px-5 py-6 text-center text-sm text-stone-500">
+                    <td colSpan={13} className="px-5 py-6 text-center text-sm text-stone-500">
                       Nenhum cartão {ROTULO_OPERADORA[operadora]} lançado em {grupo} neste mês.
                     </td>
                   </tr>
                 )}
                 {linhas.map((l) => (
-                  <LinhaEditavel key={l.id} linha={l} caju={operadora === "CAJU"} />
+                  <LinhaEditavel key={l.id} linha={l} caju={operadora === "CAJU"} comMatricula={comMatricula} />
                 ))}
               </tbody>
               {linhas.length > 0 && (
                 <tfoot>
                   <tr className={`border-t-2 border-current font-semibold ${cor.fundo} ${cor.texto}`}>
-                    <td className="px-3 py-2.5" colSpan={operadora === "CAJU" ? 8 : 6}>
+                    <td className="px-3 py-2.5" colSpan={(operadora === "CAJU" ? 8 : 6) + (comMatricula ? 1 : 0)}>
                       TOTAL — {ROTULO_OPERADORA[operadora]} · {grupo}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(soma.total)}</td>
@@ -284,7 +293,7 @@ function SecaoOperadora({
   );
 }
 
-function LinhaEditavel({ linha, caju }: { linha: LinhaTela; caju: boolean }) {
+function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: boolean; comMatricula: boolean }) {
   const [cartao, setCartao] = useState(linha.cartao ?? "");
   const [diaria, setDiaria] = useState(campoVT(linha.diaria));
   const [valor, setValor] = useState(campoVT(linha.valor_unit));
@@ -404,6 +413,11 @@ function LinhaEditavel({ linha, caju }: { linha: LinhaTela; caju: boolean }) {
 
   return (
     <tr className="border-t border-brand-100 align-middle">
+      {comMatricula && (
+        <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-stone-700">
+          {linha.matricula || <span className="text-amber-700" title="Colaborador sem matrícula cadastrada">sem matrícula</span>}
+        </td>
+      )}
       <td className="whitespace-nowrap px-3 py-1.5 font-semibold uppercase">{linha.nome}</td>
       <td className="px-3 py-1.5">
         <div className="flex items-center gap-2">

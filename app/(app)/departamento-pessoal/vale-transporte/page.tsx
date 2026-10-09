@@ -119,7 +119,7 @@ export default async function ValeTransportePage({
     if (!c) continue;
     const g = grupoVT(c, empresaPorId, unidadePorId);
     garantir(g);
-    linhasPorGrupo.get(g)!.push({ ...l, nome: c.nome, repetido: repetido(l) });
+    linhasPorGrupo.get(g)!.push({ ...l, nome: c.nome, matricula: c.matricula ?? null, repetido: repetido(l) });
   }
   for (const lista of colabsPorGrupo.values()) lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   for (const lista of linhasPorGrupo.values()) lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
@@ -187,6 +187,7 @@ export default async function ValeTransportePage({
                 colaboradores={colabsPorGrupo.get(escolhido) ?? []}
                 temMesAnterior={(antRes.count ?? 0) > 0}
                 linkExcel={linkExcel}
+                linkCsvBhbus={`/api/vale-transporte/csv?competencia=${competencia}`}
                 diasMesInicial={diasMes}
               />
 
