@@ -37,6 +37,8 @@ import { calcularPrevisaoColaborador, fDias } from "@/lib/previsao-ferias";
 import { hojeEmBrasilia } from "@/lib/ferias-regras";
 import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
 import { assistentePodeGerarFicha } from "@/lib/acesso-assistente";
+import AcompanhamentoDesligamento from "@/components/desligamento/AcompanhamentoDesligamento";
+import { hojeBrasilia, type Desligamento } from "@/lib/desligamento";
 
 export const dynamic = "force-dynamic";
 
@@ -197,6 +199,20 @@ export default async function ColaboradorPage({ params }: { params: { id: string
 
   const c = colaborador as Colaborador;
   const custoMensal = custoMensalColaborador(c);
+
+  // acompanhamento de pagamento e homologação do desligamento (só RH, só CLT)
+  const mostrarDesligamento = !restrito && c.tipo === "CLT";
+  let desligamento: Desligamento | null = null;
+  let tabelaDesligamentoFaltando = false;
+  if (mostrarDesligamento) {
+    const { data: dd, error: erroDd } = await supabase
+      .from("desligamentos")
+      .select("*")
+      .eq("colaborador_id", params.id)
+      .maybeSingle();
+    if (erroDd) tabelaDesligamentoFaltando = /does not exist|schema cache/i.test(erroDd.message);
+    else desligamento = (dd as Desligamento | null) ?? null;
+  }
   const aquisitivosLista = (aquisitivos ?? []) as PeriodoAquisitivo[];
   const historico = (historicoContratosPJ ?? []) as HistoricoContratoPJ[];
 
@@ -306,6 +322,22 @@ export default async function ColaboradorPage({ params }: { params: { id: string
           <StatusColaboradorAcoes id={c.id} statusAtual={c.status} />
         </div>
       </div>
+
+      {mostrarDesligamento && (
+        <AcompanhamentoDesligamento
+          colaboradorId={c.id}
+          nome={c.nome}
+          dataAdmissao={c.data_admissao}
+          desligamento={desligamento}
+          hoje={hojeBrasilia()}
+          tabelaFaltando={tabelaDesligamentoFaltando}
+          empresaPadrao={{
+            razao: empresa?.nome ?? "",
+            cnpj: unidadeDoColaborador?.cnpj ?? empresa?.cnpj ?? "",
+          }}
+          unidadeId={c.unidade_id}
+        />
+      )}
 
       {/* Cartões de resumo */}
       <div className="grid gap-4 md:grid-cols-3">

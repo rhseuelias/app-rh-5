@@ -19,6 +19,7 @@ import {
 import { autoGerarProximosPeriodosVencidos } from "@/lib/actions";
 import { souAssistente } from "@/lib/permissoes";
 import TimelineResumo from "@/components/dashboard/TimelineResumo";
+import AvisosDesligamentoPainel from "@/components/desligamento/AvisosDesligamentoPainel";
 import FiltrosPainel from "@/components/dashboard/FiltrosPainel";
 import EvolucaoLinhas from "@/components/dashboard/EvolucaoLinhas";
 import {
@@ -508,6 +509,9 @@ export default async function DashboardPage({
           )}
         </div>
       </div>
+
+      {/* Desligamentos: pagamento e homologação (some se não houver ninguém) */}
+      <AvisosDesligamentoPainel />
 
       {/* Atenção / experiência / aniversários */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr_1fr] gap-4">
