@@ -8,6 +8,7 @@ import {
   excluirLinhaVT,
   salvarDiasMesVT,
   salvarLinhaVT,
+  salvarMatriculaVT,
   type CamposLinhaVT,
 } from "@/lib/actions-vale-transporte";
 import {
@@ -295,6 +296,8 @@ function SecaoOperadora({
 
 function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: boolean; comMatricula: boolean }) {
   const [cartao, setCartao] = useState(linha.cartao ?? "");
+  const [matricula, setMatricula] = useState(linha.matricula ?? "");
+  const matriculaSalva = useRef((linha.matricula ?? "").trim());
   const [diaria, setDiaria] = useState(campoVT(linha.diaria));
   const [valor, setValor] = useState(campoVT(linha.valor_unit));
   const [dias, setDias] = useState(campoVT(linha.dias_uteis));
@@ -414,8 +417,29 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
   return (
     <tr className="border-t border-brand-100 align-middle">
       {comMatricula && (
-        <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-stone-700">
-          {linha.matricula || <span className="text-amber-700" title="Colaborador sem matrícula cadastrada">sem matrícula</span>}
+        <td className="px-3 py-1.5">
+          <input
+            aria-label={`Matrícula de ${linha.nome}`}
+            placeholder="matrícula"
+            className="w-28 rounded-md border border-stone-300 bg-white px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-400"
+            value={matricula}
+            onChange={(e) => setMatricula(e.target.value)}
+            onBlur={() => {
+              const nova = matricula.trim();
+              if (nova === matriculaSalva.current) return;
+              setEstado("salvando");
+              iniciar(async () => {
+                const r = await salvarMatriculaVT(linha.colaborador_id, linha.operadora, nova);
+                if (r.ok) {
+                  matriculaSalva.current = nova;
+                  setEstado("salvo");
+                } else {
+                  setEstado("erro");
+                  setErro(r.erro);
+                }
+              });
+            }}
+          />
         </td>
       )}
       <td className="whitespace-nowrap px-3 py-1.5 font-semibold uppercase">{linha.nome}</td>

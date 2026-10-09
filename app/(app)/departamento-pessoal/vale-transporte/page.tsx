@@ -46,7 +46,8 @@ export default async function ValeTransportePage({
     );
   }
 
-  const [lancRes, antRes] = await Promise.all([
+  const [matRes, lancRes, antRes] = await Promise.all([
+    supabase.from("vt_matriculas").select("colaborador_id, operadora, matricula"),
     supabase.from("vt_lancamentos").select("*").eq("competencia", competencia),
     supabase.from("vt_lancamentos").select("id", { count: "exact", head: true }).eq("competencia", anterior),
   ]);
@@ -85,6 +86,13 @@ export default async function ValeTransportePage({
   const colaboradores = (colaboradoresRes.data ?? []) as Colaborador[];
   const colabPorId = new Map(colaboradores.map((c) => [c.id, c]));
   const lancamentos = (lancRes.data ?? []) as LinhaVT[];
+  // matrícula de cada operadora (BHBUS/ÓTIMO) — é separada da matrícula do cadastro do colaborador
+  const matriculaVT = new Map<string, string>();
+  if (!matRes.error) {
+    for (const m of (matRes.data ?? []) as { colaborador_id: string; operadora: string; matricula: string }[]) {
+      matriculaVT.set(`${m.colaborador_id}|${m.operadora}`, m.matricula);
+    }
+  }
 
   // cartão usado por mais de um colaborador (na mesma operadora) = repetido
   const donosPorCartao = new Map<string, Set<string>>();
@@ -119,7 +127,7 @@ export default async function ValeTransportePage({
     if (!c) continue;
     const g = grupoVT(c, empresaPorId, unidadePorId);
     garantir(g);
-    linhasPorGrupo.get(g)!.push({ ...l, nome: c.nome, matricula: c.matricula ?? null, repetido: repetido(l) });
+    linhasPorGrupo.get(g)!.push({ ...l, nome: c.nome, matricula: matriculaVT.get(`${l.colaborador_id}|${l.operadora}`) ?? null, repetido: repetido(l) });
   }
   for (const lista of colabsPorGrupo.values()) lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   for (const lista of linhasPorGrupo.values()) lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));

@@ -172,17 +172,22 @@ export async function salvarDiasMesVT(competencia: string, dias: number): Promis
   return { ok: true };
 }
 
-/** Salva a matrícula do colaborador (vale para todas as telas e para o CSV). */
-export async function salvarMatriculaVT(colaboradorId: string, matricula: string): Promise<RespostaVT> {
+/** Salva a matrícula da operadora (BHBUS/ÓTIMO). É separada da matrícula do cadastro do colaborador. */
+export async function salvarMatriculaVT(colaboradorId: string, operadora: string, matricula: string): Promise<RespostaVT> {
   if (!(await logado())) return { ok: false, erro: "Entre no sistema para fazer isso." };
+  if (!(OPERADORAS as readonly string[]).includes(operadora)) return { ok: false, erro: "Operadora inválida." };
   const limpa = matricula.trim();
   if (limpa.length > 30) return { ok: false, erro: "Matrícula muito longa." };
   const supabase = createClient();
-  const { error } = await supabase
-    .from("colaboradores")
-    .update({ matricula: limpa || null })
-    .eq("id", colaboradorId);
-  if (error) return { ok: false, erro: mensagem(error.message) };
+  const { error } = limpa
+    ? await supabase
+        .from("vt_matriculas")
+        .upsert({ colaborador_id: colaboradorId, operadora, matricula: limpa, updated_at: new Date().toISOString() }, { onConflict: "colaborador_id,operadora" })
+    : await supabase.from("vt_matriculas").delete().eq("colaborador_id", colaboradorId).eq("operadora", operadora);
+  if (error) {
+    if (/does not exist|schema cache/i.test(error.message)) return { ok: false, erro: "Falta rodar a migration_024 no Supabase." };
+    return { ok: false, erro: mensagem(error.message) };
+  }
   revalidatePath(CAMINHO);
   return { ok: true };
 }

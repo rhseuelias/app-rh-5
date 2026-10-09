@@ -14,7 +14,7 @@ function ehBseSemAlphaville(texto: string): boolean {
   return t.includes("bse") && !t.includes("alphaville");
 }
 
-/** CSV de recarga do BHBUS: MATRICULA;VALOR PARA CARREGAMENTO (valor em centavos, sem vírgula). */
+/** CSV de recarga do BHBUS: MATRICULA;VALOR (sem título; valor em centavos, sem vírgula). */
 export async function GET(req: Request) {
   const supabase = createClient();
   const {
@@ -25,7 +25,8 @@ export async function GET(req: Request) {
   const competencia = new URL(req.url).searchParams.get("competencia") ?? "";
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) return NextResponse.json({ error: "mês inválido" }, { status: 400 });
 
-  const [empRes, uniRes, colRes, lancRes] = await Promise.all([
+  const [matRes, empRes, uniRes, colRes, lancRes] = await Promise.all([
+    supabase.from("vt_matriculas").select("colaborador_id, matricula").eq("operadora", "BHBUS"),
     supabase.from("empresas").select("*"),
     supabase.from("unidades").select("*"),
     supabase.from("colaboradores").select("*"),
@@ -37,6 +38,10 @@ export async function GET(req: Request) {
   const unidadePorId = new Map(((uniRes.data ?? []) as Unidade[]).map((u) => [u.id, u]));
   const colabPorId = new Map(((colRes.data ?? []) as Colaborador[]).map((c) => [c.id, c]));
 
+  const matriculaBhbus = new Map(
+    ((matRes.error ? [] : matRes.data ?? []) as { colaborador_id: string; matricula: string }[]).map((m) => [m.colaborador_id, m.matricula])
+  );
+
   // soma por matrícula (centavos, em inteiro)
   const porMatricula = new Map<string, number>();
   const semMatricula: string[] = [];
@@ -47,7 +52,7 @@ export async function GET(req: Request) {
     if (!ehBseSemAlphaville(`${grupoVT(c, empresaPorId, unidadePorId)} ${emp}`)) continue;
     const centavos = Math.round(cargaVT(l) * 100);
     if (centavos <= 0) continue;
-    const mat = (c.matricula ?? "").trim();
+    const mat = (matriculaBhbus.get(c.id) ?? "").trim();
     if (!mat) {
       semMatricula.push(c.nome);
       continue;
@@ -55,7 +60,7 @@ export async function GET(req: Request) {
     porMatricula.set(mat, (porMatricula.get(mat) ?? 0) + centavos);
   }
 
-  const linhas = ["MATRICULA;VALOR PARA CARREGAMENTO"];
+  const linhas: string[] = []; // sem linha de título, só os dados
   for (const [mat, centavos] of Array.from(porMatricula.entries()).sort((a, b) => a[0].localeCompare(b[0], "pt-BR", { numeric: true }))) {
     linhas.push(`${mat};${centavos}`);
   }
