@@ -171,3 +171,18 @@ export async function salvarDiasMesVT(competencia: string, dias: number): Promis
   }
   return { ok: true };
 }
+
+/** Salva a matrícula do colaborador (vale para todas as telas e para o CSV). */
+export async function salvarMatriculaVT(colaboradorId: string, matricula: string): Promise<RespostaVT> {
+  if (!(await logado())) return { ok: false, erro: "Entre no sistema para fazer isso." };
+  const limpa = matricula.trim();
+  if (limpa.length > 30) return { ok: false, erro: "Matrícula muito longa." };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("colaboradores")
+    .update({ matricula: limpa || null })
+    .eq("id", colaboradorId);
+  if (error) return { ok: false, erro: mensagem(error.message) };
+  revalidatePath(CAMINHO);
+  return { ok: true };
+}
