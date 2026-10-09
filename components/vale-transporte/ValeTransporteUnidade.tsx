@@ -2,11 +2,9 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import {
-  aplicarDiasUteisVT,
   copiarMesAnteriorVT,
   criarLinhaVT,
   excluirLinhaVT,
-  salvarDiasMesVT,
   salvarLinhaVT,
   salvarMatriculaVT,
   type CamposLinhaVT,
@@ -58,37 +56,12 @@ const campo =
 export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, linhas, colaboradores, temMesAnterior, linkExcel, linkCsvBhbus, diasMesInicial }: Props) {
   const primeira = OPERADORAS.find((o) => linhas.some((l) => l.operadora === o)) ?? "BHBUS";
   const [ativa, setAtiva] = useState<OperadoraVT>(primeira);
-  const [diasMes, setDiasMes] = useState(String(diasMesInicial));
-  const temporizadorDias = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const diasMes = String(diasMesInicial); // só como sugestão ao adicionar um cartão novo
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [pendente, iniciar] = useTransition();
 
   function avisar(ok: boolean, texto: string) {
     setMsg({ ok, texto });
-  }
-
-  function aplicarDias() {
-    const n = lerNumeroVT(diasMes);
-    if (n === null || n <= 0 || n > 31) return avisar(false, "Digite os dias úteis do mês (de 1 a 31).");
-    iniciar(async () => {
-      const r = await aplicarDiasUteisVT(
-        linhas.map((l) => l.id),
-        n
-      );
-      await salvarDiasMesVT(competencia, n);
-      avisar(r.ok, r.ok ? `Dias úteis ${n} aplicados a ${linhas.length} cartão(ões).` : r.erro);
-    });
-  }
-
-  // O número de dias úteis do mês fica salvo sozinho (vale para o mês todo e passa para o mês seguinte).
-  function mudarDiasMes(texto: string) {
-    setDiasMes(texto);
-    if (temporizadorDias.current) clearTimeout(temporizadorDias.current);
-    const n = lerNumeroVT(texto);
-    if (n === null || n <= 0 || n > 31) return;
-    temporizadorDias.current = setTimeout(() => {
-      void salvarDiasMesVT(competencia, n);
-    }, 800);
   }
 
   function copiarAnterior() {
@@ -115,21 +88,6 @@ export default function ValeTransporteUnidade({ competencia, rotuloMes, grupo, l
           <p className="text-xs text-stone-500">Tudo o que você digita é salvo automaticamente e repetido no mês seguinte (menos o saldo).</p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="label" htmlFor="dias-mes">
-              Dias úteis do mês
-            </label>
-            <input
-              id="dias-mes"
-              className="input !w-24 text-right"
-              inputMode="numeric"
-              value={diasMes}
-              onChange={(e) => mudarDiasMes(e.target.value)}
-            />
-          </div>
-          <button type="button" className="btn-secondary" disabled={pendente || linhas.length === 0} onClick={aplicarDias}>
-            Aplicar a todos os cartões
-          </button>
           {temMesAnterior && (
             <button type="button" className="btn-secondary" disabled={pendente} onClick={copiarAnterior}>
               Copiar cartões do mês anterior
