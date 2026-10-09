@@ -64,7 +64,7 @@ export async function GET(req: Request) {
   for (const [mat, centavos] of Array.from(porMatricula.entries()).sort((a, b) => a[0].localeCompare(b[0], "pt-BR", { numeric: true }))) {
     linhas.push(`${mat};${centavos}`);
   }
-  const corpo = linhas.join("\r\n") + "\r\n";
+  const corpo = linhas.join("\r\n");
 
   return new NextResponse(corpo, {
     headers: {

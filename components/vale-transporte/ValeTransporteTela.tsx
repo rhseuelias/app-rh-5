@@ -54,7 +54,24 @@ interface Props {
 }
 
 const campo =
-  "w-full min-w-[56px] rounded-md border border-stone-300 bg-white px-2 py-1 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-400";
+  "w-full min-w-0 rounded-[7px] border border-[#e4dfd8] bg-white px-2 py-1 text-right text-[15px] tabular-nums text-[#2b2623] focus:outline-none focus:ring-2 focus:ring-stone-300";
+
+const COR_UNIDADE: Record<string, { cor: string; tom: string }> = {
+  BELVEDERE: { cor: "#1d5fb8", tom: "#e3eefc" },
+  PAMPULHA: { cor: "#1b8a4b", tom: "#e1f5e9" },
+  SAVASSI: { cor: "#7a3fb5", tom: "#efe5fa" },
+  "OURO MINAS": { cor: "#c27a00", tom: "#fdefd2" },
+  "LAGOA SANTA": { cor: "#0f8a8a", tom: "#dcf4f4" },
+  CONFINS: { cor: "#c2335f", tom: "#fbe3ec" },
+  ALPHAVILLE: { cor: "#5b6470", tom: "#e8ebee" },
+  BDU: { cor: "#8a5a1b", tom: "#f3e8d6" },
+  BABOON: { cor: "#b33a1d", tom: "#fbe4de" },
+};
+const COR_PADRAO = { cor: "#6b625b", tom: "#eeeae4" };
+function corUnidade(u: string) {
+  return COR_UNIDADE[u.trim().toUpperCase()] ?? COR_PADRAO;
+}
+const FONTE_TITULO = { fontFamily: "Oswald, 'Arial Narrow', sans-serif" } as const;
 
 type ColunaOrdem =
   | "matricula" | "nome" | "unidade" | "cartao" | "diaria" | "valor_unit" | "valor_diario"
@@ -164,25 +181,24 @@ export default function ValeTransporteTela({
   function Cab({ col, rotulo, direita }: { col: ColunaOrdem; rotulo: string; direita?: boolean }) {
     const ativo = ordem.col === col;
     return (
-      <th className={`px-3 py-2 ${direita ? "text-right" : ""}`} aria-sort={ativo ? (ordem.dir === 1 ? "ascending" : "descending") : "none"}>
-        <button type="button" onClick={() => ordenar(col)} className="inline-flex items-center gap-1 font-semibold uppercase tracking-wide hover:text-brand-700" title="Clique para ordenar">
+      <th className={`px-1.5 py-3 ${direita ? "text-right" : ""}`} aria-sort={ativo ? (ordem.dir === 1 ? "ascending" : "descending") : "none"}>
+        <button type="button" onClick={() => ordenar(col)} className="inline-flex items-center gap-1 text-left font-semibold uppercase tracking-[.06em] hover:text-stone-900" title="Clique para ordenar">
           {rotulo}
-          <span className={ativo ? "text-brand-700" : "text-stone-300"}>{ativo ? (ordem.dir === 1 ? "▲" : "▼") : "↕"}</span>
+          <span className={ativo ? "text-stone-800" : "text-stone-300"}>{ativo ? (ordem.dir === 1 ? "▲" : "▼") : "↕"}</span>
         </button>
       </th>
     );
   }
 
   return (
-    <section className="card overflow-hidden !p-0">
+    <section className="overflow-hidden rounded-xl border border-[#e4dfd8] bg-white !p-0 text-[#2b2623]">
       {/* Operadoras + ações */}
-      <div className="flex flex-wrap items-end justify-between gap-3 px-6 pt-5">
-        <div role="tablist" aria-label="Operadoras" className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+        <div role="tablist" aria-label="Operadoras" className="flex flex-wrap gap-0.5 rounded-[11px] bg-[#ece7e0] p-1">
           {OPERADORAS.map((op) => {
             const doOp = linhas.filter((l) => l.operadora === op && incluidas.has(l.unidade));
             const s = somaVT(doOp);
             const sel = op === ativa;
-            const c = COR_OPERADORA[op];
             return (
               <button
                 key={op}
@@ -190,12 +206,10 @@ export default function ValeTransporteTela({
                 role="tab"
                 aria-selected={sel}
                 onClick={() => setAtiva(op)}
-                className={`flex flex-col items-start rounded-lg border-b-4 px-5 py-2.5 text-left ${
-                  sel ? `${c.fundo} ${c.texto} border-current` : "border-transparent text-stone-700 hover:bg-brand-50"
-                }`}
+                className={`rounded-lg px-4 py-1.5 text-left text-[15px] font-semibold ${sel ? "bg-white text-[#26221f] shadow-sm" : "text-[#6b625b] hover:bg-white/60"}`}
               >
-                <span className="text-base font-bold">{ROTULO_OPERADORA[op]}</span>
-                <span className={`text-xs ${sel ? "" : "text-stone-500"}`}>
+                {ROTULO_OPERADORA[op]}{" "}
+                <span className="text-[12.5px] font-normal">
                   {doOp.length} · {moedaVT(s.carga)}
                 </span>
               </button>
@@ -224,40 +238,37 @@ export default function ValeTransporteTela({
       )}
 
       {/* Incluir Unidades BSE */}
-      <div className="mx-6 mt-4 rounded-xl border border-brand-200 bg-brand-50/50 px-4 py-3">
-        <h2 className="text-sm font-bold text-brand-700">Incluir Unidades BSE</h2>
-        <p className="text-xs text-stone-600">Marque as unidades deste lançamento. Os colaboradores delas aparecem na tabela.</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {unidades.length === 0 && <span className="text-sm text-stone-500">Nenhuma unidade cadastrada.</span>}
-          {unidades.map((u) => {
-            const on = incluidas.has(u);
-            const qtd = doOperadora.filter((l) => l.unidade === u).length;
-            return (
-              <button
-                key={u}
-                type="button"
-                aria-pressed={on}
-                onClick={() => alternarUnidade(u)}
-                className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-semibold ${
-                  on ? "border-brand-700 bg-brand-700 text-white" : "border-stone-300 bg-white text-stone-700 hover:bg-brand-50"
-                }`}
-              >
-                {on ? "✓ " : ""}
-                {u}
-                <span className={`rounded-full px-2 text-xs ${on ? "bg-white/20" : "bg-stone-100 text-stone-600"}`}>{qtd}</span>
-              </button>
-            );
-          })}
-        </div>
+      <div className="mx-5 mt-3 flex flex-wrap items-center gap-1.5 rounded-xl border border-[#e4dfd8] bg-white px-3 py-2">
+        <h2 className="mr-1.5 text-[12.5px] font-semibold uppercase tracking-[.06em] text-[#6b625b]">Incluir Unidades BSE</h2>
+        {unidades.length === 0 && <span className="text-sm text-stone-500">Nenhuma unidade cadastrada.</span>}
+        {unidades.map((u) => {
+          const on = incluidas.has(u);
+          const qtd = doOperadora.filter((l) => l.unidade === u).length;
+          const c = corUnidade(u);
+          return (
+            <button
+              key={u}
+              type="button"
+              aria-pressed={on}
+              onClick={() => alternarUnidade(u)}
+              style={on ? { background: c.tom, color: c.cor, borderColor: `${c.cor}55` } : undefined}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-[12.5px] font-semibold uppercase ${on ? "" : "border-[#e4dfd8] bg-white text-[#6b625b] hover:bg-stone-50"}`}
+            >
+              <span className="inline-block h-[9px] w-[9px] rounded-full" style={{ background: c.cor }} />
+              {u}
+              <span className="text-xs font-medium text-[#6b625b]">{qtd}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Filtro + incluir colaborador */}
-      <div className="flex flex-wrap items-end justify-between gap-3 px-6 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-3">
         <div>
-          <label className="label" htmlFor="vt-filtro-unidade">
+          <label className="mr-2 text-sm text-stone-700" htmlFor="vt-filtro-unidade">
             Unidades BSE filtro
           </label>
-          <select id="vt-filtro-unidade" className="input !w-64" value={filtroValido} onChange={(e) => setFiltro(e.target.value)}>
+          <select id="vt-filtro-unidade" className="input !inline-block !w-64 !py-1.5" value={filtroValido} onChange={(e) => setFiltro(e.target.value)}>
             <option value="">Todas as unidades incluídas</option>
             {unidades.filter((u) => incluidas.has(u)).map((u) => (
               <option key={u} value={u}>
@@ -303,36 +314,52 @@ export default function ValeTransporteTela({
       </div>
 
       {/* Totais */}
-      <div className="grid grid-cols-2 gap-3 px-6 pt-4 md:grid-cols-4">
-        <div className="rounded-xl border border-brand-200/70 bg-brand-50/40 px-4 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-600">Colaboradores</div>
-          <div className="text-2xl font-bold">{visiveis.length}</div>
+      <div className="mx-5 mt-3 grid grid-cols-2 overflow-hidden rounded-xl border border-[#e4dfd8] md:grid-cols-4">
+        <div className="border-r border-[#e4dfd8] px-4 py-2.5">
+          <div className="text-[11.5px] font-semibold uppercase tracking-[.06em] text-[#6b625b]">Colaboradores</div>
+          <div className="text-[28px] font-bold leading-tight" style={FONTE_TITULO}>{visiveis.length}</div>
         </div>
-        <div className="rounded-xl border border-brand-200/70 bg-brand-50/40 px-4 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-600">Total do mês</div>
-          <div className="text-2xl font-bold">{moedaVT(soma.total)}</div>
+        <div className="border-r border-[#e4dfd8] px-4 py-2.5">
+          <div className="text-[11.5px] font-semibold uppercase tracking-[.06em] text-[#6b625b]">Total do mês</div>
+          <div className="text-[28px] font-bold leading-tight" style={FONTE_TITULO}>{moedaVT(soma.total)}</div>
         </div>
-        <div className="rounded-xl border border-brand-200/70 bg-brand-50/40 px-4 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-600">{soma.saldo !== soma.saldoAtual ? "Saldo na recarga" : "Saldo atual nos cartões"}</div>
-          <div className="text-2xl font-bold">{moedaVT(soma.saldo)}</div>
+        <div className="border-r border-[#e4dfd8] px-4 py-2.5">
+          <div className="text-[11.5px] font-semibold uppercase tracking-[.06em] text-[#6b625b]">{soma.saldo !== soma.saldoAtual ? "Saldo na recarga" : "Saldo atual nos cartões"}</div>
+          <div className="text-[28px] font-bold leading-tight" style={FONTE_TITULO}>{moedaVT(soma.saldo)}</div>
           {soma.saldo !== soma.saldoAtual && <div className="text-xs text-stone-500">hoje nos cartões: {moedaVT(soma.saldoAtual)}</div>}
         </div>
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-red-700">Carga a recarregar</div>
-          <div className="text-2xl font-bold text-red-700">{moedaVT(soma.carga)}</div>
+        <div className="px-4 py-2.5">
+          <div className="text-[11.5px] font-semibold uppercase tracking-[.06em] text-[#b0302a]">Carga a recarregar</div>
+          <div className="text-[28px] font-bold leading-tight text-[#b0302a]" style={FONTE_TITULO}>{moedaVT(soma.carga)}</div>
         </div>
       </div>
 
       {/* Tabela */}
-      <div className="mt-4 overflow-x-auto border-t border-brand-100">
+      <div className="mt-3 border-t border-[#e4dfd8]">
         {caju && (
           <p className="border-b border-brand-100 bg-blue-50/40 px-6 py-3 text-sm text-stone-600">
             No CAJU o Total soma transporte + alimentação + prêmio. Se você também lança alimentação e prêmio no Controle de Benefícios, não repita aqui para não contar duas vezes.
           </p>
         )}
-        <table className={`w-full text-sm ${caju ? "min-w-[1280px]" : "min-w-[1180px]"}`}>
+        <table className="w-full table-fixed text-[15px]">
+          <colgroup>
+            {comMatricula && <col style={{ width: 104 }} />}
+            <col />
+            <col style={{ width: 128 }} />
+            <col style={{ width: caju ? 140 : 176 }} />
+            <col style={{ width: 62 }} />
+            <col style={{ width: 80 }} />
+            <col style={{ width: 80 }} />
+            <col style={{ width: 62 }} />
+            {caju && <col style={{ width: 90 }} />}
+            {caju && <col style={{ width: 90 }} />}
+            <col style={{ width: 92 }} />
+            <col style={{ width: 190 }} />
+            <col style={{ width: 98 }} />
+            <col style={{ width: 44 }} />
+          </colgroup>
           <thead>
-            <tr className="bg-brand-50/60 text-left text-[11px] text-stone-600">
+            <tr className="border-b border-[#e4dfd8] text-left text-[11.5px] font-semibold text-[#6b625b]">
               {comMatricula && <Cab col="matricula" rotulo="Matrícula" />}
               <Cab col="nome" rotulo="Nome" />
               <Cab col="unidade" rotulo="Unidade" />
@@ -346,7 +373,7 @@ export default function ValeTransporteTela({
               <Cab col="total" rotulo="Total" direita />
               <Cab col="saldo" rotulo="Saldo atual · dias até a recarga" direita />
               <Cab col="carga" rotulo="Carga" direita />
-              <th className="px-3 py-2" />
+              <th className="px-2 py-3" />
             </tr>
           </thead>
           <tbody>
@@ -363,20 +390,20 @@ export default function ValeTransporteTela({
           </tbody>
           {visiveis.length > 0 && (
             <tfoot>
-              <tr className={`border-t-2 border-current font-semibold ${corAtiva.fundo} ${corAtiva.texto}`}>
+              <tr className={`border-t border-[#e4dfd8] bg-[#f3efe9] text-[15px] font-bold text-[#2b2623]`}>
                 <td className="px-3 py-2.5" colSpan={(caju ? 9 : 7) + (comMatricula ? 1 : 0)}>
                   TOTAL — {ROTULO_OPERADORA[ativa]} · {filtroValido || "unidades incluídas"}
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(soma.total)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(soma.saldo)}</td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-red-700">{numeroVT(soma.carga)}</td>
+                <td className="px-3 py-2.5 text-right text-base tabular-nums text-[#b0302a]">{numeroVT(soma.carga)}</td>
                 <td />
               </tr>
             </tfoot>
           )}
         </table>
       </div>
-      <p className="px-6 py-3 text-xs text-stone-500">
+      <p className="px-5 py-3 text-[13px] text-stone-600">
         Total = valor diário × dias úteis · Carga = Total − Saldo atual · Tudo o que você digita é salvo sozinho e repetido no mês seguinte (menos o saldo). Clique no título de uma coluna para ordenar.
       </p>
     </section>
@@ -508,13 +535,13 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
   const semDias = vivo.dias_uteis === 0;
 
   return (
-    <tr className="border-t border-brand-100 align-middle">
+    <tr className="border-t border-[#efebe5] align-middle">
       {comMatricula && (
-        <td className="px-3 py-1.5">
+        <td className="px-1.5 py-1.5">
           <input
             aria-label={`Matrícula de ${linha.nome}`}
             placeholder="matrícula"
-            className="w-28 rounded-md border border-stone-300 bg-white px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-400"
+            className="w-full min-w-0 rounded-[7px] border border-[#e4dfd8] bg-white px-2 py-1 text-[15px] tabular-nums focus:outline-none focus:ring-2 focus:ring-stone-300"
             value={matricula}
             onChange={(e) => setMatricula(e.target.value)}
             onBlur={() => {
@@ -535,15 +562,17 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
           />
         </td>
       )}
-      <td className="whitespace-nowrap px-3 py-1.5 font-semibold uppercase">{linha.nome}</td>
-      <td className="whitespace-nowrap px-3 py-1.5">
-        <span className="rounded-lg bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700">{linha.unidade}</span>
+      <td className="px-1.5 py-1.5 text-[14.5px] font-semibold uppercase leading-tight">{linha.nome}</td>
+      <td className="px-1.5 py-1.5">
+        <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide" style={{ background: corUnidade(linha.unidade).tom, color: corUnidade(linha.unidade).cor }}>
+          {linha.unidade}
+        </span>
       </td>
-      <td className="px-3 py-1.5">
-        <div className="flex items-center gap-2">
+      <td className="px-1.5 py-1.5">
+        <div className="flex items-center gap-1">
           <input
             aria-label={`Cartão de ${linha.nome}`}
-            className="w-44 rounded-md border border-stone-300 bg-white px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-400"
+            className="w-full min-w-0 rounded-[7px] border border-[#e4dfd8] bg-white px-2 py-1 text-[15px] tabular-nums focus:outline-none focus:ring-2 focus:ring-stone-300"
             value={cartao}
             onChange={(e) => digitou("cartao", e.target.value, setCartao)}
             onBlur={() => aoSair("cartao", cartao)}
@@ -555,14 +584,14 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
           )}
         </div>
       </td>
-      <td className="px-3 py-1.5">
+      <td className="px-1.5 py-1.5">
         <input aria-label="Diária" className={campo} inputMode="decimal" value={diaria} onChange={(e) => digitou("diaria", e.target.value, setDiaria)} onBlur={() => aoSair("diaria", diaria)} />
       </td>
-      <td className="px-3 py-1.5">
+      <td className="px-1.5 py-1.5">
         <input aria-label="Valor unitário" className={campo} inputMode="decimal" value={valor} onChange={(e) => digitou("valor_unit", e.target.value, setValor)} onBlur={() => aoSair("valor_unit", valor)} />
       </td>
-      <td className="px-3 py-1.5 text-right tabular-nums">{numeroVT(valorDiarioVT(vivo))}</td>
-      <td className="px-3 py-1.5">
+      <td className="px-1.5 py-1.5 text-right tabular-nums text-[#6b625b]">{numeroVT(valorDiarioVT(vivo))}</td>
+      <td className="px-1.5 py-1.5">
         <input
           aria-label="Dias úteis"
           className={`${campo} ${semDias ? "border-red-300 bg-red-50" : ""}`}
@@ -573,17 +602,17 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
         />
       </td>
       {caju && (
-        <td className="px-3 py-1.5">
+        <td className="px-1.5 py-1.5">
           <input aria-label="Alimentação" className={campo} inputMode="decimal" value={alim} onChange={(e) => digitou("alimentacao", e.target.value, setAlim)} onBlur={() => aoSair("alimentacao", alim)} />
         </td>
       )}
       {caju && (
-        <td className="px-3 py-1.5">
+        <td className="px-1.5 py-1.5">
           <input aria-label="Prêmio" className={campo} inputMode="decimal" value={premio} onChange={(e) => digitou("premio", e.target.value, setPremio)} onBlur={() => aoSair("premio", premio)} />
         </td>
       )}
-      <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{numeroVT(ok ? totalVT(vivo) : 0)}</td>
-      <td className="px-3 py-1.5">
+      <td className="px-1.5 py-1.5 text-right font-semibold tabular-nums">{numeroVT(ok ? totalVT(vivo) : 0)}</td>
+      <td className="px-1.5 py-1.5">
         <div className="flex items-center justify-end gap-1.5">
           <input aria-label="Saldo atual" title="Saldo que está no cartão hoje" className={campo} inputMode="decimal" value={saldo} onChange={(e) => digitou("saldo", e.target.value, setSaldo)} onBlur={() => aoSair("saldo", saldo)} />
           <span className="text-stone-400" aria-hidden="true">−</span>
@@ -602,14 +631,21 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
           <div className="mt-0.5 text-right text-[11px] text-stone-500">na recarga: {numeroVT(saldoNaRecargaVT(vivo))}</div>
         )}
       </td>
-      <td className="px-3 py-1.5 text-right font-bold tabular-nums text-red-700">{numeroVT(ok ? cargaVT(vivo) : 0)}</td>
-      <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs">
-        {estado === "salvando" && <span className="text-stone-500">salvando…</span>}
-        {estado === "salvo" && !pendente && <span className="text-emerald-700">salvo ✓</span>}
-        {estado === "erro" && <span className="text-red-700">{erro}</span>}
-        <button type="button" onClick={excluir} disabled={pendente} className="ml-2 text-stone-400 hover:text-red-700" aria-label={`Tirar ${linha.nome} do lançamento`} title="Tirar do lançamento">
-          ✕
-        </button>
+      <td className="px-1.5 py-1.5 text-right text-base font-bold tabular-nums text-[#b0302a]">{numeroVT(ok ? cargaVT(vivo) : 0)}</td>
+      <td className="px-1.5 py-1.5 text-center text-sm">
+        {estado === "salvando" && <span className="text-stone-400" title="salvando…">…</span>}
+        {estado === "salvo" && !pendente && <span className="text-emerald-700" title="salvo">✓</span>}
+        {estado === "erro" && <span className="font-bold text-red-700" title={erro}>!</span>}
+        {estado === "" && (
+          <button type="button" onClick={excluir} disabled={pendente} className="text-stone-400 hover:text-red-700" aria-label={`Tirar ${linha.nome} do lançamento`} title="Tirar do lançamento">
+            ✕
+          </button>
+        )}
+        {estado !== "" && (
+          <button type="button" onClick={excluir} disabled={pendente} className="ml-1 text-stone-400 hover:text-red-700" aria-label={`Tirar ${linha.nome} do lançamento`} title="Tirar do lançamento">
+            ✕
+          </button>
+        )}
       </td>
     </tr>
   );
