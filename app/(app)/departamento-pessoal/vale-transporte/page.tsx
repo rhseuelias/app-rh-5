@@ -8,13 +8,10 @@ import {
   deslocarCompetencia,
   elegivelVT,
   grupoVT,
-  moedaVT,
-  somaVT,
   type LinhaVT,
 } from "@/lib/vale-transporte";
 import { copiaAutomaticaVT } from "@/lib/vt-copia-mes-anterior";
-import ValeTransporteUnidade, { type LinhaTela } from "@/components/vale-transporte/ValeTransporteUnidade";
-import SeletorUnidadeVT from "@/components/vale-transporte/SeletorUnidadeVT";
+import ValeTransporteTela, { type LinhaTela, type OpcaoColaborador } from "@/components/vale-transporte/ValeTransporteTela";
 import RelatorioPdfVT from "@/components/vale-transporte/RelatorioPdfVT";
 
 export const dynamic = "force-dynamic";
@@ -37,8 +34,9 @@ export default async function ValeTransportePage({
   ]);
 
   // Mês novo: traz sozinho os cartões e valores do mês anterior (só na 1ª vez que o mês é aberto).
+  let copiouAutomatico = false;
   if (!colaboradoresRes.error) {
-    await copiaAutomaticaVT(
+    copiouAutomatico = await copiaAutomaticaVT(
       supabase,
       competencia,
       competenciaAtualSP(),
@@ -108,47 +106,41 @@ export default async function ValeTransportePage({
     return !!num && (donosPorCartao.get(`${l.operadora}|${num}`)?.size ?? 0) > 1;
   };
 
-  // grupos (unidades) = quem é elegível OU já tem lançamento no mês
-  const linhasPorGrupo = new Map<string, LinhaTela[]>();
-  const colabsPorGrupo = new Map<string, { id: string; nome: string }[]>();
-  const garantir = (g: string) => {
-    if (!linhasPorGrupo.has(g)) linhasPorGrupo.set(g, []);
-    if (!colabsPorGrupo.has(g)) colabsPorGrupo.set(g, []);
-  };
+  // cada linha leva a unidade do colaborador (só leitura); a unidade vem do cadastro
+  const linhas: LinhaTela[] = [];
+  const grupoDoColab = new Map<string, string>();
+  const opcoes: OpcaoColaborador[] = [];
+  const todosGrupos = new Set<string>();
 
   for (const c of colaboradores) {
     if (!elegivelVT(c)) continue;
     const g = grupoVT(c, empresaPorId, unidadePorId);
-    garantir(g);
-    colabsPorGrupo.get(g)!.push({ id: c.id, nome: c.nome });
+    grupoDoColab.set(c.id, g);
+    todosGrupos.add(g);
+    opcoes.push({ id: c.id, nome: c.nome, unidade: g });
   }
   for (const l of lancamentos) {
     const c = colabPorId.get(l.colaborador_id);
     if (!c) continue;
     const g = grupoVT(c, empresaPorId, unidadePorId);
-    garantir(g);
-    linhasPorGrupo.get(g)!.push({ ...l, nome: c.nome, matricula: matriculaVT.get(`${l.colaborador_id}|${l.operadora}`) ?? null, repetido: repetido(l) });
+    todosGrupos.add(g);
+    linhas.push({
+      ...l,
+      nome: c.nome,
+      matricula: matriculaVT.get(`${l.colaborador_id}|${l.operadora}`) ?? null,
+      unidade: g,
+      repetido: repetido(l),
+    });
   }
-  for (const lista of colabsPorGrupo.values()) lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  for (const lista of linhasPorGrupo.values()) lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  opcoes.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
-  const grupos = Array.from(linhasPorGrupo.keys()).sort(compararGrupos);
-  const escolhido =
-    searchParams.unidade && linhasPorGrupo.has(searchParams.unidade)
-      ? searchParams.unidade
-      : grupos.find((g) => (linhasPorGrupo.get(g) ?? []).length > 0) ?? grupos[0] ?? "";
+  const unidades = Array.from(todosGrupos).sort(compararGrupos);
+  const unidadesIniciais = unidades.filter((u) => linhas.some((l) => l.unidade === u));
 
-  const linhasEscolhido = linhasPorGrupo.get(escolhido) ?? [];
-  const somaEscolhido = somaVT(linhasEscolhido);
-  const opcoesUnidade = grupos.map((g) => {
-    const lista = linhasPorGrupo.get(g) ?? [];
-    return { nome: g, carga: lista.length > 0 ? moedaVT(somaVT(lista).carga) : "—" };
-  });
-
-  const href = (comp: string, unidade: string) =>
-    `/departamento-pessoal/vale-transporte?competencia=${comp}&unidade=${encodeURIComponent(unidade)}`;
-  const linkExcel = `/api/vale-transporte/excel?competencia=${competencia}&unidade=${encodeURIComponent(escolhido)}`;
-  const linkExcelTodas = `/api/vale-transporte/excel?competencia=${competencia}`;
+  const href = (comp: string) => `/departamento-pessoal/vale-transporte?competencia=${comp}`;
+  const avisoCopia = copiouAutomatico
+    ? `Informações de ${rotuloCompetencia(anterior)} trazidas automaticamente (cartões, valores e dias úteis). O saldo começa zerado.`
+    : "";
 
   return (
     <div className="vt-largo space-y-5">
@@ -157,60 +149,36 @@ export default async function ValeTransportePage({
           <Link href="/departamento-pessoal" className="text-xs font-medium text-brand-600 hover:underline">
             ← Departamento Pessoal
           </Link>
-          <h1 className="text-3xl font-semibold text-slate-900">Vale Transporte por unidade</h1>
-          <p className="text-sm text-stone-600">Escolha a unidade e veja todos os cartões dela de uma vez.</p>
+          <h1 className="text-3xl font-semibold text-slate-900">Vale Transporte</h1>
+          <p className="text-sm text-stone-600">Lançamento e controle de recarga.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 rounded-xl border border-brand-300 bg-white px-1 py-1">
-            <Link href={href(deslocarCompetencia(competencia, -1), escolhido)} className="rounded-lg px-3 py-1.5 text-sm hover:bg-brand-50" aria-label="Mês anterior">
+            <Link href={href(deslocarCompetencia(competencia, -1))} className="rounded-lg px-3 py-1.5 text-sm hover:bg-brand-50" aria-label="Mês anterior">
               ‹
             </Link>
             <span className="min-w-[140px] text-center text-sm font-semibold">{rotuloCompetencia(competencia)}</span>
-            <Link href={href(deslocarCompetencia(competencia, 1), escolhido)} className="rounded-lg px-3 py-1.5 text-sm hover:bg-brand-50" aria-label="Próximo mês">
+            <Link href={href(deslocarCompetencia(competencia, 1))} className="rounded-lg px-3 py-1.5 text-sm hover:bg-brand-50" aria-label="Próximo mês">
               ›
             </Link>
           </div>
-          <RelatorioPdfVT competencia={competencia} unidades={grupos.filter((g) => (linhasPorGrupo.get(g) ?? []).length > 0)} />
-          <a href={linkExcelTodas} className="btn-secondary no-underline">
-            Exportar todas as unidades
-          </a>
+          <RelatorioPdfVT competencia={competencia} unidades={unidadesIniciais} />
         </div>
       </div>
 
-      <div className="card flex flex-wrap items-end justify-between gap-4 !p-4">
-        <SeletorUnidadeVT opcoes={opcoesUnidade} atual={escolhido} competencia={competencia} />
-        <p className="max-w-md text-sm text-stone-600">
-          O valor ao lado do nome da unidade é a carga a recarregar (todos os cartões dela).
-        </p>
-      </div>
-
-      {escolhido ? (
-        <>
-              <ValeTransporteUnidade
-                key={`${competencia}|${escolhido}`}
-                competencia={competencia}
-                rotuloMes={rotuloCompetencia(competencia)}
-                grupo={escolhido}
-                linhas={linhasEscolhido}
-                colaboradores={colabsPorGrupo.get(escolhido) ?? []}
-                temMesAnterior={(antRes.count ?? 0) > 0}
-                linkExcel={linkExcel}
-                linkCsvBhbus={`/api/vale-transporte/csv?competencia=${competencia}`}
-                diasMesInicial={diasMes}
-              />
-
-              <div className="card-dark flex flex-wrap items-center justify-between gap-3 !py-4">
-                <div className="text-sm text-brand-100">Resumo da unidade — o que precisa ser recarregado</div>
-                <div className="flex flex-wrap items-baseline gap-5">
-                  <span className="text-sm">Total {moedaVT(somaEscolhido.total)}</span>
-                  <span className="text-sm">Saldo {moedaVT(somaEscolhido.saldo)}</span>
-                  <span className="text-3xl font-bold">{moedaVT(somaEscolhido.carga)}</span>
-                </div>
-              </div>
-            </>
-      ) : (
-        <div className="card text-sm text-stone-600">Cadastre colaboradores e unidades para começar o lançamento.</div>
-      )}
+      <ValeTransporteTela
+        key={competencia}
+        competencia={competencia}
+        rotuloMes={rotuloCompetencia(competencia)}
+        linhas={linhas}
+        colaboradores={opcoes}
+        unidades={unidades}
+        unidadesIniciais={unidadesIniciais}
+        temMesAnterior={(antRes.count ?? 0) > 0}
+        diasMesInicial={diasMes}
+        linkCsvBhbus={`/api/vale-transporte/csv?competencia=${competencia}`}
+        avisoCopia={avisoCopia}
+      />
     </div>
   );
 }

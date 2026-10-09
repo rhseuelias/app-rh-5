@@ -80,20 +80,25 @@ export async function copiaAutomaticaVT(
   competencia: string,
   competenciaAtual: string,
   colaboradorIds: string[]
-): Promise<void> {
-  if (competencia > competenciaAtual) return; // meses futuros ficam vazios
+): Promise<boolean> {
+  // o mês atual e o próximo já trazem o mês anterior; meses mais distantes ficam vazios
+  if (competencia > deslocarCompetencia(competenciaAtual, 1)) return false;
   const anterior = deslocarCompetencia(competencia, -1);
 
   const marcado = await supabase.from("vt_competencias").select("competencia").eq("competencia", competencia).maybeSingle();
-  if (marcado.error || marcado.data) return; // sem a tabela (migration 023) ou já copiado
+  if (marcado.error || marcado.data) return false; // sem a tabela (migration 023) ou já copiado
 
   const temAnterior = await supabase.from("vt_lancamentos").select("id", { count: "exact", head: true }).eq("competencia", anterior);
-  if (temAnterior.error || (temAnterior.count ?? 0) === 0) return;
+  if (temAnterior.error || (temAnterior.count ?? 0) === 0) return false;
 
   // o marcador funciona como trava: se duas telas abrirem juntas, só uma copia
   const trava = await supabase.from("vt_competencias").insert({ competencia });
-  if (trava.error) return;
+  if (trava.error) return false;
 
   const r = await copiarDoMesAnteriorVT(supabase, competencia, colaboradorIds);
-  if (!r.ok) await supabase.from("vt_competencias").delete().eq("competencia", competencia);
+  if (!r.ok) {
+    await supabase.from("vt_competencias").delete().eq("competencia", competencia);
+    return false;
+  }
+  return true;
 }
