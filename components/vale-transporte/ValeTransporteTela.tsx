@@ -18,6 +18,7 @@ import {
   lerNumeroVT,
   moedaVT,
   numeroVT,
+  saldoNaRecargaVT,
   somaVT,
   totalVT,
   valorDiarioVT,
@@ -72,7 +73,7 @@ function valorOrdem(l: LinhaTela, c: ColunaOrdem): string | number {
     case "alimentacao": return Number(l.alimentacao) || 0;
     case "premio": return Number(l.premio) || 0;
     case "total": return totalVT(l);
-    case "saldo": return Number(l.saldo) || 0;
+    case "saldo": return saldoNaRecargaVT(l);
     case "carga": return cargaVT(l);
   }
 }
@@ -312,8 +313,9 @@ export default function ValeTransporteTela({
           <div className="text-2xl font-bold">{moedaVT(soma.total)}</div>
         </div>
         <div className="rounded-xl border border-brand-200/70 bg-brand-50/40 px-4 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-600">Saldo atual nos cartões</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-600">{soma.saldo !== soma.saldoAtual ? "Saldo na recarga" : "Saldo atual nos cartões"}</div>
           <div className="text-2xl font-bold">{moedaVT(soma.saldo)}</div>
+          {soma.saldo !== soma.saldoAtual && <div className="text-xs text-stone-500">hoje nos cartões: {moedaVT(soma.saldoAtual)}</div>}
         </div>
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-red-700">Carga a recarregar</div>
@@ -342,7 +344,7 @@ export default function ValeTransporteTela({
               {caju && <Cab col="alimentacao" rotulo="Alimentação" direita />}
               {caju && <Cab col="premio" rotulo="Prêmio" direita />}
               <Cab col="total" rotulo="Total" direita />
-              <Cab col="saldo" rotulo="Saldo atual" direita />
+              <Cab col="saldo" rotulo="Saldo atual · dias até a recarga" direita />
               <Cab col="carga" rotulo="Carga" direita />
               <th className="px-3 py-2" />
             </tr>
@@ -389,6 +391,7 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
   const [valor, setValor] = useState(campoVT(linha.valor_unit));
   const [dias, setDias] = useState(campoVT(linha.dias_uteis));
   const [saldo, setSaldo] = useState(campoVT(linha.saldo));
+  const [diasAte, setDiasAte] = useState(campoVT(linha.dias_ate_recarga ?? 0));
   const [alim, setAlim] = useState(campoVT(linha.alimentacao ?? 0));
   const [premio, setPremio] = useState(campoVT(linha.premio ?? 0));
   const [estado, setEstado] = useState<"" | "salvando" | "salvo" | "erro">("");
@@ -399,9 +402,10 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
   const nValor = lerNumeroVT(valor);
   const nDias = lerNumeroVT(dias);
   const nSaldo = lerNumeroVT(saldo);
+  const nDiasAte = lerNumeroVT(diasAte);
   const nAlim = lerNumeroVT(alim);
   const nPremio = lerNumeroVT(premio);
-  const ok = nDiaria !== null && nValor !== null && nDias !== null && nSaldo !== null && nAlim !== null && nPremio !== null;
+  const ok = nDiaria !== null && nValor !== null && nDias !== null && nSaldo !== null && nDiasAte !== null && nAlim !== null && nPremio !== null;
 
   const vivo = {
     operadora: linha.operadora,
@@ -411,6 +415,7 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
     valor_unit: nValor ?? 0,
     dias_uteis: nDias ?? 0,
     saldo: nSaldo ?? 0,
+    dias_ate_recarga: nDiasAte ?? 0,
   };
 
   // Salvamento automático: 0,8 s depois de parar de digitar (e na hora, ao sair do campo).
@@ -422,6 +427,7 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
     valor_unit: campoVT(linha.valor_unit),
     dias_uteis: campoVT(linha.dias_uteis),
     saldo: campoVT(linha.saldo),
+    dias_ate_recarga: campoVT(linha.dias_ate_recarga ?? 0),
     alimentacao: campoVT(linha.alimentacao ?? 0),
     premio: campoVT(linha.premio ?? 0),
   });
@@ -578,7 +584,23 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
       )}
       <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{numeroVT(ok ? totalVT(vivo) : 0)}</td>
       <td className="px-3 py-1.5">
-        <input aria-label="Saldo atual" className={campo} inputMode="decimal" value={saldo} onChange={(e) => digitou("saldo", e.target.value, setSaldo)} onBlur={() => aoSair("saldo", saldo)} />
+        <div className="flex items-center justify-end gap-1.5">
+          <input aria-label="Saldo atual" title="Saldo que está no cartão hoje" className={campo} inputMode="decimal" value={saldo} onChange={(e) => digitou("saldo", e.target.value, setSaldo)} onBlur={() => aoSair("saldo", saldo)} />
+          <span className="text-stone-400" aria-hidden="true">−</span>
+          <input
+            aria-label="Dias que faltam até a recarga"
+            title="Dias que faltam até a recarga: o cartão ainda gasta esses dias antes de receber a carga"
+            placeholder="dias"
+            className={`${campo} !min-w-[44px] !w-14`}
+            inputMode="numeric"
+            value={diasAte}
+            onChange={(e) => digitou("dias_ate_recarga", e.target.value, setDiasAte)}
+            onBlur={() => aoSair("dias_ate_recarga", diasAte)}
+          />
+        </div>
+        {vivo.dias_ate_recarga > 0 && (
+          <div className="mt-0.5 text-right text-[11px] text-stone-500">na recarga: {numeroVT(saldoNaRecargaVT(vivo))}</div>
+        )}
       </td>
       <td className="px-3 py-1.5 text-right font-bold tabular-nums text-red-700">{numeroVT(ok ? cargaVT(vivo) : 0)}</td>
       <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs">

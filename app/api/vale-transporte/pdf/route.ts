@@ -10,6 +10,7 @@ import {
   ROTULO_OPERADORA,
   cargaVT,
   grupoVT,
+  saldoNaRecargaVT,
   numeroVT,
   somaVT,
   totalVT,
@@ -43,7 +44,7 @@ const COLS_BASE: Col[] = [
   { t: "Valor diário", w: 0.09, a: "r" },
   { t: "Dias úteis", w: 0.07, a: "c" },
   { t: "Total", w: 0.09, a: "r" },
-  { t: "Saldo atual", w: 0.08, a: "r" },
+  { t: "Saldo recarga", w: 0.08, a: "r" },
   { t: "Carga", w: 0.08, a: "r" },
 ];
 const COLS_CAJU: Col[] = [
@@ -56,7 +57,7 @@ const COLS_CAJU: Col[] = [
   { t: "Alimentação", w: 0.08, a: "r" },
   { t: "Prêmio", w: 0.07, a: "r" },
   { t: "Total", w: 0.08, a: "r" },
-  { t: "Saldo atual", w: 0.06, a: "r" },
+  { t: "Saldo recarga", w: 0.06, a: "r" },
   { t: "Carga", w: 0.06, a: "r" },
 ];
 
@@ -213,7 +214,7 @@ export async function GET(req: Request) {
         ];
         const fim: Cel[] = [
           { t: numeroVT(totalVT(l)), b: true },
-          { t: numeroVT(l.saldo) },
+          { t: numeroVT(saldoNaRecargaVT(l)) },
           { t: numeroVT(cargaVT(l)), b: true, cor: COR_ALERTA },
         ];
         linhaTabela(cols, caju ? [...base, { t: numeroVT(l.alimentacao ?? 0) }, { t: numeroVT(l.premio ?? 0) }, ...fim] : [...base, ...fim], 16);

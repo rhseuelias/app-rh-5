@@ -9,6 +9,7 @@ import {
   ROTULO_OPERADORA,
   cargaVT,
   grupoVT,
+  saldoNaRecargaVT,
   totalVT,
   valorDiarioVT,
   type LinhaVT,
@@ -93,8 +94,8 @@ export async function GET(req: Request) {
 
       const cab = ws.getRow(linha);
       cab.values = caju
-        ? ["NOME", "CARTÃO", "DIÁRIA (IDA E VOLTA)", "VALOR UNIT.", "VALOR DIÁRIO", "DIAS ÚTEIS", "ALIMENTAÇÃO", "PRÊMIO", "TOTAL", "SALDO ATUAL", "CARGA"]
-        : ["NOME", "CARTÃO", "DIÁRIA (IDA E VOLTA)", "VALOR UNIT.", "VALOR DIÁRIO", "DIAS ÚTEIS", "TOTAL", "SALDO ATUAL", "CARGA"];
+        ? ["NOME", "CARTÃO", "DIÁRIA (IDA E VOLTA)", "VALOR UNIT.", "VALOR DIÁRIO", "DIAS ÚTEIS", "ALIMENTAÇÃO", "PRÊMIO", "TOTAL", "SALDO NA RECARGA", "CARGA"]
+        : ["NOME", "CARTÃO", "DIÁRIA (IDA E VOLTA)", "VALOR UNIT.", "VALOR DIÁRIO", "DIAS ÚTEIS", "TOTAL", "SALDO NA RECARGA", "CARGA"];
       cab.eachCell((cell) => {
         cell.font = { bold: true, size: 10, color: { argb: "FFFFFFFF" } };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF262626" } };
@@ -125,7 +126,7 @@ export async function GET(req: Request) {
           formula: caju ? `E${linha}*F${linha}+G${linha}+H${linha}` : `E${linha}*F${linha}`,
           result: totalVT(l),
         };
-        r.getCell(cSaldo).value = l.saldo;
+        r.getCell(cSaldo).value = saldoNaRecargaVT(l);
         r.getCell(cCarga).value = {
           formula: `MAX(0,${letra(cTotal)}${linha}-${letra(cSaldo)}${linha})`,
           result: cargaVT(l),
@@ -150,7 +151,7 @@ export async function GET(req: Request) {
         tot.getCell(8).value = soma(8, (x) => x.premio ?? 0);
       }
       tot.getCell(cTotal).value = soma(cTotal, totalVT);
-      tot.getCell(cSaldo).value = soma(cSaldo, (x) => x.saldo);
+      tot.getCell(cSaldo).value = soma(cSaldo, saldoNaRecargaVT);
       tot.getCell(cCarga).value = soma(cCarga, cargaVT);
       tot.eachCell((cell) => {
         cell.font = { bold: true };

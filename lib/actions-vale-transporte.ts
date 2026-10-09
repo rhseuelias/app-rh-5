@@ -77,6 +77,7 @@ export interface CamposLinhaVT {
   valor_unit?: number;
   dias_uteis?: number;
   saldo?: number;
+  dias_ate_recarga?: number;
   alimentacao?: number;
   premio?: number;
 }
@@ -100,6 +101,10 @@ export async function salvarLinhaVT(id: string, campos: CamposLinhaVT): Promise<
   if (campos.saldo !== undefined) {
     if (!numeroValido(campos.saldo, 100000)) return { ok: false, erro: "Saldo inválido." };
     atualizar.saldo = campos.saldo;
+  }
+  if (campos.dias_ate_recarga !== undefined) {
+    if (!numeroValido(campos.dias_ate_recarga, 31)) return { ok: false, erro: "Dias até a recarga inválidos." };
+    atualizar.dias_ate_recarga = Math.round(campos.dias_ate_recarga);
   }
   if (campos.alimentacao !== undefined) {
     if (!numeroValido(campos.alimentacao, 100000)) return { ok: false, erro: "Alimentação inválida." };

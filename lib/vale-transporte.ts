@@ -31,6 +31,8 @@ export interface LinhaVT {
   /** Só o CAJU usa estes dois. */
   alimentacao: number;
   premio: number;
+  /** Dias que ainda faltam até a recarga: o cartão gasta isso antes de receber a carga. */
+  dias_ate_recarga?: number;
 }
 
 const arred = (n: number) => Math.round(n * 100) / 100;
@@ -56,21 +58,33 @@ export function totalVT(l: CamposTotal): number {
   return arred(transporteVT(l) + extra);
 }
 
-/** Quanto precisa recarregar: Total − Saldo (se o saldo cobre tudo, é zero). */
-export function cargaVT(l: CamposTotal & { saldo: number }): number {
-  return Math.max(0, arred(totalVT(l) - l.saldo));
+/**
+ * Saldo que o cartão ainda terá no dia da recarga:
+ * saldo atual − (dias até a recarga × valor diário). Nunca fica abaixo de zero.
+ */
+export function saldoNaRecargaVT(l: Pick<LinhaVT, "diaria" | "valor_unit" | "saldo"> & { dias_ate_recarga?: number }): number {
+  const consumo = arred((l.dias_ate_recarga ?? 0) * l.diaria * l.valor_unit);
+  return Math.max(0, arred(l.saldo - consumo));
+}
+
+/** Quanto precisa recarregar: Total − Saldo na recarga (se o saldo cobre tudo, é zero). */
+export function cargaVT(l: CamposTotal & { saldo: number; dias_ate_recarga?: number }): number {
+  return Math.max(0, arred(totalVT(l) - saldoNaRecargaVT(l)));
 }
 
 export function somaVT(linhas: LinhaVT[]) {
   let total = 0;
   let saldo = 0;
+  let saldoAtual = 0;
   let carga = 0;
   for (const l of linhas) {
     total += totalVT(l);
-    saldo += l.saldo;
+    saldo += saldoNaRecargaVT(l);
+    saldoAtual += l.saldo;
     carga += cargaVT(l);
   }
-  return { total: arred(total), saldo: arred(saldo), carga: arred(carga) };
+  // saldo = o que vale na conta da carga (já descontados os dias até a recarga); saldoAtual = o que está no cartão hoje
+  return { total: arred(total), saldo: arred(saldo), saldoAtual: arred(saldoAtual), carga: arred(carga) };
 }
 
 export function moedaVT(n: number): string {
