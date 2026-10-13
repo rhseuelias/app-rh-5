@@ -57,6 +57,8 @@ export interface CandidatoSel {
   pretensao: number | null;
   disponibilidade: string | null;
   link_curriculo: string | null;
+  curriculo_path: string | null;
+  curriculo_nome: string | null;
   pontos_fortes: string | null;
   pontos_atencao: string | null;
   proxima_acao: string | null;

@@ -13,7 +13,7 @@ const TABELAS: Record<ChaveTabela, { tabela: string; colunas: string[] }> = {
   candidatos: {
     tabela: "sel_candidatos",
     colunas: [
-      "vaga_id", "nome", "email", "telefone", "fonte", "etapa", "pretensao", "disponibilidade", "link_curriculo",
+      "vaga_id", "nome", "email", "telefone", "fonte", "etapa", "pretensao", "disponibilidade", "link_curriculo", "curriculo_path", "curriculo_nome",
       "pontos_fortes", "pontos_atencao", "proxima_acao", "proxima_data", "responsavel", "consentimento",
     ],
   },

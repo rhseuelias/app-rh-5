@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { corDaEmpresa } from "@/lib/empresa-cores";
+import { createClient } from "@/lib/supabase-browser";
 import { atualizarRegistro, criarRegistro, excluirRegistro, salvarAvaliacao, type RespostaEnt } from "@/lib/actions-entrevistas";
 import {
   CRITERIOS,
@@ -41,6 +42,49 @@ interface Props {
   candidatosIniciais: CandidatoSel[];
   entrevistasIniciais: EntrevistaSel[];
   avaliacoesIniciais: AvaliacaoSel[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Currículo anexado (arquivo guardado no Supabase Storage)            */
+/* ------------------------------------------------------------------ */
+
+const PASTA_CURRICULOS = "curriculos";
+const TAMANHO_MAXIMO = 10 * 1024 * 1024;
+const TIPOS_ACEITOS = ".pdf,.doc,.docx,.jpg,.jpeg,.png";
+
+function nomeSeguro(nome: string): string {
+  return nome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_");
+}
+
+async function enviarCurriculo(arquivo: File): Promise<{ ok: true; path: string; nome: string } | { ok: false; erro: string }> {
+  if (arquivo.size > TAMANHO_MAXIMO) return { ok: false, erro: "O arquivo é grande demais. O limite é 10 MB." };
+  const path = `${crypto.randomUUID()}/${Date.now()}-${nomeSeguro(arquivo.name)}`;
+  const { error } = await createClient().storage.from(PASTA_CURRICULOS).upload(path, arquivo, { contentType: arquivo.type || undefined });
+  if (error) {
+    const falta = /bucket not found|not found/i.test(error.message);
+    return { ok: false, erro: falta ? "Falta criar a pasta de currículos no banco. Rode o arquivo migration_028_curriculos.sql no Supabase (SQL Editor)." : `Não foi possível enviar o currículo: ${error.message}` };
+  }
+  return { ok: true, path, nome: arquivo.name };
+}
+
+async function apagarCurriculo(path: string): Promise<void> {
+  await createClient().storage.from(PASTA_CURRICULOS).remove([path]);
+}
+
+/** Abre o currículo em outra aba (link temporário de 5 minutos). */
+async function abrirCurriculo(path: string): Promise<string | null> {
+  const aba = window.open("", "_blank");
+  const { data, error } = await createClient().storage.from(PASTA_CURRICULOS).createSignedUrl(path, 300);
+  if (error || !data?.signedUrl) {
+    aba?.close();
+    return "Não foi possível abrir o currículo.";
+  }
+  if (aba) aba.location.href = data.signedUrl;
+  else window.location.href = data.signedUrl;
+  return null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -255,6 +299,7 @@ function ModalCandidato({ vagas, vagaIdInicial, executar, aoFechar, aoCriar }: {
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
   const [fonte, setFonte] = useState<string>(FONTES[0]);
+  const [arquivo, setArquivo] = useState<File | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
@@ -262,10 +307,23 @@ function ModalCandidato({ vagas, vagaIdInicial, executar, aoFechar, aoCriar }: {
     if (!vagaId) return setMsg("Cadastre uma vaga antes.");
     if (!nome.trim()) return setMsg("Informe o nome.");
     setSalvando(true);
-    const campos = { vaga_id: vagaId, nome: nome.trim(), email: email.trim() || null, telefone: telefone.trim() || null, fonte, etapa: "Inscrito", responsavel: null, consentimento: false };
+    setMsg(null);
+    let curriculo: { path: string; nome: string } | null = null;
+    if (arquivo) {
+      const up = await enviarCurriculo(arquivo);
+      if (!up.ok) {
+        setSalvando(false);
+        return setMsg(up.erro);
+      }
+      curriculo = { path: up.path, nome: up.nome };
+    }
+    const campos = { vaga_id: vagaId, nome: nome.trim(), email: email.trim() || null, telefone: telefone.trim() || null, fonte, etapa: "Inscrito", responsavel: null, consentimento: false, curriculo_path: curriculo?.path ?? null, curriculo_nome: curriculo?.nome ?? null };
     const r = await executar(criarRegistro("candidatos", campos));
     setSalvando(false);
-    if (!r.ok) return setMsg(r.erro);
+    if (!r.ok) {
+      if (curriculo) await apagarCurriculo(curriculo.path);
+      return setMsg(r.erro);
+    }
     aoCriar({ id: r.id as string, pretensao: null, disponibilidade: null, link_curriculo: null, pontos_fortes: null, pontos_atencao: null, proxima_acao: null, proxima_data: null, ...campos } as CandidatoSel);
   }
   return (
@@ -297,6 +355,16 @@ function ModalCandidato({ vagas, vagaIdInicial, executar, aoFechar, aoCriar }: {
             <option key={f}>{f}</option>
           ))}
         </select>
+      </Campo>
+      <Campo rotulo="Currículo (opcional)">
+        <input
+          type="file"
+          name="curriculo_arquivo"
+          accept={TIPOS_ACEITOS}
+          className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-brand-300 file:bg-white file:px-4 file:py-2 file:font-medium"
+          onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
+        />
+        <span className="block text-xs text-ink-500 mt-1">PDF, Word ou foto. Até 10 MB.</span>
       </Campo>
       {msg && <p className="text-sm text-red-700">{msg}</p>}
       <div className="flex justify-end gap-2">
@@ -527,6 +595,37 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
     setFicha({ candId, entId: resto[resto.length - 1]?.id });
     setConfirmaExcluir(null);
     setAviso("Entrevista excluída");
+  }
+
+  async function anexarNaFicha(c: CandidatoSel, arquivo: File) {
+    await executar(
+      (async (): Promise<RespostaEnt> => {
+        const up = await enviarCurriculo(arquivo);
+        if (!up.ok) return { ok: false, erro: up.erro };
+        const r = await atualizarRegistro("candidatos", c.id, { curriculo_path: up.path, curriculo_nome: up.nome });
+        if (!r.ok) {
+          await apagarCurriculo(up.path);
+          return r;
+        }
+        setCands((p) => p.map((x) => (x.id === c.id ? { ...x, curriculo_path: up.path, curriculo_nome: up.nome } : x)));
+        if (c.curriculo_path) await apagarCurriculo(c.curriculo_path);
+        setAviso("Currículo anexado");
+        return r;
+      })()
+    );
+  }
+  async function removerCurriculo(c: CandidatoSel) {
+    if (!c.curriculo_path) return;
+    const r = await executar(atualizarRegistro("candidatos", c.id, { curriculo_path: null, curriculo_nome: null }));
+    if (!r.ok) return;
+    await apagarCurriculo(c.curriculo_path);
+    setCands((p) => p.map((x) => (x.id === c.id ? { ...x, curriculo_path: null, curriculo_nome: null } : x)));
+    setAviso("Currículo removido");
+  }
+  async function verCurriculo(c: CandidatoSel) {
+    if (!c.curriculo_path) return;
+    const msg = await abrirCurriculo(c.curriculo_path);
+    if (msg) setErro(msg);
   }
 
   function abrirFicha(candId: string, entId?: string) {
@@ -809,7 +908,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wider text-ink-500 border-b border-brand-200">
-                {["Candidato", "Vaga", "Empresa", "Etapa", "Nota", "Próxima ação", "Fonte"].map((h) => (
+                {["Candidato", "Vaga", "Empresa", "Etapa", "Nota", "Próxima ação", "Fonte", "Currículo"].map((h) => (
                   <th key={h} className="px-3.5 py-3 font-semibold whitespace-nowrap">
                     {h}
                   </th>
@@ -819,7 +918,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
             <tbody>
               {lista.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3.5 py-6 text-center text-ink-500">
+                  <td colSpan={8} className="px-3.5 py-6 text-center text-ink-500">
                     Nenhum candidato encontrado.
                   </td>
                 </tr>
@@ -853,6 +952,15 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                       {c.proxima_acao ? `${c.proxima_acao} · ${fmtCurta(c.proxima_data)}` : "—"}
                     </td>
                     <td className="px-3.5 py-3">{c.fonte ?? "—"}</td>
+                    <td className="px-3.5 py-3">
+                      {c.curriculo_path ? (
+                        <button type="button" className="font-semibold text-brand-500 hover:underline" onClick={() => verCurriculo(c)}>
+                          Abrir
+                        </button>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -1109,6 +1217,50 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                   <Campo rotulo="Responsável">
                     <TextoSalvo nome="responsavel" valor={c.responsavel} aoSalvar={(x) => patchCand(c.id, { responsavel: x || null })} />
                   </Campo>
+                </div>
+                <div className="rounded-xl border border-brand-200 bg-white p-3.5 space-y-2">
+                  <span className="block text-xs font-bold uppercase tracking-wider text-ink-500">Currículo anexado</span>
+                  {c.curriculo_path ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold break-all">{c.curriculo_nome ?? "Currículo"}</span>
+                      <button type="button" className="btn-primary !px-3 !py-1.5 text-sm" onClick={() => verCurriculo(c)}>
+                        Abrir
+                      </button>
+                      <label className="btn-secondary !px-3 !py-1.5 text-sm cursor-pointer">
+                        Trocar
+                        <input
+                          type="file"
+                          name="curriculo_trocar"
+                          accept={TIPOS_ACEITOS}
+                          className="sr-only"
+                          onChange={(ev) => {
+                            const f = ev.target.files?.[0];
+                            ev.target.value = "";
+                            if (f) void anexarNaFicha(c, f);
+                          }}
+                        />
+                      </label>
+                      <button type="button" className="text-sm text-red-700 hover:underline" onClick={() => removerCurriculo(c)}>
+                        Remover
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="btn-secondary !px-3 !py-1.5 text-sm cursor-pointer inline-block">
+                      Anexar currículo
+                      <input
+                        type="file"
+                        name="curriculo_novo"
+                        accept={TIPOS_ACEITOS}
+                        className="sr-only"
+                        onChange={(ev) => {
+                          const f = ev.target.files?.[0];
+                          ev.target.value = "";
+                          if (f) void anexarNaFicha(c, f);
+                        }}
+                      />
+                    </label>
+                  )}
+                  <span className="block text-xs text-ink-500">PDF, Word ou foto. Até 10 MB.</span>
                 </div>
                 <Campo rotulo="Link do currículo ou LinkedIn">
                   <TextoSalvo nome="link_curriculo" valor={c.link_curriculo} aoSalvar={(x) => patchCand(c.id, { link_curriculo: x || null })} />
