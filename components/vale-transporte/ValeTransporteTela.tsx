@@ -107,7 +107,8 @@ export default function ValeTransporteTela({
   const [ativaEscolhida, setAtivaEscolhida] = useState<OperadoraVT | "">("");
   const [ordem, setOrdem] = useState<{ col: ColunaOrdem; dir: 1 | -1 }>({ col: "nome", dir: 1 });
   const [incluindo, setIncluindo] = useState(false);
-  const [escolhido, setEscolhido] = useState("");
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
+  const [busca, setBusca] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [pendente, iniciar] = useTransition();
   const [baixandoCaju, setBaixandoCaju] = useState(false);
@@ -143,7 +144,12 @@ export default function ValeTransporteTela({
   const opcoesIncluir = colaboradores.filter(
     (c) => c.empresa === empresa && !doOperadora.some((l) => l.colaborador_id === c.id)
   );
-  const escolhidoValido = opcoesIncluir.some((c) => c.id === escolhido) ? escolhido : "";
+  const buscaNorm = busca.trim().toLowerCase();
+  const listaVisivel = buscaNorm
+    ? opcoesIncluir.filter((c) => `${c.nome} ${c.unidade}`.toLowerCase().includes(buscaNorm))
+    : opcoesIncluir;
+  const marcadosValidos = opcoesIncluir.filter((c) => marcados.has(c.id));
+  const todosVisiveisMarcados = listaVisivel.length > 0 && listaVisivel.every((c) => marcados.has(c.id));
 
   function avisar(ok: boolean, texto: string) {
     setMsg({ ok, texto });
@@ -151,7 +157,8 @@ export default function ValeTransporteTela({
 
   function escolherEmpresa(e: string) {
     setEmpresa(e);
-    setEscolhido("");
+    setMarcados(new Set());
+    setBusca("");
     setMsg(null);
   }
 
@@ -159,10 +166,35 @@ export default function ValeTransporteTela({
     setOrdem((o) => (o.col === col ? { col, dir: (o.dir * -1) as 1 | -1 } : { col, dir: 1 }));
   }
 
-  function incluirTodosDaEmpresa() {
-    if (opcoesIncluir.length === 0) return;
-    const lista = [...opcoesIncluir];
-    if (!window.confirm(`Incluir os ${lista.length} colaboradores da ${empresa} em ${ROTULO_OPERADORA[ativa]}?`)) return;
+  function alternarMarcado(id: string) {
+    setMarcados((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
+  }
+
+  function marcarVisiveis(marcar: boolean) {
+    setMarcados((atual) => {
+      const novo = new Set(atual);
+      for (const c of listaVisivel) {
+        if (marcar) novo.add(c.id);
+        else novo.delete(c.id);
+      }
+      return novo;
+    });
+  }
+
+  function fecharInclusao() {
+    setIncluindo(false);
+    setMarcados(new Set());
+    setBusca("");
+  }
+
+  function incluirMarcados() {
+    const lista = [...marcadosValidos];
+    if (lista.length === 0) return avisar(false, "Marque pelo menos um colaborador.");
     iniciar(async () => {
       let feitos = 0;
       let primeiroErro = "";
@@ -179,34 +211,12 @@ export default function ValeTransporteTela({
         if (r.ok) feitos += 1;
         else if (!primeiroErro) primeiroErro = r.erro;
       }
-      setEscolhido("");
-      setIncluindo(false);
+      fecharInclusao();
       if (primeiroErro) {
         avisar(false, `${feitos} de ${lista.length} incluídos em ${ROTULO_OPERADORA[ativa]}. Erro: ${primeiroErro}`);
       } else {
-        avisar(true, `${feitos} colaboradores da ${empresa} incluídos em ${ROTULO_OPERADORA[ativa]}. Preencha o cartão e os valores de cada um.`);
+        avisar(true, `${feitos} ${feitos === 1 ? "colaborador incluído" : "colaboradores incluídos"} em ${ROTULO_OPERADORA[ativa]}. Preencha o cartão e os valores.`);
       }
-    });
-  }
-
-  function incluir() {
-    const c = colaboradores.find((x) => x.id === escolhidoValido);
-    if (!c) return avisar(false, "Escolha o colaborador.");
-    iniciar(async () => {
-      const r = await criarLinhaVT({
-        competencia,
-        colaboradorId: c.id,
-        operadora: ativa,
-        cartao: "",
-        diaria: 2,
-        valorUnit: 0,
-        diasUteis: diasMesInicial,
-      });
-      if (r.ok) {
-        setEscolhido("");
-        setIncluindo(false);
-        avisar(true, `${c.nome} incluído(a) em ${ROTULO_OPERADORA[ativa]}. Preencha o cartão e os valores.`);
-      } else avisar(false, r.erro);
     });
   }
 
@@ -353,48 +363,59 @@ export default function ValeTransporteTela({
           {empresa} · {ROTULO_OPERADORA[ativa]}
         </h2>
         <div className="flex flex-wrap items-end gap-2">
-          {incluindo ? (
-            <>
-              <div>
-                <label className="label" htmlFor="vt-incluir-colab">
-                  Colaborador
-                </label>
-                <select id="vt-incluir-colab" className="input !w-72" value={escolhidoValido} onChange={(e) => setEscolhido(e.target.value)}>
-                  <option value="">
-                    {opcoesIncluir.length
-                      ? "Escolha…"
-                      : `(todos da ${empresa} já estão no lançamento)`}
-                  </option>
-                  {opcoesIncluir.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.unidade && c.unidade !== empresa ? `${c.nome} — ${c.unidade}` : c.nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button type="button" className="btn-primary" disabled={pendente || !escolhidoValido} onClick={incluir}>
-                Incluir
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={pendente || opcoesIncluir.length === 0}
-                onClick={incluirTodosDaEmpresa}
-                title={`Incluir de uma vez todos os colaboradores da ${empresa} que ainda não estão em ${ROTULO_OPERADORA[ativa]}`}
-              >
-                Incluir todos da {empresa}
-                {opcoesIncluir.length > 0 ? ` (${opcoesIncluir.length})` : ""}
-              </button>
-              <button type="button" className="btn-secondary" onClick={() => setIncluindo(false)}>
-                Cancelar
-              </button>
-            </>
-          ) : (
+          {!incluindo && (
             <button type="button" className="btn-secondary" onClick={() => setIncluindo(true)}>
-              + Incluir colaborador
+              + Incluir colaboradores
             </button>
           )}
         </div>
+        {incluindo && (
+          <div className="basis-full rounded-xl border border-[#e4dfd8] bg-[#faf8f5] p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                aria-label="Buscar colaborador"
+                placeholder="Buscar pelo nome…"
+                className="input !w-64 !py-1.5"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+              />
+              <button type="button" className="btn-secondary" disabled={listaVisivel.length === 0} onClick={() => marcarVisiveis(!todosVisiveisMarcados)}>
+                {todosVisiveisMarcados ? "Desmarcar todos" : "Marcar todos"}
+                {listaVisivel.length > 0 ? ` (${listaVisivel.length})` : ""}
+              </button>
+              <span className="text-sm text-stone-600">
+                {opcoesIncluir.length === 0
+                  ? `Todos da ${empresa} já estão em ${ROTULO_OPERADORA[ativa]}.`
+                  : `${marcadosValidos.length} marcado(s) de ${opcoesIncluir.length} da ${empresa}`}
+              </span>
+            </div>
+            {listaVisivel.length > 0 && (
+              <ul className="mt-2 grid max-h-72 grid-cols-1 gap-x-4 overflow-y-auto rounded-lg border border-[#e4dfd8] bg-white p-1 md:grid-cols-2">
+                {listaVisivel.map((c) => (
+                  <li key={c.id}>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[14.5px] hover:bg-stone-50">
+                      <input type="checkbox" className="h-4 w-4" checked={marcados.has(c.id)} onChange={() => alternarMarcado(c.id)} />
+                      <span className="font-medium uppercase">{c.nome}</span>
+                      {c.unidade && c.unidade !== empresa && (
+                        <span className="ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase" style={{ background: corUnidade(c.unidade).tom, color: corUnidade(c.unidade).cor }}>
+                          {c.unidade}
+                        </span>
+                      )}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" className="btn-primary" disabled={pendente || marcadosValidos.length === 0} onClick={incluirMarcados}>
+                {pendente ? "Incluindo…" : `Incluir selecionados${marcadosValidos.length > 0 ? ` (${marcadosValidos.length})` : ""}`}
+              </button>
+              <button type="button" className="btn-secondary" disabled={pendente} onClick={fecharInclusao}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
         {msg && (
           <p role="status" className={`basis-full text-sm font-medium ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>
             {msg.texto}
