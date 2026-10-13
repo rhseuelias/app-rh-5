@@ -500,6 +500,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
   const [ficha, setFicha] = useState<{ candId: string; entId?: string } | null>(null);
   const [aba, setAba] = useState<AbaFicha>("entrevista");
   const [modal, setModal] = useState<Modal>(null);
+  const [confirmaVaga, setConfirmaVaga] = useState<string | null>(null);
   const [pendentes, setPendentes] = useState(0);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -602,6 +603,16 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
     setAviso(`${c.nome.split(" ")[0]} avançou para ${ETAPAS[i + 1]}`);
   }
 
+  async function removerVaga(id: string) {
+    const r = await executar(excluirRegistro("vagas", id));
+    setConfirmaVaga(null);
+    if (!r.ok) return;
+    const candIds = new Set(cands.filter((c) => c.vaga_id === id).map((c) => c.id));
+    setVagas((p) => p.filter((v) => v.id !== id));
+    setCands((p) => p.filter((c) => c.vaga_id !== id));
+    setEnts((p) => p.filter((e) => !candIds.has(e.candidato_id)));
+    setAviso("Vaga excluída");
+  }
   async function removerCandidato(id: string) {
     const r = await executar(excluirRegistro("candidatos", id));
     if (!r.ok) return;
@@ -660,7 +671,12 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
   }
 
   /* ---------- indicadores ---------- */
-  const abertas = vagasFiltradas.filter((v) => ["Aberta", "Em triagem", "Em entrevistas", "Proposta"].includes(v.status)).length;
+  const abertas = vagasFiltradas
+    .filter((v) => ["Aberta", "Em triagem", "Em entrevistas", "Proposta"].includes(v.status))
+    .reduce((soma, v) => {
+      const preenchidas = cands.filter((c) => c.vaga_id === v.id && c.etapa === "Admitido").length;
+      return soma + Math.max(0, (v.posicoes ?? 1) - preenchidas);
+    }, 0);
   const agendadas = entsFiltradas.filter((e) => e.status === "Agendada" && e.data >= hoje).length;
   const admitidos = candsFiltrados.filter((c) => c.etapa === "Admitido").length;
   const atrasadas = candsFiltrados.filter((c) => !encerrado(c.etapa) && c.proxima_data && c.proxima_data < hoje).length;
@@ -743,7 +759,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
             return (
               <section key={v.id} className="card !p-3 space-y-2 min-w-0">
                 <div className="flex items-center justify-between gap-2 text-xs text-ink-500">
-                  <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="flex items-center gap-1.5 min-w-0 text-base font-semibold text-ink-800">
                     <Ponto empresa={v.empresa} />
                     <span className="truncate">{rotuloEmpresa(v)}</span>
                   </span>
@@ -818,6 +834,11 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                     ))}
                   </select>
                   {v.gestor && <span className="truncate">Gestor: {v.gestor}</span>}
+                </div>
+                <div className="text-right">
+                  <button type="button" className="text-xs font-semibold text-red-700 hover:underline" onClick={() => setConfirmaVaga(v.id)}>
+                    Excluir vaga
+                  </button>
                 </div>
               </section>
             );
@@ -1479,6 +1500,32 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
       {visao === "candidatos" && VisaoCandidatos()}
 
       {Ficha()}
+      {confirmaVaga && (() => {
+        const v = vagas.find((x) => x.id === confirmaVaga);
+        if (!v) return null;
+        const nCands = cands.filter((c) => c.vaga_id === v.id).length;
+        return (
+          <JanelaModal titulo="Excluir vaga?" aoFechar={() => setConfirmaVaga(null)}>
+            <p>
+              Tem certeza que deseja excluir a vaga <b>{v.cargo}</b> ({rotuloEmpresa(v)})?
+            </p>
+            {nCands > 0 && (
+              <p className="text-sm text-red-700">
+                Os {nCands} {nCands > 1 ? "candidatos" : "candidato"} desta vaga e as entrevistas deles também serão excluídos.
+              </p>
+            )}
+            <p className="text-sm text-ink-500">Isso não pode ser desfeito.</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => setConfirmaVaga(null)}>
+                Não, voltar
+              </button>
+              <button type="button" className="btn-primary !bg-red-700 !border-red-700" onClick={() => removerVaga(v.id)}>
+                Sim, excluir
+              </button>
+            </div>
+          </JanelaModal>
+        );
+      })()}
       {modal?.tipo === "vaga" && (
         <ModalVaga
           hoje={hoje}
