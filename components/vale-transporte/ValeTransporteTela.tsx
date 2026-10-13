@@ -107,6 +107,7 @@ export default function ValeTransporteTela({
   const [escolhido, setEscolhido] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [pendente, iniciar] = useTransition();
+  const [baixandoCaju, setBaixandoCaju] = useState(false);
 
   const caju = ativa === "CAJU";
   const comMatricula = ativa === "BHBUS" || ativa === "OTIMO";
@@ -214,6 +215,36 @@ export default function ValeTransporteTela({
     });
   }
 
+  async function baixarCsvCaju() {
+    setBaixandoCaju(true);
+    try {
+      const url = `/api/vale-transporte/csv-caju?competencia=${competencia}${filtroValido ? `&unidade=${encodeURIComponent(filtroValido)}` : ""}`;
+      const r = await fetch(url);
+      if (!r.ok) {
+        avisar(false, "Não foi possível gerar o CSV do CAJU.");
+        return;
+      }
+      const blob = await r.blob();
+      const nomeArquivo = r.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? `pedidos-caju-${competencia}.csv`;
+      const endereco = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = endereco;
+      a.download = nomeArquivo;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(endereco), 4000);
+      const n = r.headers.get("X-Linhas") ?? "0";
+      const sem = decodeURIComponent(r.headers.get("X-Sem-Cpf") ?? "");
+      if (sem) avisar(false, `CSV do CAJU gerado com ${n} colaboradores. Ficaram de fora, sem CPF no cadastro: ${sem}.`);
+      else avisar(true, `CSV do CAJU gerado com ${n} colaboradores${filtroValido ? ` (${filtroValido})` : ""}.`);
+    } catch {
+      avisar(false, "Não foi possível gerar o CSV do CAJU.");
+    } finally {
+      setBaixandoCaju(false);
+    }
+  }
+
   const linkExcel = `/api/vale-transporte/excel?competencia=${competencia}${filtroValido ? `&unidade=${encodeURIComponent(filtroValido)}` : ""}`;
 
   function Cab({ col, rotulo, direita }: { col: ColunaOrdem; rotulo: string; direita?: boolean }) {
@@ -263,6 +294,17 @@ export default function ValeTransporteTela({
           <a href={linkExcel} className="btn-primary no-underline">
             Exportar Excel
           </a>
+          {ativa === "CAJU" && (
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={baixandoCaju}
+              onClick={baixarCsvCaju}
+              title={`CSV de pedidos para importar no sistema do CAJU${filtroValido ? ` (só ${filtroValido})` : " (todas as unidades)"}`}
+            >
+              {baixandoCaju ? "Gerando…" : "CSV de pedidos CAJU"}
+            </button>
+          )}
           {ativa === "BHBUS" && (
             <a href={linkCsvBhbus} className="btn-secondary no-underline">
               CSV de recarga BHBUS
