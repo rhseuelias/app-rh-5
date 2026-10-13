@@ -124,7 +124,11 @@ export default function ValeTransporteTela({
   const soma = somaVT(visiveis);
   const filtroValido = filtro && incluidas.has(filtro) ? filtro : "";
 
-  const opcoesIncluir = colaboradores.filter((c) => !doOperadora.some((l) => l.colaborador_id === c.id));
+  // Só quem ainda não está nesta operadora; se uma unidade estiver escolhida no filtro, só os dessa unidade.
+  const opcoesIncluir = colaboradores.filter(
+    (c) => !doOperadora.some((l) => l.colaborador_id === c.id) && (!filtroValido || c.unidade === filtroValido)
+  );
+  const escolhidoValido = opcoesIncluir.some((c) => c.id === escolhido) ? escolhido : "";
 
   function avisar(ok: boolean, texto: string) {
     setMsg({ ok, texto });
@@ -144,8 +148,40 @@ export default function ValeTransporteTela({
     setOrdem((o) => (o.col === col ? { col, dir: (o.dir * -1) as 1 | -1 } : { col, dir: 1 }));
   }
 
+  function incluirTodosDaUnidade() {
+    if (!filtroValido || opcoesIncluir.length === 0) return;
+    const lista = [...opcoesIncluir];
+    const unidade = filtroValido;
+    if (!window.confirm(`Incluir os ${lista.length} colaboradores de ${unidade} em ${ROTULO_OPERADORA[ativa]}?`)) return;
+    iniciar(async () => {
+      let feitos = 0;
+      let primeiroErro = "";
+      for (const c of lista) {
+        const r = await criarLinhaVT({
+          competencia,
+          colaboradorId: c.id,
+          operadora: ativa,
+          cartao: "",
+          diaria: 2,
+          valorUnit: 0,
+          diasUteis: diasMesInicial,
+        });
+        if (r.ok) feitos += 1;
+        else if (!primeiroErro) primeiroErro = r.erro;
+      }
+      if (feitos > 0) setIncluidas((atual) => new Set(atual).add(unidade));
+      setEscolhido("");
+      setIncluindo(false);
+      if (primeiroErro) {
+        avisar(false, `${feitos} de ${lista.length} incluídos em ${ROTULO_OPERADORA[ativa]}. Erro: ${primeiroErro}`);
+      } else {
+        avisar(true, `${feitos} colaboradores de ${unidade} incluídos em ${ROTULO_OPERADORA[ativa]}. Preencha o cartão e os valores de cada um.`);
+      }
+    });
+  }
+
   function incluir() {
-    const c = colaboradores.find((x) => x.id === escolhido);
+    const c = colaboradores.find((x) => x.id === escolhidoValido);
     if (!c) return avisar(false, "Escolha o colaborador.");
     iniciar(async () => {
       const r = await criarLinhaVT({
@@ -284,18 +320,42 @@ export default function ValeTransporteTela({
                 <label className="label" htmlFor="vt-incluir-colab">
                   Colaborador
                 </label>
-                <select id="vt-incluir-colab" className="input !w-72" value={escolhido} onChange={(e) => setEscolhido(e.target.value)}>
-                  <option value="">{opcoesIncluir.length ? "Escolha…" : "(todos já estão no lançamento)"}</option>
+                <select id="vt-incluir-colab" className="input !w-72" value={escolhidoValido} onChange={(e) => setEscolhido(e.target.value)}>
+                  <option value="">
+                    {opcoesIncluir.length
+                      ? filtroValido
+                        ? `Escolha (${filtroValido})…`
+                        : "Escolha…"
+                      : filtroValido
+                        ? `(todos de ${filtroValido} já estão no lançamento)`
+                        : "(todos já estão no lançamento)"}
+                  </option>
                   {opcoesIncluir.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.nome} — {c.unidade}
+                      {filtroValido ? c.nome : `${c.nome} — ${c.unidade}`}
                     </option>
                   ))}
                 </select>
               </div>
-              <button type="button" className="btn-primary" disabled={pendente || !escolhido} onClick={incluir}>
+              <button type="button" className="btn-primary" disabled={pendente || !escolhidoValido} onClick={incluir}>
                 Incluir
               </button>
+              {filtroValido ? (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={pendente || opcoesIncluir.length === 0}
+                  onClick={incluirTodosDaUnidade}
+                  title={`Incluir de uma vez todos os colaboradores de ${filtroValido} que ainda não estão em ${ROTULO_OPERADORA[ativa]}`}
+                >
+                  Incluir todos de {filtroValido}
+                  {opcoesIncluir.length > 0 ? ` (${opcoesIncluir.length})` : ""}
+                </button>
+              ) : (
+                <span className="basis-full text-[13px] text-stone-500">
+                  Para incluir todos de uma vez, escolha uma unidade em "Unidades BSE filtro".
+                </span>
+              )}
               <button type="button" className="btn-secondary" onClick={() => setIncluindo(false)}>
                 Cancelar
               </button>
