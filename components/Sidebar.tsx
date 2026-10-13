@@ -10,6 +10,7 @@ type IconeNome =
   | "dashboard"
   | "colaboradores"
   | "integracao"
+  | "entrevistas"
   | "calendario"
   | "ferias"
   | "departamento"
@@ -57,6 +58,14 @@ function Icone({ nome }: { nome: IconeNome }) {
         <svg {...props}>
           <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
           <polyline points="22 4 12 14.01 9 11.01" />
+        </svg>
+      );
+    case "entrevistas":
+      return (
+        <svg {...props}>
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          <line x1="8" y1="9" x2="16" y2="9" />
+          <line x1="8" y1="13" x2="13" y2="13" />
         </svg>
       );
     case "calendario":
@@ -138,6 +147,7 @@ const ITENS: { href: string; label: string; icon: IconeNome }[] = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
   { href: "/colaboradores", label: "Colaboradores", icon: "colaboradores" },
   { href: "/onboarding", label: "Painel de Integração", icon: "integracao" },
+  { href: "/entrevistas", label: "Entrevistas", icon: "entrevistas" },
   { href: "/calendario", label: "Calendário Geral", icon: "calendario" },
   { href: "/ferias", label: "Férias", icon: "ferias" },
   { href: "/previsao-ferias", label: "Previsão de Férias", icon: "relatorio" },
