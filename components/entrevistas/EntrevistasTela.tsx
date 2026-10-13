@@ -303,7 +303,7 @@ function ModalVaga({ hoje, executar, aoFechar, aoCriar }: { hoje: string; execut
   );
 }
 
-function ModalCandidato({ vagas, vagaIdInicial, executar, aoFechar, aoCriar }: { vagas: Vaga[]; vagaIdInicial?: string; executar: Exec; aoFechar: () => void; aoCriar: (c: CandidatoSel) => void }) {
+function ModalCandidato({ vagas, vagaIdInicial, hoje, executar, aoFechar, aoCriar }: { vagas: Vaga[]; vagaIdInicial?: string; hoje: string; executar: Exec; aoFechar: () => void; aoCriar: (c: CandidatoSel, e?: EntrevistaSel) => void }) {
   const abertas = vagas.filter((v) => v.status !== "Fechada" && v.status !== "Cancelada");
   const [vagaId, setVagaId] = useState(vagaIdInicial ?? abertas[0]?.id ?? "");
   const [nome, setNome] = useState("");
@@ -311,10 +311,17 @@ function ModalCandidato({ vagas, vagaIdInicial, executar, aoFechar, aoCriar }: {
   const [telefone, setTelefone] = useState("");
   const [fonte, setFonte] = useState<string>(FONTES[0]);
   const [arquivo, setArquivo] = useState<File | null>(null);
+  const [destino, setDestino] = useState<"rh" | "banco" | "so">("rh");
+  const [dataRH, setDataRH] = useState(somaDias(hoje, 1));
+  const [horaRH, setHoraRH] = useState("10:00");
+  const [tipoRH, setTipoRH] = useState<string>("Vídeo");
+  const [quemRH, setQuemRH] = useState("");
+  const [linkRH, setLinkRH] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
   async function salvar() {
+    if (destino === "rh" && !dataRH) return setMsg("Escolha a data da entrevista.");
     if (!vagaId) return setMsg("Cadastre uma vaga antes.");
     if (!nome.trim()) return setMsg("Informe o nome.");
     setSalvando(true);
@@ -328,14 +335,22 @@ function ModalCandidato({ vagas, vagaIdInicial, executar, aoFechar, aoCriar }: {
       }
       curriculo = { path: up.path, nome: up.nome };
     }
-    const campos = { vaga_id: vagaId, nome: nome.trim(), email: email.trim() || null, telefone: telefone.trim() || null, fonte, etapa: "Inscrito", responsavel: null, consentimento: false, curriculo_path: curriculo?.path ?? null, curriculo_nome: curriculo?.nome ?? null };
+    const campos = { vaga_id: vagaId, nome: nome.trim(), email: email.trim() || null, telefone: telefone.trim() || null, fonte, etapa: destino === "rh" ? "Entrevista RH" : destino === "banco" ? "Banco de talentos" : "Inscrito", responsavel: null, consentimento: false, curriculo_path: curriculo?.path ?? null, curriculo_nome: curriculo?.nome ?? null };
     const r = await executar(criarRegistro("candidatos", campos));
     setSalvando(false);
     if (!r.ok) {
       if (curriculo) await apagarCurriculo(curriculo.path);
       return setMsg(r.erro);
     }
-    aoCriar({ id: r.id as string, pretensao: null, disponibilidade: null, link_curriculo: null, pontos_fortes: null, pontos_atencao: null, proxima_acao: null, proxima_data: null, ...campos } as CandidatoSel);
+    const novo = { id: r.id as string, pretensao: null, disponibilidade: null, link_curriculo: null, pontos_fortes: null, pontos_atencao: null, proxima_acao: null, proxima_data: null, ...campos } as CandidatoSel;
+    if (destino !== "rh") return aoCriar(novo);
+    const camposEnt = { candidato_id: novo.id, etapa: "Entrevista RH", data: dataRH, hora: horaRH || "10:00", tipo: tipoRH, entrevistador: quemRH.trim() || null, status: "Agendada", link_local: linkRH.trim() || null, resumo: null, aprofundar: null, recomendacao: null, proxima_acao: null, proxima_data: null };
+    const re = await executar(criarRegistro("entrevistas", camposEnt));
+    if (!re.ok) {
+      aoCriar(novo);
+      return;
+    }
+    aoCriar(novo, { id: re.id as string, ...camposEnt } as EntrevistaSel);
   }
   return (
     <JanelaModal titulo="Novo candidato" aoFechar={() => aoFechar()}>
@@ -377,13 +392,51 @@ function ModalCandidato({ vagas, vagaIdInicial, executar, aoFechar, aoCriar }: {
         />
         <span className="block text-xs text-ink-500 mt-1">PDF, Word ou foto. Até 10 MB.</span>
       </Campo>
+      <fieldset className="space-y-2 rounded-xl border border-brand-200 bg-white p-3">
+        <legend className="px-1 text-sm font-semibold">O que fazer com este candidato?</legend>
+        {([
+          ["rh", "Agendar 1ª etapa · RH"],
+          ["banco", "Colocar no banco de talentos"],
+          ["so", "Só cadastrar por enquanto"],
+        ] as const).map(([k, rotulo]) => (
+          <label key={k} className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="destino_candidato" checked={destino === k} onChange={() => setDestino(k)} />
+            <span>{rotulo}</span>
+          </label>
+        ))}
+        {destino === "rh" && (
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <Campo rotulo="Data">
+              <input type="date" className="input" value={dataRH} onChange={(e) => setDataRH(e.target.value)} />
+            </Campo>
+            <Campo rotulo="Horário">
+              <input type="time" className="input" value={horaRH} onChange={(e) => setHoraRH(e.target.value)} />
+            </Campo>
+            <Campo rotulo="Tipo">
+              <select className="input" value={tipoRH} onChange={(e) => setTipoRH(e.target.value)}>
+                {TIPOS_ENTREVISTA.map((x) => (
+                  <option key={x}>{x}</option>
+                ))}
+              </select>
+            </Campo>
+            <Campo rotulo="Entrevistador">
+              <input name="entrevistador" className="input" value={quemRH} onChange={(e) => setQuemRH(e.target.value)} />
+            </Campo>
+            <div className="col-span-2">
+              <Campo rotulo="Link ou local">
+                <input name="link_local" className="input" value={linkRH} onChange={(e) => setLinkRH(e.target.value)} placeholder="Link da videochamada ou endereço" />
+              </Campo>
+            </div>
+          </div>
+        )}
+      </fieldset>
       {msg && <p className="text-sm text-red-700">{msg}</p>}
       <div className="flex justify-end gap-2">
         <button type="button" className="btn-secondary" onClick={() => aoFechar()}>
           Cancelar
         </button>
         <button type="button" className="btn-primary" disabled={salvando} onClick={salvar}>
-          {salvando ? "Salvando…" : "Cadastrar candidato"}
+          {salvando ? "Salvando…" : destino === "rh" ? "Cadastrar e agendar" : destino === "banco" ? "Cadastrar no banco de talentos" : "Cadastrar candidato"}
         </button>
       </div>
     </JanelaModal>
@@ -1542,12 +1595,14 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
         <ModalCandidato
           vagas={vagas}
           vagaIdInicial={modal.vagaId}
+          hoje={hoje}
           executar={executar}
           aoFechar={() => setModal(null)}
-          aoCriar={(c) => {
+          aoCriar={(c, e) => {
             setCands((p) => [...p, c]);
+            if (e) setEnts((p) => [...p, e]);
             setModal(null);
-            setAviso("Candidato cadastrado");
+            setAviso(e ? "Candidato cadastrado e 1ª etapa agendada" : c.etapa === "Banco de talentos" ? "Candidato no banco de talentos" : "Candidato cadastrado");
           }}
         />
       )}
