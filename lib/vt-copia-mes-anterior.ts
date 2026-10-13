@@ -10,7 +10,7 @@ const chave = (c: string, o: string, cartao: string | null) => `${c}|${o}|${cart
 
 /**
  * Copia os cartões do mês anterior para o mês pedido: número do cartão, diária,
- * valor, dias úteis, alimentação e prêmio. O SALDO não é copiado (volta zerado),
+ * valor, dias úteis, alimentação, prêmio e multi. O SALDO não é copiado (volta zerado),
  * porque o saldo do cartão muda todo mês. Só copia o que ainda não existe.
  */
 export async function copiarDoMesAnteriorVT(
@@ -50,6 +50,7 @@ export async function copiarDoMesAnteriorVT(
         dias_uteis: number;
         alimentacao: number | null;
         premio: number | null;
+        multi?: number | null;
       }) => ({
         competencia,
         colaborador_id: r.colaborador_id,
@@ -60,6 +61,8 @@ export async function copiarDoMesAnteriorVT(
         dias_uteis: r.dias_uteis,
         alimentacao: r.alimentacao ?? 0,
         premio: r.premio ?? 0,
+        // só envia o Multi quando existe (assim a cópia funciona mesmo antes da migration_026)
+        ...(r.multi ? { multi: r.multi } : {}),
         saldo: 0,
       })
     );

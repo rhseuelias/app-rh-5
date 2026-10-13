@@ -82,7 +82,7 @@ const FONTE_TITULO = { fontFamily: "Oswald, 'Arial Narrow', sans-serif" } as con
 
 type ColunaOrdem =
   | "matricula" | "nome" | "unidade" | "cartao" | "diaria" | "valor_unit" | "valor_diario"
-  | "dias_uteis" | "total_vt" | "alimentacao" | "premio" | "saldo" | "carga";
+  | "dias_uteis" | "total_vt" | "alimentacao" | "premio" | "multi" | "saldo" | "carga";
 
 function valorOrdem(l: LinhaTela, c: ColunaOrdem): string | number {
   switch (c) {
@@ -96,6 +96,7 @@ function valorOrdem(l: LinhaTela, c: ColunaOrdem): string | number {
     case "dias_uteis": return Number(l.dias_uteis) || 0;
     case "alimentacao": return Number(l.alimentacao) || 0;
     case "premio": return Number(l.premio) || 0;
+    case "multi": return Number(l.multi) || 0;
     case "total_vt": return transporteVT(l);
     case "saldo": return saldoNaRecargaVT(l);
     case "carga": return cargaVT(l);
@@ -450,7 +451,7 @@ export default function ValeTransporteTela({
       <div className="mt-3 border-t border-[#e4dfd8]">
         {caju && (
           <p className="border-b border-brand-100 bg-blue-50/40 px-6 py-3 text-sm text-stone-600">
-            No CAJU a Carga soma transporte + alimentação + prêmio. Se você também lança alimentação e prêmio no Controle de Benefícios, não repita aqui para não contar duas vezes.
+            No CAJU a Carga soma transporte + alimentação + prêmio + multi. Se você também lança alimentação e prêmio no Controle de Benefícios, não repita aqui para não contar duas vezes.
           </p>
         )}
         <table className="w-full table-fixed text-[15px]">
@@ -466,6 +467,7 @@ export default function ValeTransporteTela({
             <col style={{ width: 100 }} />
             {caju && <col style={{ width: 90 }} />}
             {caju && <col style={{ width: 90 }} />}
+            {caju && <col style={{ width: 80 }} />}
             <col style={{ width: 190 }} />
             <col style={{ width: 98 }} />
             <col style={{ width: 44 }} />
@@ -483,6 +485,7 @@ export default function ValeTransporteTela({
               <Cab col="total_vt" rotulo="Total VT" direita />
               {caju && <Cab col="alimentacao" rotulo="Alimentação" direita />}
               {caju && <Cab col="premio" rotulo="Prêmio" direita />}
+              {caju && <Cab col="multi" rotulo="Multi" direita />}
               <Cab col="saldo" rotulo="Saldo atual · dias até a recarga" direita />
               <Cab col="carga" rotulo="Carga" direita />
               <th className="px-2 py-3" />
@@ -507,7 +510,7 @@ export default function ValeTransporteTela({
                   TOTAL — {ROTULO_OPERADORA[ativa]} · {empresa}
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(somaTransporte)}</td>
-                {caju && <td colSpan={2} />}
+                {caju && <td colSpan={3} />}
                 <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(soma.saldo)}</td>
                 <td className="px-3 py-2.5 text-right text-base tabular-nums text-[#b0302a]">{numeroVT(soma.carga)}</td>
                 <td />
@@ -517,7 +520,7 @@ export default function ValeTransporteTela({
         </table>
       </div>
       <p className="px-5 py-3 text-[13px] text-stone-600">
-        Total VT = valor diário × dias úteis · Carga = Total VT (no CAJU, mais alimentação e prêmio) − Saldo atual · Tudo o que você digita é salvo sozinho e repetido no mês seguinte (menos o saldo). Clique no título de uma coluna para ordenar.
+        Total VT = valor diário × dias úteis · Carga = Total VT (no CAJU, mais alimentação, prêmio e multi) − Saldo atual · Tudo o que você digita é salvo sozinho e repetido no mês seguinte (menos o saldo). Clique no título de uma coluna para ordenar.
       </p>
     </section>
   );
@@ -534,6 +537,7 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
   const [diasAte, setDiasAte] = useState(campoVT(linha.dias_ate_recarga ?? 0));
   const [alim, setAlim] = useState(campoVT(linha.alimentacao ?? 0));
   const [premio, setPremio] = useState(campoVT(linha.premio ?? 0));
+  const [multi, setMulti] = useState(campoVT(linha.multi ?? 0));
   const [estado, setEstado] = useState<"" | "salvando" | "salvo" | "erro">("");
   const [erro, setErro] = useState("");
   const [pendente, iniciar] = useTransition();
@@ -545,12 +549,14 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
   const nDiasAte = lerNumeroVT(diasAte);
   const nAlim = lerNumeroVT(alim);
   const nPremio = lerNumeroVT(premio);
-  const ok = nDiaria !== null && nValor !== null && nDias !== null && nSaldo !== null && nDiasAte !== null && nAlim !== null && nPremio !== null;
+  const nMulti = lerNumeroVT(multi);
+  const ok = nDiaria !== null && nValor !== null && nDias !== null && nSaldo !== null && nDiasAte !== null && nAlim !== null && nPremio !== null && nMulti !== null;
 
   const vivo = {
     operadora: linha.operadora,
     alimentacao: nAlim ?? 0,
     premio: nPremio ?? 0,
+    multi: nMulti ?? 0,
     diaria: nDiaria ?? 0,
     valor_unit: nValor ?? 0,
     dias_uteis: nDias ?? 0,
@@ -570,6 +576,7 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
     dias_ate_recarga: campoVT(linha.dias_ate_recarga ?? 0),
     alimentacao: campoVT(linha.alimentacao ?? 0),
     premio: campoVT(linha.premio ?? 0),
+    multi: campoVT(linha.multi ?? 0),
   });
 
   function gravar(nome: keyof CamposLinhaVT, texto: string) {
@@ -723,6 +730,11 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
       {caju && (
         <td className="px-1.5 py-1.5">
           <input aria-label="Prêmio" className={campo} inputMode="decimal" value={premio} onChange={(e) => digitou("premio", e.target.value, setPremio)} onBlur={() => aoSair("premio", premio)} />
+        </td>
+      )}
+      {caju && (
+        <td className="px-1.5 py-1.5">
+          <input aria-label="Multi" className={campo} inputMode="decimal" value={multi} onChange={(e) => digitou("multi", e.target.value, setMulti)} onBlur={() => aoSair("multi", multi)} />
         </td>
       )}
       <td className="px-1.5 py-1.5">

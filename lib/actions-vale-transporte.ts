@@ -10,6 +10,9 @@ export type RespostaVT = { ok: true; aviso?: string } | { ok: false; erro: strin
 const CAMINHO = "/departamento-pessoal/vale-transporte";
 
 function mensagem(m: string): string {
+  if (/multi/i.test(m) && /column|schema cache|does not exist/i.test(m)) {
+    return "Falta criar a coluna Multi no banco. Rode o arquivo migration_026_vt_multi.sql no Supabase (SQL Editor).";
+  }
   if (/does not exist|schema cache/i.test(m)) {
     return "Falta criar a tabela no banco. Rode o arquivo migration_022_vale_transporte.sql no Supabase.";
   }
@@ -38,6 +41,7 @@ export interface NovaLinhaVT {
   diasUteis: number;
   alimentacao?: number;
   premio?: number;
+  multi?: number;
 }
 
 export async function criarLinhaVT(n: NovaLinhaVT): Promise<RespostaVT> {
@@ -80,6 +84,7 @@ export interface CamposLinhaVT {
   dias_ate_recarga?: number;
   alimentacao?: number;
   premio?: number;
+  multi?: number;
 }
 
 export async function salvarLinhaVT(id: string, campos: CamposLinhaVT): Promise<RespostaVT> {
@@ -113,6 +118,10 @@ export async function salvarLinhaVT(id: string, campos: CamposLinhaVT): Promise<
   if (campos.premio !== undefined) {
     if (!numeroValido(campos.premio, 100000)) return { ok: false, erro: "Prêmio inválido." };
     atualizar.premio = campos.premio;
+  }
+  if (campos.multi !== undefined) {
+    if (!numeroValido(campos.multi, 100000)) return { ok: false, erro: "Multi inválido." };
+    atualizar.multi = campos.multi;
   }
 
   const supabase = createClient();

@@ -51,16 +51,17 @@ const COLS_BASE: Col[] = [
   { t: "Carga", w: 0.09, a: "r" },
 ];
 const COLS_CAJU: Col[] = [
-  { t: "Nome", w: 0.19, a: "l" },
+  { t: "Nome", w: 0.17, a: "l" },
   { t: "Unidade", w: 0.09, a: "l" },
-  { t: "Cartão", w: 0.13, a: "l" },
+  { t: "Cartão", w: 0.12, a: "l" },
   { t: "Diária", w: 0.05, a: "c" },
   { t: "Valor unit.", w: 0.07, a: "r" },
   { t: "Valor diário", w: 0.07, a: "r" },
   { t: "Dias úteis", w: 0.05, a: "c" },
-  { t: "Alimentação", w: 0.08, a: "r" },
-  { t: "Prêmio", w: 0.07, a: "r" },
-  { t: "Total", w: 0.08, a: "r" },
+  { t: "Alimentação", w: 0.07, a: "r" },
+  { t: "Prêmio", w: 0.06, a: "r" },
+  { t: "Multi", w: 0.06, a: "r" },
+  { t: "Total", w: 0.07, a: "r" },
   { t: "Saldo recarga", w: 0.06, a: "r" },
   { t: "Carga", w: 0.06, a: "r" },
 ];
@@ -229,7 +230,7 @@ export async function GET(req: Request) {
           { t: numeroVT(saldoNaRecargaVT(l)) },
           { t: numeroVT(cargaVT(l)), b: true, cor: COR_ALERTA },
         ];
-        linhaTabela(cols, caju ? [...base, { t: numeroVT(l.alimentacao ?? 0) }, { t: numeroVT(l.premio ?? 0) }, ...fim] : [...base, ...fim], 16);
+        linhaTabela(cols, caju ? [...base, { t: numeroVT(l.alimentacao ?? 0) }, { t: numeroVT(l.premio ?? 0) }, { t: numeroVT(l.multi ?? 0) }, ...fim] : [...base, ...fim], 16);
         page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
       }
 

@@ -19,6 +19,7 @@ function valor(n: number): string {
  *  - Mobilidade                      = Total VT (diária × valor unit. × dias úteis)
  *  - Valor Fixo em Auxilio Alimentacao = Alimentação
  *  - Saldo Livre                     = Prêmio
+ *  - Multi                           = Multi
  *  - CPF só com números
  * Aceita ?empresa=BSE|BABOON|BDU para exportar só uma empresa (a escolhida na tela).
  */
@@ -46,7 +47,7 @@ export async function GET(req: Request) {
   const unidadePorId = new Map(((uniRes.data ?? []) as Unidade[]).map((u) => [u.id, u]));
   const colabPorId = new Map(((colRes.data ?? []) as Colaborador[]).map((c) => [c.id, c]));
 
-  type Linha = { nome: string; cpf: string; alim: number; mob: number; saldoLivre: number };
+  type Linha = { nome: string; cpf: string; alim: number; mob: number; saldoLivre: number; multi: number };
   const itens: Linha[] = [];
   const semCpf: string[] = [];
 
@@ -57,20 +58,21 @@ export async function GET(req: Request) {
     const mob = transporteVT(l);
     const alim = Number(l.alimentacao) || 0;
     const saldoLivre = Number(l.premio) || 0;
-    if (mob + alim + saldoLivre <= 0) continue; // nada a pedir para esta pessoa
+    const multi = Number(l.multi) || 0;
+    if (mob + alim + saldoLivre + multi <= 0) continue; // nada a pedir para esta pessoa
     const cpf = (c.cpf_cnpj ?? "").replace(/\D/g, "");
     if (!cpf) {
       semCpf.push(c.nome);
       continue;
     }
-    itens.push({ nome: c.nome, cpf, alim, mob, saldoLivre });
+    itens.push({ nome: c.nome, cpf, alim, mob, saldoLivre, multi });
   }
 
   itens.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   const linhas = [CABECALHO];
   for (const i of itens) {
     // CPF; Matricula (vazia); Auxilio Alimentacao; Mobilidade; Valor Fixo em Mobilidade; Saldo Livre; Multi; Valor Fixo em Multi
-    linhas.push([i.cpf, "", valor(i.alim), valor(i.mob), "0", valor(i.saldoLivre), "0", "0"].join(";"));
+    linhas.push([i.cpf, "", valor(i.alim), valor(i.mob), "0", valor(i.saldoLivre), valor(i.multi), "0"].join(";"));
   }
 
   const sufixo = empresaFiltro ? `-${empresaFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";

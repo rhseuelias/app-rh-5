@@ -31,6 +31,8 @@ export interface LinhaVT {
   /** Só o CAJU usa estes dois. */
   alimentacao: number;
   premio: number;
+  /** Só o CAJU: valor do benefício Multi. */
+  multi?: number;
   /** Dias que ainda faltam até a recarga: o cartão gasta isso antes de receber a carga. */
   dias_ate_recarga?: number;
 }
@@ -50,11 +52,12 @@ type CamposTotal = Pick<LinhaVT, "diaria" | "valor_unit" | "dias_uteis"> & {
   operadora?: OperadoraVT;
   alimentacao?: number;
   premio?: number;
+  multi?: number;
 };
 
-/** Total do mês. No CAJU soma também alimentação e prêmio. */
+/** Total do mês. No CAJU soma também alimentação, prêmio e multi. */
 export function totalVT(l: CamposTotal): number {
-  const extra = l.operadora === "CAJU" ? (l.alimentacao ?? 0) + (l.premio ?? 0) : 0;
+  const extra = l.operadora === "CAJU" ? (l.alimentacao ?? 0) + (l.premio ?? 0) + (l.multi ?? 0) : 0;
   return arred(transporteVT(l) + extra);
 }
 

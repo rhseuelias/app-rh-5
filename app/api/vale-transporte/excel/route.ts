@@ -93,8 +93,8 @@ export async function GET(req: Request) {
       pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     });
     const caju = op === "CAJU";
-    const ultCol = caju ? "L" : "I";
-    ws.columns = (caju ? [30, 24, 14, 12, 13, 11, 13, 13, 13, 13, 13, 13] : [30, 24, 14, 12, 13, 11, 13, 13, 13]).map((width) => ({ width }));
+    const ultCol = caju ? "M" : "I";
+    ws.columns = (caju ? [30, 24, 14, 12, 13, 11, 13, 13, 13, 13, 13, 13, 13] : [30, 24, 14, 12, 13, 11, 13, 13, 13]).map((width) => ({ width }));
 
     ws.mergeCells(`A1:${ultCol}1`);
     ws.getCell("A1").value = `${empresa} · ${ROTULO_OPERADORA[op]} — ${rotuloCompetencia(competencia)}`;
@@ -118,7 +118,7 @@ export async function GET(req: Request) {
 
       const cab = ws.getRow(linha);
       cab.values = caju
-        ? ["NOME", "CARTÃO", "DIÁRIA (IDA E VOLTA)", "VALOR UNIT.", "VALOR DIÁRIO", "DIAS ÚTEIS", "TOTAL VT", "ALIMENTAÇÃO", "PRÊMIO", "TOTAL", "SALDO NA RECARGA", "CARGA"]
+        ? ["NOME", "CARTÃO", "DIÁRIA (IDA E VOLTA)", "VALOR UNIT.", "VALOR DIÁRIO", "DIAS ÚTEIS", "TOTAL VT", "ALIMENTAÇÃO", "PRÊMIO", "MULTI", "TOTAL", "SALDO NA RECARGA", "CARGA"]
         : ["NOME", "CARTÃO", "DIÁRIA (IDA E VOLTA)", "VALOR UNIT.", "VALOR DIÁRIO", "DIAS ÚTEIS", "TOTAL", "SALDO NA RECARGA", "CARGA"];
       cab.eachCell((cell) => {
         cell.font = { bold: true, size: 10, color: { argb: "FFFFFFFF" } };
@@ -128,8 +128,8 @@ export async function GET(req: Request) {
       linha++;
       const primeira = linha;
 
-      // posição das colunas (no CAJU entram Total VT, Alimentação e Prêmio antes do Total)
-      const cTotal = caju ? 10 : 7;
+      // posição das colunas (no CAJU entram Total VT, Alimentação, Prêmio e Multi antes do Total)
+      const cTotal = caju ? 11 : 7;
       const cSaldo = cTotal + 1;
       const cCarga = cTotal + 2;
       const letra = (n: number) => String.fromCharCode(64 + n);
@@ -146,9 +146,10 @@ export async function GET(req: Request) {
           r.getCell(7).value = { formula: `E${linha}*F${linha}`, result: transporteVT(l) };
           r.getCell(8).value = l.alimentacao ?? 0;
           r.getCell(9).value = l.premio ?? 0;
+          r.getCell(10).value = l.multi ?? 0;
         }
         r.getCell(cTotal).value = {
-          formula: caju ? `G${linha}+H${linha}+I${linha}` : `E${linha}*F${linha}`,
+          formula: caju ? `G${linha}+H${linha}+I${linha}+J${linha}` : `E${linha}*F${linha}`,
           result: totalVT(l),
         };
         r.getCell(cSaldo).value = saldoNaRecargaVT(l);
@@ -156,7 +157,7 @@ export async function GET(req: Request) {
           formula: `MAX(0,${letra(cTotal)}${linha}-${letra(cSaldo)}${linha})`,
           result: cargaVT(l),
         };
-        const moeda = caju ? [4, 5, 7, 8, 9, cTotal, cSaldo, cCarga] : [4, 5, cTotal, cSaldo, cCarga];
+        const moeda = caju ? [4, 5, 7, 8, 9, 10, cTotal, cSaldo, cCarga] : [4, 5, cTotal, cSaldo, cCarga];
         for (const col of moeda) r.getCell(col).numFmt = "#,##0.00";
         r.getCell(cCarga).font = { bold: true, color: { argb: "FFB42318" } };
         r.getCell(cTotal).font = { bold: true };
@@ -175,6 +176,7 @@ export async function GET(req: Request) {
         tot.getCell(7).value = soma(7, transporteVT);
         tot.getCell(8).value = soma(8, (x) => x.alimentacao ?? 0);
         tot.getCell(9).value = soma(9, (x) => x.premio ?? 0);
+        tot.getCell(10).value = soma(10, (x) => x.multi ?? 0);
       }
       tot.getCell(cTotal).value = soma(cTotal, totalVT);
       tot.getCell(cSaldo).value = soma(cSaldo, saldoNaRecargaVT);
@@ -183,7 +185,7 @@ export async function GET(req: Request) {
         cell.font = { bold: true };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4EEE6" } };
       });
-      for (const col of caju ? [7, 8, 9, cTotal, cSaldo, cCarga] : [cTotal, cSaldo, cCarga]) tot.getCell(col).numFmt = "#,##0.00";
+      for (const col of caju ? [7, 8, 9, 10, cTotal, cSaldo, cCarga] : [cTotal, cSaldo, cCarga]) tot.getCell(col).numFmt = "#,##0.00";
       linha += 3;
     }
   }
