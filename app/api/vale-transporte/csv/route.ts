@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, Unidade } from "@/types/db";
-import { cargaVT, grupoVT, type LinhaVT } from "@/lib/vale-transporte";
+import { cargaVT, empresaVT, grupoVT, type LinhaVT } from "@/lib/vale-transporte";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,9 @@ export async function GET(req: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "não autenticado" }, { status: 401 });
 
-  const competencia = new URL(req.url).searchParams.get("competencia") ?? "";
+  const sp = new URL(req.url).searchParams;
+  const competencia = sp.get("competencia") ?? "";
+  const empresaFiltro = sp.get("empresa") || "";
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) return NextResponse.json({ error: "mês inválido" }, { status: 400 });
 
   const [matRes, empRes, uniRes, colRes, lancRes] = await Promise.all([
@@ -48,8 +50,14 @@ export async function GET(req: Request) {
   for (const l of (lancRes.data ?? []) as LinhaVT[]) {
     const c = colabPorId.get(l.colaborador_id);
     if (!c) continue;
-    const emp = c.empresa_id ? empresaPorId.get(c.empresa_id)?.nome ?? "" : "";
-    if (!ehBseSemAlphaville(`${grupoVT(c, empresaPorId, unidadePorId)} ${emp}`)) continue;
+    if (empresaFiltro) {
+      // empresa escolhida na tela (BSE continua sem a unidade Alphaville)
+      if (empresaVT(c, empresaPorId, unidadePorId) !== empresaFiltro) continue;
+      if (empresaFiltro === "BSE" && grupoVT(c, empresaPorId, unidadePorId).toLowerCase().includes("alphaville")) continue;
+    } else {
+      const emp = c.empresa_id ? empresaPorId.get(c.empresa_id)?.nome ?? "" : "";
+      if (!ehBseSemAlphaville(`${grupoVT(c, empresaPorId, unidadePorId)} ${emp}`)) continue;
+    }
     const centavos = Math.round(cargaVT(l) * 100);
     if (centavos <= 0) continue;
     const mat = (matriculaBhbus.get(c.id) ?? "").trim();
@@ -69,7 +77,7 @@ export async function GET(req: Request) {
   return new NextResponse(corpo, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="recarga-bhbus-${competencia}.csv"`,
+      "Content-Disposition": `attachment; filename="recarga-bhbus-${competencia}${empresaFiltro ? `-${empresaFiltro.toLowerCase()}` : ""}.csv"`,
       // nomes (sem acento) de quem ficou de fora por falta de matrícula
       "X-Sem-Matricula": encodeURIComponent(semMatricula.join(", ")),
     },

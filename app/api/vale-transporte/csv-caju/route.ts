@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, Unidade } from "@/types/db";
-import { grupoVT, transporteVT, type LinhaVT } from "@/lib/vale-transporte";
+import { empresaVT, transporteVT, type LinhaVT } from "@/lib/vale-transporte";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,7 @@ function valor(n: number): string {
  *  - Valor Fixo em Auxilio Alimentacao = Alimentação
  *  - Saldo Livre                     = Prêmio
  *  - CPF só com números
- * Aceita ?unidade=NOME para exportar só uma unidade (igual ao filtro da tela).
+ * Aceita ?empresa=BSE|BABOON|BDU para exportar só uma empresa (a escolhida na tela).
  */
 export async function GET(req: Request) {
   const supabase = createClient();
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 
   const sp = new URL(req.url).searchParams;
   const competencia = sp.get("competencia") ?? "";
-  const unidadeFiltro = sp.get("unidade") || "";
+  const empresaFiltro = sp.get("empresa") || "";
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) return NextResponse.json({ error: "mês inválido" }, { status: 400 });
 
   const [empRes, uniRes, colRes, lancRes] = await Promise.all([
@@ -53,7 +53,7 @@ export async function GET(req: Request) {
   for (const l of (lancRes.data ?? []) as LinhaVT[]) {
     const c = colabPorId.get(l.colaborador_id);
     if (!c) continue;
-    if (unidadeFiltro && grupoVT(c, empresaPorId, unidadePorId) !== unidadeFiltro) continue;
+    if (empresaFiltro && empresaVT(c, empresaPorId, unidadePorId) !== empresaFiltro) continue;
     const mob = transporteVT(l);
     const alim = Number(l.alimentacao) || 0;
     const saldoLivre = Number(l.premio) || 0;
@@ -73,7 +73,7 @@ export async function GET(req: Request) {
     linhas.push([i.cpf, "", valor(i.alim), valor(i.mob), "0", valor(i.saldoLivre), "0", "0"].join(";"));
   }
 
-  const sufixo = unidadeFiltro ? `-${unidadeFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
+  const sufixo = empresaFiltro ? `-${empresaFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
   return new NextResponse(linhas.join("\n"), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

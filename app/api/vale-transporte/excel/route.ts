@@ -8,6 +8,9 @@ import {
   OPERADORAS,
   ROTULO_OPERADORA,
   cargaVT,
+  empresaVT,
+  EMPRESAS_VT,
+  OPERADORAS_DA_EMPRESA,
   grupoVT,
   saldoNaRecargaVT,
   totalVT,
@@ -35,7 +38,7 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const competencia = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.get("competencia") ?? "") ? (sp.get("competencia") as string) : "";
   if (!competencia) return NextResponse.json({ error: "mês inválido" }, { status: 400 });
-  const unidadeFiltro = sp.get("unidade") || "";
+  const empresaFiltro = sp.get("empresa") || "";
 
   const [empRes, uniRes, colRes, lancRes] = await Promise.all([
     supabase.from("empresas").select("*"),
@@ -54,19 +57,39 @@ export async function GET(req: Request) {
   wb.creator = "AppliQ RH";
   wb.created = new Date();
 
-  for (const op of OPERADORAS) {
-    const doOp = lancamentos.filter((l) => l.operadora === op);
+  // empresa de cada lançamento
+  const empresaDoLanc = new Map<string, string>();
+  for (const l of lancamentos) {
+    const c = colabPorId.get(l.colaborador_id);
+    if (c) empresaDoLanc.set(l.id, empresaVT(c, empresaPorId, unidadePorId));
+  }
+  const todasEmpresas = [
+    ...EMPRESAS_VT,
+    ...Array.from(new Set(empresaDoLanc.values())).filter((e) => !(EMPRESAS_VT as readonly string[]).includes(e)),
+  ].filter((e) => !empresaFiltro || e === empresaFiltro);
+
+  // uma aba por empresa + operadora (ex.: "BSE - CAJU"); só as que têm lançamentos
+  const abas: { empresa: string; op: (typeof OPERADORAS)[number] }[] = [];
+  for (const e of todasEmpresas) {
+    const base = OPERADORAS_DA_EMPRESA[e] ?? [...OPERADORAS];
+    for (const op of [...base, ...OPERADORAS.filter((o) => !base.includes(o))]) {
+      if (lancamentos.some((l) => l.operadora === op && empresaDoLanc.get(l.id) === e)) abas.push({ empresa: e, op });
+    }
+  }
+  if (abas.length === 0) abas.push({ empresa: empresaFiltro || EMPRESAS_VT[0], op: "CAJU" });
+
+  for (const { empresa, op } of abas) {
+    const doOp = lancamentos.filter((l) => l.operadora === op && empresaDoLanc.get(l.id) === empresa);
     const porGrupo = new Map<string, { nome: string; l: LinhaVT }[]>();
     for (const l of doOp) {
       const c = colabPorId.get(l.colaborador_id);
       if (!c) continue;
-      const g = grupoVT(c, empresaPorId, unidadePorId);
-      if (unidadeFiltro && g !== unidadeFiltro) continue;
+      const g = grupoVT(c, empresaPorId, unidadePorId); // unidade (na BSE) ou o nome da empresa
       if (!porGrupo.has(g)) porGrupo.set(g, []);
       porGrupo.get(g)!.push({ nome: c.nome, l });
     }
 
-    const ws = wb.addWorksheet(ROTULO_OPERADORA[op], {
+    const ws = wb.addWorksheet(`${empresa} - ${ROTULO_OPERADORA[op]}`, {
       pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     });
     const caju = op === "CAJU";
@@ -74,7 +97,7 @@ export async function GET(req: Request) {
     ws.columns = (caju ? [30, 24, 14, 12, 13, 11, 13, 13, 13, 13, 13, 13] : [30, 24, 14, 12, 13, 11, 13, 13, 13]).map((width) => ({ width }));
 
     ws.mergeCells(`A1:${ultCol}1`);
-    ws.getCell("A1").value = `${ROTULO_OPERADORA[op]} — ${rotuloCompetencia(competencia)}`;
+    ws.getCell("A1").value = `${empresa} · ${ROTULO_OPERADORA[op]} — ${rotuloCompetencia(competencia)}`;
     ws.getCell("A1").font = { bold: true, size: 16 };
 
     let linha = 3;
@@ -166,7 +189,7 @@ export async function GET(req: Request) {
   }
 
   const buffer = await wb.xlsx.writeBuffer();
-  const nome = unidadeFiltro ? `vale-transporte-${competencia}-${unidadeFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xlsx` : `vale-transporte-${competencia}.xlsx`;
+  const nome = empresaFiltro ? `vale-transporte-${competencia}-${empresaFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xlsx` : `vale-transporte-${competencia}.xlsx`;
   return new NextResponse(Buffer.from(buffer), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

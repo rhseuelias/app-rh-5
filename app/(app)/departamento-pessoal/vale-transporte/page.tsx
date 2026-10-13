@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, Unidade } from "@/types/db";
-import { compararGrupos } from "@/lib/folha-calculos";
 import { rotuloCompetencia } from "@/lib/beneficios-calculos";
 import {
   competenciaAtualSP,
   deslocarCompetencia,
   elegivelVT,
+  empresaVT,
+  EMPRESAS_VT,
   grupoVT,
   type LinhaVT,
 } from "@/lib/vale-transporte";
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function ValeTransportePage({
   searchParams,
 }: {
-  searchParams: { competencia?: string; unidade?: string };
+  searchParams: { competencia?: string };
 }) {
   const supabase = createClient();
   const competencia = /^\d{4}-(0[1-9]|1[0-2])$/.test(searchParams.competencia ?? "")
@@ -110,32 +111,41 @@ export default async function ValeTransportePage({
   const linhas: LinhaTela[] = [];
   const grupoDoColab = new Map<string, string>();
   const opcoes: OpcaoColaborador[] = [];
-  const todosGrupos = new Set<string>();
+  const todasEmpresas = new Set<string>();
 
   for (const c of colaboradores) {
     if (!elegivelVT(c)) continue;
     const g = grupoVT(c, empresaPorId, unidadePorId);
+    const e = empresaVT(c, empresaPorId, unidadePorId);
     grupoDoColab.set(c.id, g);
-    todosGrupos.add(g);
-    opcoes.push({ id: c.id, nome: c.nome, unidade: g });
+    todasEmpresas.add(e);
+    opcoes.push({ id: c.id, nome: c.nome, unidade: g, empresa: e });
   }
   for (const l of lancamentos) {
     const c = colabPorId.get(l.colaborador_id);
     if (!c) continue;
     const g = grupoVT(c, empresaPorId, unidadePorId);
-    todosGrupos.add(g);
+    const e = empresaVT(c, empresaPorId, unidadePorId);
+    todasEmpresas.add(e);
     linhas.push({
       ...l,
       nome: c.nome,
       matricula: matriculaVT.get(`${l.colaborador_id}|${l.operadora}`) ?? null,
       unidade: g,
+      empresa: e,
       repetido: repetido(l),
     });
   }
   opcoes.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
-  const unidades = Array.from(todosGrupos).sort(compararGrupos);
-  const unidadesIniciais = unidades.filter((u) => linhas.some((l) => l.unidade === u));
+  // BSE, BABOON e BDU sempre aparecem (nessa ordem); qualquer outra empresa encontrada entra depois.
+  const empresas = [
+    ...EMPRESAS_VT,
+    ...Array.from(todasEmpresas)
+      .filter((e) => !(EMPRESAS_VT as readonly string[]).includes(e))
+      .sort((a, b) => a.localeCompare(b, "pt-BR")),
+  ];
+  const empresaInicial = empresas.find((e) => linhas.some((l) => l.empresa === e)) ?? empresas[0];
 
   const href = (comp: string) => `/departamento-pessoal/vale-transporte?competencia=${comp}`;
   const avisoCopia = copiouAutomatico
@@ -162,7 +172,7 @@ export default async function ValeTransportePage({
               ›
             </Link>
           </div>
-          <RelatorioPdfVT competencia={competencia} unidades={unidadesIniciais} />
+          <RelatorioPdfVT competencia={competencia} />
         </div>
       </div>
 
@@ -172,8 +182,8 @@ export default async function ValeTransportePage({
         rotuloMes={rotuloCompetencia(competencia)}
         linhas={linhas}
         colaboradores={opcoes}
-        unidades={unidades}
-        unidadesIniciais={unidadesIniciais}
+        empresas={empresas}
+        empresaInicial={empresaInicial}
         temMesAnterior={(antRes.count ?? 0) > 0}
         diasMesInicial={diasMes}
         linkCsvBhbus={`/api/vale-transporte/csv?competencia=${competencia}`}

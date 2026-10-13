@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, Unidade } from "@/types/db";
-import { compararGrupos } from "@/lib/folha-calculos";
 import { rotuloCompetencia } from "@/lib/beneficios-calculos";
 import { disposicaoPdf } from "@/lib/pdf-disposicao";
 import {
   OPERADORAS,
   ROTULO_OPERADORA,
   cargaVT,
+  OPERADORAS_DA_EMPRESA,
+  EMPRESAS_VT,
+  empresaVT,
   grupoVT,
   saldoNaRecargaVT,
   numeroVT,
@@ -37,23 +39,25 @@ type Col = { t: string; w: number; a: "l" | "r" | "c" };
 type Cel = { t: string; cor?: RGB; b?: boolean };
 
 const COLS_BASE: Col[] = [
-  { t: "Nome", w: 0.26, a: "l" },
-  { t: "Cartão", w: 0.17, a: "l" },
-  { t: "Diária", w: 0.07, a: "c" },
-  { t: "Valor unit.", w: 0.09, a: "r" },
-  { t: "Valor diário", w: 0.09, a: "r" },
-  { t: "Dias úteis", w: 0.07, a: "c" },
-  { t: "Total", w: 0.09, a: "r" },
-  { t: "Saldo recarga", w: 0.08, a: "r" },
-  { t: "Carga", w: 0.08, a: "r" },
-];
-const COLS_CAJU: Col[] = [
-  { t: "Nome", w: 0.22, a: "l" },
-  { t: "Cartão", w: 0.15, a: "l" },
+  { t: "Nome", w: 0.21, a: "l" },
+  { t: "Unidade", w: 0.1, a: "l" },
+  { t: "Cartão", w: 0.14, a: "l" },
   { t: "Diária", w: 0.06, a: "c" },
   { t: "Valor unit.", w: 0.08, a: "r" },
   { t: "Valor diário", w: 0.08, a: "r" },
   { t: "Dias úteis", w: 0.06, a: "c" },
+  { t: "Total", w: 0.09, a: "r" },
+  { t: "Saldo recarga", w: 0.09, a: "r" },
+  { t: "Carga", w: 0.09, a: "r" },
+];
+const COLS_CAJU: Col[] = [
+  { t: "Nome", w: 0.19, a: "l" },
+  { t: "Unidade", w: 0.09, a: "l" },
+  { t: "Cartão", w: 0.13, a: "l" },
+  { t: "Diária", w: 0.05, a: "c" },
+  { t: "Valor unit.", w: 0.07, a: "r" },
+  { t: "Valor diário", w: 0.07, a: "r" },
+  { t: "Dias úteis", w: 0.05, a: "c" },
   { t: "Alimentação", w: 0.08, a: "r" },
   { t: "Prêmio", w: 0.07, a: "r" },
   { t: "Total", w: 0.08, a: "r" },
@@ -82,7 +86,7 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const competencia = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.get("competencia") ?? "") ? (sp.get("competencia") as string) : "";
   if (!competencia) return NextResponse.json({ error: "mês inválido" }, { status: 400 });
-  const unidadeFiltro = sp.get("unidade") || "";
+  const empresaFiltro = sp.get("empresa") || "";
 
   const [empRes, uniRes, colRes, lancRes] = await Promise.all([
     supabase.from("empresas").select("*"),
@@ -97,8 +101,8 @@ export async function GET(req: Request) {
   const colabPorId = new Map(((colRes.data ?? []) as Colaborador[]).map((c) => [c.id, c]));
   const lancamentos = (lancRes.data ?? []) as LinhaVT[];
 
-  // grupo (unidade) -> operadora -> linhas
-  type Item = { nome: string; l: LinhaVT; repetido: boolean };
+  // empresa -> operadora -> linhas
+  type Item = { nome: string; unidade: string; l: LinhaVT; repetido: boolean };
   const donos = new Map<string, Set<string>>();
   for (const l of lancamentos) {
     const num = (l.cartao ?? "").replace(/\D/g, "");
@@ -111,15 +115,20 @@ export async function GET(req: Request) {
   for (const l of lancamentos) {
     const c = colabPorId.get(l.colaborador_id);
     if (!c) continue;
-    const g = grupoVT(c, empresaPorId, unidadePorId);
-    if (unidadeFiltro && g !== unidadeFiltro) continue;
+    const g = empresaVT(c, empresaPorId, unidadePorId);
+    if (empresaFiltro && g !== empresaFiltro) continue;
+    const unidade = grupoVT(c, empresaPorId, unidadePorId);
     if (!porGrupo.has(g)) porGrupo.set(g, new Map());
     const m = porGrupo.get(g)!;
     if (!m.has(l.operadora)) m.set(l.operadora, []);
     const num = (l.cartao ?? "").replace(/\D/g, "");
-    m.get(l.operadora)!.push({ nome: c.nome, l, repetido: !!num && (donos.get(`${l.operadora}|${num}`)?.size ?? 0) > 1 });
+    m.get(l.operadora)!.push({ nome: c.nome, unidade: unidade === g ? "" : unidade, l, repetido: !!num && (donos.get(`${l.operadora}|${num}`)?.size ?? 0) > 1 });
   }
-  const grupos = Array.from(porGrupo.keys()).sort(compararGrupos);
+  const ordemEmpresa = (e: string) => {
+    const i = (EMPRESAS_VT as readonly string[]).indexOf(e);
+    return i < 0 ? 99 : i;
+  };
+  const grupos = Array.from(porGrupo.keys()).sort((a, b) => ordemEmpresa(a) - ordemEmpresa(b) || a.localeCompare(b, "pt-BR"));
 
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -129,7 +138,7 @@ export async function GET(req: Request) {
   paginas.push(page);
   let y = ALT - M - 36;
 
-  const escopo = unidadeFiltro ? `Unidade: ${unidadeFiltro}` : "Todas as unidades";
+  const escopo = empresaFiltro ? `Empresa: ${empresaFiltro}` : "Todas as empresas";
   const cabecalhoPagina = (p: PDFPage) => {
     p.drawText("Vale Transporte — relatório para conferência", { x: M, y: ALT - M, size: 15, font: bold, color: COR_TIT });
     p.drawText(limpar(`${rotuloCompetencia(competencia)} · ${escopo}`), { x: M, y: ALT - M - 15, size: 9, font, color: COR_LAB });
@@ -183,8 +192,10 @@ export async function GET(req: Request) {
     const todas: LinhaVT[] = [];
     const porOp = { BHBUS: 0, SEMPARAR: 0, OTIMO: 0, CAJU: 0 } as Record<OperadoraVT, number>;
 
-    for (const op of OPERADORAS) {
-      const itens = (ops.get(op) ?? []).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    const opsBase = OPERADORAS_DA_EMPRESA[g] ?? [...OPERADORAS];
+    const ordemOps = [...opsBase, ...OPERADORAS.filter((o) => !opsBase.includes(o))];
+    for (const op of ordemOps) {
+      const itens = (ops.get(op) ?? []).sort((a, b) => a.unidade.localeCompare(b.unidade, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR"));
       if (itens.length === 0) continue;
       const caju = op === "CAJU";
       const cols = caju ? COLS_CAJU : COLS_BASE;
@@ -194,7 +205,7 @@ export async function GET(req: Request) {
       y -= 14;
       linhaTabela(cols, cols.map((c) => ({ t: c.t, b: true, cor: COR_LAB })), 16, COR_CAB);
 
-      for (const { nome, l, repetido } of itens) {
+      for (const { nome, unidade, l, repetido } of itens) {
         if (y - 34 < M + 16) {
           novaPagina();
           linhaTabela(cols, cols.map((c) => ({ t: c.t, b: true, cor: COR_LAB })), 16, COR_CAB);
@@ -206,6 +217,7 @@ export async function GET(req: Request) {
         if (repetido) pontos.push(`${g} · ${ROTULO_OPERADORA[op]} · ${nome}: número de cartão repetido`);
         const base: Cel[] = [
           { t: nome },
+          { t: unidade },
           semCartao ? { t: "sem número", cor: COR_ALERTA } : { t: `${l.cartao}${repetido ? " (repetido)" : ""}`, cor: repetido ? COR_ALERTA : undefined },
           { t: numeroVT(l.diaria) },
           { t: numeroVT(l.valor_unit) },
@@ -237,7 +249,7 @@ export async function GET(req: Request) {
     const sg = somaVT(todas);
     resumo.push({ grupo: g, porOp, total: sg.total, saldo: sg.saldo, carga: sg.carga });
     garantir(24);
-    const txt = `TOTAL DA UNIDADE ${g}:   Total ${numeroVT(sg.total)}   ·   Saldo ${numeroVT(sg.saldo)}   ·   Carga a recarregar ${numeroVT(sg.carga)}`;
+    const txt = `TOTAL DA EMPRESA ${g}:   Total ${numeroVT(sg.total)}   ·   Saldo ${numeroVT(sg.saldo)}   ·   Carga a recarregar ${numeroVT(sg.carga)}`;
     page.drawText(limpar(txt), { x: M, y: y - 10, size: 9.5, font: bold, color: COR_TIT });
     y -= 30;
   }
@@ -248,7 +260,7 @@ export async function GET(req: Request) {
     page.drawText("Resumo — carga a recarregar", { x: M, y: y - 4, size: 12, font: bold, color: COR_TIT });
     y -= 22;
     const colsRes: Col[] = [
-      { t: "Unidade", w: 0.28, a: "l" },
+      { t: "Empresa", w: 0.28, a: "l" },
       { t: "BHBUS", w: 0.11, a: "r" },
       { t: "SEMPARAR", w: 0.11, a: "r" },
       { t: "ÓTIMO", w: 0.11, a: "r" },
@@ -326,9 +338,9 @@ export async function GET(req: Request) {
   });
 
   const bytes = await pdf.save();
-  const nome = unidadeFiltro
-    ? `vale-transporte-${competencia}-${unidadeFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`
-    : `vale-transporte-${competencia}-todas-as-unidades.pdf`;
+  const nome = empresaFiltro
+    ? `vale-transporte-${competencia}-${empresaFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`
+    : `vale-transporte-${competencia}-todas-as-empresas.pdf`;
   return new NextResponse(Buffer.from(bytes), {
     headers: {
       "Content-Type": "application/pdf",

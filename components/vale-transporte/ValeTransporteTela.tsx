@@ -10,8 +10,8 @@ import {
   type CamposLinhaVT,
 } from "@/lib/actions-vale-transporte";
 import {
-  COR_OPERADORA,
   OPERADORAS,
+  OPERADORAS_DA_EMPRESA,
   ROTULO_OPERADORA,
   campoVT,
   cargaVT,
@@ -31,6 +31,7 @@ export interface LinhaTela extends LinhaVT {
   nome: string;
   matricula: string | null;
   unidade: string;
+  empresa: string;
   repetido: boolean;
 }
 
@@ -38,6 +39,7 @@ export interface OpcaoColaborador {
   id: string;
   nome: string;
   unidade: string;
+  empresa: string;
 }
 
 interface Props {
@@ -45,8 +47,9 @@ interface Props {
   rotuloMes: string;
   linhas: LinhaTela[];
   colaboradores: OpcaoColaborador[];
-  unidades: string[];
-  unidadesIniciais: string[];
+  /** Empresas que aparecem em "Escolher Empresa" (BSE, BABOON, BDU...). */
+  empresas: string[];
+  empresaInicial: string;
   temMesAnterior: boolean;
   diasMesInicial: number;
   linkCsvBhbus: string;
@@ -58,6 +61,7 @@ const campo =
   "w-full min-w-0 rounded-[7px] border border-[#e4dfd8] bg-white px-2 py-1 text-right text-[15px] tabular-nums text-[#2b2623] focus:outline-none focus:ring-2 focus:ring-stone-300";
 
 const COR_UNIDADE: Record<string, { cor: string; tom: string }> = {
+  BSE: { cor: "#1d5fb8", tom: "#e3eefc" },
   BELVEDERE: { cor: "#1d5fb8", tom: "#e3eefc" },
   PAMPULHA: { cor: "#1b8a4b", tom: "#e1f5e9" },
   SAVASSI: { cor: "#7a3fb5", tom: "#efe5fa" },
@@ -97,11 +101,10 @@ function valorOrdem(l: LinhaTela, c: ColunaOrdem): string | number {
 }
 
 export default function ValeTransporteTela({
-  competencia, rotuloMes, linhas, colaboradores, unidades, unidadesIniciais, temMesAnterior, diasMesInicial, linkCsvBhbus, avisoCopia,
+  competencia, rotuloMes, linhas, colaboradores, empresas, empresaInicial, temMesAnterior, diasMesInicial, linkCsvBhbus, avisoCopia,
 }: Props) {
-  const [ativa, setAtiva] = useState<OperadoraVT>(OPERADORAS.find((o) => linhas.some((l) => l.operadora === o)) ?? "BHBUS");
-  const [incluidas, setIncluidas] = useState<Set<string>>(new Set(unidadesIniciais));
-  const [filtro, setFiltro] = useState("");
+  const [empresa, setEmpresa] = useState(empresaInicial);
+  const [ativaEscolhida, setAtivaEscolhida] = useState<OperadoraVT | "">("");
   const [ordem, setOrdem] = useState<{ col: ColunaOrdem; dir: 1 | -1 }>({ col: "nome", dir: 1 });
   const [incluindo, setIncluindo] = useState(false);
   const [escolhido, setEscolhido] = useState("");
@@ -109,27 +112,36 @@ export default function ValeTransporteTela({
   const [pendente, iniciar] = useTransition();
   const [baixandoCaju, setBaixandoCaju] = useState(false);
 
+  const doEmpresa = linhas.filter((l) => l.empresa === empresa);
+  // Abas da empresa: as operadoras dela + qualquer outra que já tenha lançamento (nada some da tela).
+  const base = OPERADORAS_DA_EMPRESA[empresa] ?? [...OPERADORAS];
+  const operadorasDaEmpresa: OperadoraVT[] = [
+    ...base,
+    ...OPERADORAS.filter((op) => !base.includes(op) && doEmpresa.some((l) => l.operadora === op)),
+  ];
+  const ativa: OperadoraVT = operadorasDaEmpresa.includes(ativaEscolhida as OperadoraVT)
+    ? (ativaEscolhida as OperadoraVT)
+    : operadorasDaEmpresa.find((op) => doEmpresa.some((l) => l.operadora === op)) ?? operadorasDaEmpresa[0];
+
   const caju = ativa === "CAJU";
   const comMatricula = ativa === "BHBUS" || ativa === "OTIMO";
-  const corAtiva = COR_OPERADORA[ativa];
 
-  const doOperadora = linhas.filter((l) => l.operadora === ativa);
+  const doOperadora = doEmpresa.filter((l) => l.operadora === ativa);
   const visiveis = useMemo(() => {
-    const lista = doOperadora.filter((l) => incluidas.has(l.unidade) && (!filtro || l.unidade === filtro));
+    const lista = doOperadora;
     return [...lista].sort((a, b) => {
       const x = valorOrdem(a, ordem.col);
       const y = valorOrdem(b, ordem.col);
       const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "pt-BR", { numeric: true });
       return c * ordem.dir;
     });
-  }, [doOperadora, incluidas, filtro, ordem]);
+  }, [doOperadora, ordem]);
   const soma = somaVT(visiveis);
   const somaTransporte = Math.round(visiveis.reduce((acc, l) => acc + transporteVT(l), 0) * 100) / 100;
-  const filtroValido = filtro && incluidas.has(filtro) ? filtro : "";
 
-  // Só quem ainda não está nesta operadora; se uma unidade estiver escolhida no filtro, só os dessa unidade.
+  // Só quem é da empresa escolhida e ainda não está nesta operadora.
   const opcoesIncluir = colaboradores.filter(
-    (c) => !doOperadora.some((l) => l.colaborador_id === c.id) && (!filtroValido || c.unidade === filtroValido)
+    (c) => c.empresa === empresa && !doOperadora.some((l) => l.colaborador_id === c.id)
   );
   const escolhidoValido = opcoesIncluir.some((c) => c.id === escolhido) ? escolhido : "";
 
@@ -137,25 +149,20 @@ export default function ValeTransporteTela({
     setMsg({ ok, texto });
   }
 
-  function alternarUnidade(u: string) {
-    setIncluidas((atual) => {
-      const novo = new Set(atual);
-      if (novo.has(u)) novo.delete(u);
-      else novo.add(u);
-      return novo;
-    });
-    if (filtro === u) setFiltro("");
+  function escolherEmpresa(e: string) {
+    setEmpresa(e);
+    setEscolhido("");
+    setMsg(null);
   }
 
   function ordenar(col: ColunaOrdem) {
     setOrdem((o) => (o.col === col ? { col, dir: (o.dir * -1) as 1 | -1 } : { col, dir: 1 }));
   }
 
-  function incluirTodosDaUnidade() {
-    if (!filtroValido || opcoesIncluir.length === 0) return;
+  function incluirTodosDaEmpresa() {
+    if (opcoesIncluir.length === 0) return;
     const lista = [...opcoesIncluir];
-    const unidade = filtroValido;
-    if (!window.confirm(`Incluir os ${lista.length} colaboradores de ${unidade} em ${ROTULO_OPERADORA[ativa]}?`)) return;
+    if (!window.confirm(`Incluir os ${lista.length} colaboradores da ${empresa} em ${ROTULO_OPERADORA[ativa]}?`)) return;
     iniciar(async () => {
       let feitos = 0;
       let primeiroErro = "";
@@ -172,13 +179,12 @@ export default function ValeTransporteTela({
         if (r.ok) feitos += 1;
         else if (!primeiroErro) primeiroErro = r.erro;
       }
-      if (feitos > 0) setIncluidas((atual) => new Set(atual).add(unidade));
       setEscolhido("");
       setIncluindo(false);
       if (primeiroErro) {
         avisar(false, `${feitos} de ${lista.length} incluídos em ${ROTULO_OPERADORA[ativa]}. Erro: ${primeiroErro}`);
       } else {
-        avisar(true, `${feitos} colaboradores de ${unidade} incluídos em ${ROTULO_OPERADORA[ativa]}. Preencha o cartão e os valores de cada um.`);
+        avisar(true, `${feitos} colaboradores da ${empresa} incluídos em ${ROTULO_OPERADORA[ativa]}. Preencha o cartão e os valores de cada um.`);
       }
     });
   }
@@ -197,7 +203,6 @@ export default function ValeTransporteTela({
         diasUteis: diasMesInicial,
       });
       if (r.ok) {
-        setIncluidas((atual) => new Set(atual).add(c.unidade));
         setEscolhido("");
         setIncluindo(false);
         avisar(true, `${c.nome} incluído(a) em ${ROTULO_OPERADORA[ativa]}. Preencha o cartão e os valores.`);
@@ -218,7 +223,7 @@ export default function ValeTransporteTela({
   async function baixarCsvCaju() {
     setBaixandoCaju(true);
     try {
-      const url = `/api/vale-transporte/csv-caju?competencia=${competencia}${filtroValido ? `&unidade=${encodeURIComponent(filtroValido)}` : ""}`;
+      const url = `/api/vale-transporte/csv-caju?competencia=${competencia}&empresa=${encodeURIComponent(empresa)}`;
       const r = await fetch(url);
       if (!r.ok) {
         avisar(false, "Não foi possível gerar o CSV do CAJU.");
@@ -237,7 +242,7 @@ export default function ValeTransporteTela({
       const n = r.headers.get("X-Linhas") ?? "0";
       const sem = decodeURIComponent(r.headers.get("X-Sem-Cpf") ?? "");
       if (sem) avisar(false, `CSV do CAJU gerado com ${n} colaboradores. Ficaram de fora, sem CPF no cadastro: ${sem}.`);
-      else avisar(true, `CSV do CAJU gerado com ${n} colaboradores${filtroValido ? ` (${filtroValido})` : ""}.`);
+      else avisar(true, `CSV do CAJU gerado com ${n} colaboradores (${empresa}).`);
     } catch {
       avisar(false, "Não foi possível gerar o CSV do CAJU.");
     } finally {
@@ -245,7 +250,7 @@ export default function ValeTransporteTela({
     }
   }
 
-  const linkExcel = `/api/vale-transporte/excel?competencia=${competencia}${filtroValido ? `&unidade=${encodeURIComponent(filtroValido)}` : ""}`;
+  const linkExcel = `/api/vale-transporte/excel?competencia=${competencia}&empresa=${encodeURIComponent(empresa)}`;
 
   function Cab({ col, rotulo, direita }: { col: ColunaOrdem; rotulo: string; direita?: boolean }) {
     const ativo = ordem.col === col;
@@ -264,8 +269,8 @@ export default function ValeTransporteTela({
       {/* Operadoras + ações */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
         <div role="tablist" aria-label="Operadoras" className="flex flex-wrap gap-0.5 rounded-[11px] bg-[#ece7e0] p-1">
-          {OPERADORAS.map((op) => {
-            const doOp = linhas.filter((l) => l.operadora === op && incluidas.has(l.unidade));
+          {operadorasDaEmpresa.map((op) => {
+            const doOp = doEmpresa.filter((l) => l.operadora === op);
             const s = somaVT(doOp);
             const sel = op === ativa;
             return (
@@ -274,7 +279,7 @@ export default function ValeTransporteTela({
                 type="button"
                 role="tab"
                 aria-selected={sel}
-                onClick={() => setAtiva(op)}
+                onClick={() => setAtivaEscolhida(op)}
                 className={`rounded-lg px-4 py-1.5 text-left text-[15px] font-semibold ${sel ? "bg-white text-[#26221f] shadow-sm" : "text-[#6b625b] hover:bg-white/60"}`}
               >
                 {ROTULO_OPERADORA[op]}{" "}
@@ -300,13 +305,13 @@ export default function ValeTransporteTela({
               className="btn-secondary"
               disabled={baixandoCaju}
               onClick={baixarCsvCaju}
-              title={`CSV de pedidos para importar no sistema do CAJU${filtroValido ? ` (só ${filtroValido})` : " (todas as unidades)"}`}
+              title={`CSV de pedidos para importar no sistema do CAJU (${empresa})`}
             >
               {baixandoCaju ? "Gerando…" : "CSV de pedidos CAJU"}
             </button>
           )}
           {ativa === "BHBUS" && (
-            <a href={linkCsvBhbus} className="btn-secondary no-underline">
+            <a href={`${linkCsvBhbus}&empresa=${encodeURIComponent(empresa)}`} className="btn-secondary no-underline">
               CSV de recarga BHBUS
             </a>
           )}
@@ -317,25 +322,25 @@ export default function ValeTransporteTela({
         <p className="mx-6 mt-3 rounded-lg bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800">{avisoCopia}</p>
       )}
 
-      {/* Incluir Unidades BSE */}
+      {/* Escolher Empresa */}
       <div className="mx-5 mt-3 flex flex-wrap items-center gap-1.5 rounded-xl border border-[#e4dfd8] bg-white px-3 py-2">
-        <h2 className="mr-1.5 text-[12.5px] font-semibold uppercase tracking-[.06em] text-[#6b625b]">Incluir Unidades BSE</h2>
-        {unidades.length === 0 && <span className="text-sm text-stone-500">Nenhuma unidade cadastrada.</span>}
-        {unidades.map((u) => {
-          const on = incluidas.has(u);
-          const qtd = doOperadora.filter((l) => l.unidade === u).length;
-          const c = corUnidade(u);
+        <h2 className="mr-1.5 text-[12.5px] font-semibold uppercase tracking-[.06em] text-[#6b625b]">Escolher Empresa</h2>
+        {empresas.length === 0 && <span className="text-sm text-stone-500">Nenhuma empresa cadastrada.</span>}
+        {empresas.map((e) => {
+          const on = e === empresa;
+          const qtd = linhas.filter((l) => l.empresa === e).length;
+          const c = corUnidade(e);
           return (
             <button
-              key={u}
+              key={e}
               type="button"
               aria-pressed={on}
-              onClick={() => alternarUnidade(u)}
+              onClick={() => escolherEmpresa(e)}
               style={on ? { background: c.tom, color: c.cor, borderColor: `${c.cor}55` } : undefined}
               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-[12.5px] font-semibold uppercase ${on ? "" : "border-[#e4dfd8] bg-white text-[#6b625b] hover:bg-stone-50"}`}
             >
               <span className="inline-block h-[9px] w-[9px] rounded-full" style={{ background: c.cor }} />
-              {u}
+              {e}
               <span className="text-xs font-medium text-[#6b625b]">{qtd}</span>
             </button>
           );
@@ -344,19 +349,9 @@ export default function ValeTransporteTela({
 
       {/* Filtro + incluir colaborador */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-3">
-        <div>
-          <label className="mr-2 text-sm text-stone-700" htmlFor="vt-filtro-unidade">
-            Unidades BSE filtro
-          </label>
-          <select id="vt-filtro-unidade" className="input !inline-block !w-64 !py-1.5" value={filtroValido} onChange={(e) => setFiltro(e.target.value)}>
-            <option value="">Todas as unidades incluídas</option>
-            {unidades.filter((u) => incluidas.has(u)).map((u) => (
-              <option key={u} value={u}>
-                {u}
-              </option>
-            ))}
-          </select>
-        </div>
+        <h2 className="text-lg font-semibold" style={FONTE_TITULO}>
+          {empresa} · {ROTULO_OPERADORA[ativa]}
+        </h2>
         <div className="flex flex-wrap items-end gap-2">
           {incluindo ? (
             <>
@@ -367,16 +362,12 @@ export default function ValeTransporteTela({
                 <select id="vt-incluir-colab" className="input !w-72" value={escolhidoValido} onChange={(e) => setEscolhido(e.target.value)}>
                   <option value="">
                     {opcoesIncluir.length
-                      ? filtroValido
-                        ? `Escolha (${filtroValido})…`
-                        : "Escolha…"
-                      : filtroValido
-                        ? `(todos de ${filtroValido} já estão no lançamento)`
-                        : "(todos já estão no lançamento)"}
+                      ? "Escolha…"
+                      : `(todos da ${empresa} já estão no lançamento)`}
                   </option>
                   {opcoesIncluir.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {filtroValido ? c.nome : `${c.nome} — ${c.unidade}`}
+                      {c.unidade && c.unidade !== empresa ? `${c.nome} — ${c.unidade}` : c.nome}
                     </option>
                   ))}
                 </select>
@@ -384,22 +375,16 @@ export default function ValeTransporteTela({
               <button type="button" className="btn-primary" disabled={pendente || !escolhidoValido} onClick={incluir}>
                 Incluir
               </button>
-              {filtroValido ? (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  disabled={pendente || opcoesIncluir.length === 0}
-                  onClick={incluirTodosDaUnidade}
-                  title={`Incluir de uma vez todos os colaboradores de ${filtroValido} que ainda não estão em ${ROTULO_OPERADORA[ativa]}`}
-                >
-                  Incluir todos de {filtroValido}
-                  {opcoesIncluir.length > 0 ? ` (${opcoesIncluir.length})` : ""}
-                </button>
-              ) : (
-                <span className="basis-full text-[13px] text-stone-500">
-                  Para incluir todos de uma vez, escolha uma unidade em "Unidades BSE filtro".
-                </span>
-              )}
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={pendente || opcoesIncluir.length === 0}
+                onClick={incluirTodosDaEmpresa}
+                title={`Incluir de uma vez todos os colaboradores da ${empresa} que ainda não estão em ${ROTULO_OPERADORA[ativa]}`}
+              >
+                Incluir todos da {empresa}
+                {opcoesIncluir.length > 0 ? ` (${opcoesIncluir.length})` : ""}
+              </button>
               <button type="button" className="btn-secondary" onClick={() => setIncluindo(false)}>
                 Cancelar
               </button>
@@ -484,7 +469,7 @@ export default function ValeTransporteTela({
             {visiveis.length === 0 && (
               <tr>
                 <td colSpan={16} className="px-5 py-8 text-center text-sm text-stone-500">
-                  Nenhum colaborador {ROTULO_OPERADORA[ativa]} no lançamento. Marque uma unidade em "Incluir Unidades BSE" ou use "+ Incluir colaborador".
+                  Nenhum colaborador {ROTULO_OPERADORA[ativa]} na {empresa}. Use "+ Incluir colaborador".
                 </td>
               </tr>
             )}
@@ -496,7 +481,7 @@ export default function ValeTransporteTela({
             <tfoot>
               <tr className={`border-t border-[#e4dfd8] bg-[#f3efe9] text-[15px] font-bold text-[#2b2623]`}>
                 <td className="px-3 py-2.5" colSpan={7 + (comMatricula ? 1 : 0)}>
-                  TOTAL — {ROTULO_OPERADORA[ativa]} · {filtroValido || "unidades incluídas"}
+                  TOTAL — {ROTULO_OPERADORA[ativa]} · {empresa}
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(somaTransporte)}</td>
                 {caju && <td colSpan={2} />}

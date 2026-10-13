@@ -138,6 +138,44 @@ export function grupoVT(
   return "Sem unidade";
 }
 
+/** Empresas do grupo, na ordem em que aparecem nas telas. */
+export const EMPRESAS_VT = ["BSE", "BABOON", "BDU"] as const;
+
+/** Operadoras de cada empresa (na ordem das abas). As unidades (Savassi, Belvedere...) ficam dentro da BSE. */
+export const OPERADORAS_DA_EMPRESA: Record<string, OperadoraVT[]> = {
+  BSE: ["CAJU", "BHBUS", "OTIMO"],
+  BABOON: ["CAJU", "BHBUS", "OTIMO"],
+  BDU: ["CAJU", "SEMPARAR"],
+};
+
+const UNIDADES_BSE = ["savassi", "belvedere", "pampulha", "ouro minas", "lagoa santa", "confins", "alphaville"];
+
+function semAcentoVT(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+/** A qual empresa (BSE, BABOON ou BDU) o colaborador pertence. Se não reconhecer, devolve o nome da empresa cadastrada. */
+export function empresaVT(
+  c: Colaborador,
+  empresaPorId: Map<string, Empresa>,
+  unidadePorId: Map<string, Unidade>
+): string {
+  const emp = c.empresa_id ? empresaPorId.get(c.empresa_id)?.nome ?? "" : "";
+  const uni = c.unidade_id ? unidadePorId.get(c.unidade_id) : undefined;
+  const uniEmp = uni?.empresa_id ? empresaPorId.get(uni.empresa_id)?.nome ?? "" : "";
+  for (const texto of [emp, uniEmp, uni?.nome ?? ""]) {
+    const t = semAcentoVT(texto);
+    if (t.includes("baboon")) return "BABOON";
+    if (t.includes("bdu")) return "BDU";
+    if (t.includes("bse")) return "BSE";
+  }
+  if (uni && UNIDADES_BSE.includes(semAcentoVT(uni.nome).trim())) return "BSE";
+  return emp || uniEmp || "Sem empresa";
+}
+
 /** Quem pode receber vale transporte: CLT e Estágio, ativo ou em experiência. */
 export function elegivelVT(c: Colaborador): boolean {
   return c.tipo !== "PJ" && (c.status === "ativo" || c.status === "experiencia");
