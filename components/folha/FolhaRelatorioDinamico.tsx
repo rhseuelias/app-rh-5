@@ -6,6 +6,7 @@ import { compararGrupos, tiposDoGrupo } from "@/lib/folha-calculos";
 import { formatarReais } from "@/lib/formatadores";
 import { corDaEmpresa } from "@/lib/empresa-cores";
 import type { ColaboradorComVinculo, EmpresaFolha, ValorCelula } from "./FolhaWizard";
+import NomeColaborador from "@/components/NomeColaborador";
 
 const COR_CATEGORIA: Record<CategoriaFolha, string> = {
   provento: "bg-blue-50 text-blue-700",
@@ -268,7 +269,7 @@ export default function FolhaRelatorioDinamico({
                       {colaboradoresSub.map((c) => (
                         <tr key={c.id} className="border-b border-slate-100">
                           <td className="py-1.5 px-3 font-medium text-slate-800 whitespace-nowrap bg-white sticky left-0">
-                            {c.nome}
+                            <NomeColaborador id={c.id}>{c.nome}</NomeColaborador>
                           </td>
                           {tiposSub.map((t) => {
                             const v = valores[c.id]?.[t.id];

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, Unidade } from "@/types/db";
+import NomeColaborador from "@/components/NomeColaborador";
 
 /** Mês (0-11) e dia extraídos direto do texto "yyyy-MM-dd" — nunca via
  * new Date(texto).getMonth()/.getDate(), que depende do fuso de quem tá
@@ -159,7 +160,7 @@ export default async function AniversariosPage() {
                         {iniciais(a.nome)}
                       </div>
                       <div className="min-w-0">
-                        <p className="font-bold leading-tight">{a.nome}</p>
+                        <p className="font-bold leading-tight"><NomeColaborador id={a.id}>{a.nome}</NomeColaborador></p>
                         <p className="text-sm text-slate-600 font-semibold mt-0.5">
                           {ehHoje ? "🎂 Hoje! " : ""}Dia {dd(a.dia)}
                         </p>
@@ -203,7 +204,7 @@ export default async function AniversariosPage() {
                         className="flex items-start justify-between gap-2 text-sm py-1.5 border-t border-dashed border-slate-200"
                       >
                         <div className="min-w-0">
-                          <p className="font-semibold text-slate-800 leading-tight">{a.nome}</p>
+                          <p className="font-semibold text-slate-800 leading-tight"><NomeColaborador id={a.id}>{a.nome}</NomeColaborador></p>
                           <div className="flex flex-wrap gap-1 mt-0.5">
                             <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${corDaUnidade(a.local)}`}>
                               {a.local}

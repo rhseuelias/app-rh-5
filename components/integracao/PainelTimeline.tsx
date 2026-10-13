@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { concluirEtapaAtual, finalizarTodasEtapas, removerDoPainelIntegracao, voltarEtapa } from "@/lib/actions-integracao";
 import type { CSSProperties, ReactNode } from "react";
+import NomeColaborador from "@/components/NomeColaborador";
 
 export type EstadoEtapa = "done" | "progress" | "late" | "attention" | "pending" | "na";
 export type StatusLinha = "dentro" | "andamento" | "atencao" | "atrasado" | "naoiniciado";
@@ -387,7 +388,9 @@ export default function PainelTimeline({
                         </span>
                         <span className="min-w-0 flex flex-col">
                           <span style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase" }} className="truncate" title={l.nome}>
-                            {l.nome}
+                            <NomeColaborador id={l.colaboradorId} dentroDeLinhaClicavel>
+                              {l.nome}
+                            </NomeColaborador>
                           </span>
                           <span style={{ fontSize: 11, color: "#737373", textTransform: "uppercase" }} className="truncate">
                             {[l.cargo || "Cargo não informado", l.empresaNome, l.unidadeNome].filter(Boolean).join(" · ")}

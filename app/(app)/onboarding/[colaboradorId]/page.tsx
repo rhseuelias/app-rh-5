@@ -4,6 +4,7 @@ import type { Colaborador, Empresa, EtapaProcesso, HistoricoEtapa, ProcessoInteg
 import { differenceInCalendarDays } from "date-fns";
 import LinhaDoTempoIntegracao from "@/components/integracao/LinhaDoTempoIntegracao";
 import { formatarDataBR } from "@/lib/calculos";
+import NomeColaborador from "@/components/NomeColaborador";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +55,7 @@ export default async function ColaboradorIntegracaoPage({
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-display font-bold text-slate-900">{colaboradorTyped.nome}</h1>
+          <h1 className="text-3xl font-display font-bold text-slate-900"><NomeColaborador id={colaboradorTyped.id}>{colaboradorTyped.nome}</NomeColaborador></h1>
         </div>
         <div className="card">
           <p className="text-sm text-slate-600">
@@ -121,7 +122,7 @@ export default async function ColaboradorIntegracaoPage({
       <div className="card">
         <div className="flex flex-wrap items-start justify-between gap-4 pb-4 mb-4 border-b border-slate-100">
           <div>
-            <h1 className="text-2xl font-display font-bold text-slate-900">{colaboradorTyped.nome}</h1>
+            <h1 className="text-2xl font-display font-bold text-slate-900"><NomeColaborador id={colaboradorTyped.id}>{colaboradorTyped.nome}</NomeColaborador></h1>
             <p className="text-sm text-slate-500 mt-0.5">
               {colaboradorTyped.cargo ?? "—"}
               {empresaTyped ? ` · ${empresaTyped.nome}` : ""}

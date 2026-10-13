@@ -1,5 +1,6 @@
 import { getDaysInMonth, getDay } from "date-fns";
 import EditarPeriodosSimulados, { type PeriodoEditavel } from "./EditarPeriodosSimulados";
+import NomeColaborador from "@/components/NomeColaborador";
 
 const NOMES_MES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -88,7 +89,7 @@ export default function MapaSimulacao({
                 {linhas.map((linha) => (
                   <tr key={linha.id} className="border-b border-slate-50">
                     <td className="sticky left-0 bg-white px-2 py-1.5 whitespace-nowrap">
-                      <span className="text-slate-700">{linha.nome}</span>{" "}
+                      <span className="text-slate-700"><NomeColaborador id={linha.id}>{linha.nome}</NomeColaborador></span>{" "}
                       <EditarPeriodosSimulados cenarioId={cenarioId} colaboradorId={linha.id} periodos={linha.periodos} />
                     </td>
                     {diasArray.map((d) => {

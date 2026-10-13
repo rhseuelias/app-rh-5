@@ -5,6 +5,7 @@ import type { Colaborador, Empresa, Unidade } from "@/types/db";
 import { adicionaisDe, totalizar, SEM_UNIDADE, MESES } from "@/lib/relatorio-salarios";
 import { corDaEmpresa } from "@/lib/empresa-cores";
 import ImprimirBotao from "@/components/ImprimirBotao";
+import NomeColaborador from "@/components/NomeColaborador";
 
 export const dynamic = "force-dynamic";
 
@@ -308,7 +309,7 @@ export default async function RelatorioSalariosPage({
                       const ad = adicionaisDe(c);
                       return (
                         <tr key={c.id} className="border-b border-slate-100 even:bg-slate-50 align-top">
-                          <td className="py-2.5 px-3 font-bold text-slate-900">{c.nome}</td>
+                          <td className="py-2.5 px-3 font-bold text-slate-900"><NomeColaborador id={c.id}>{c.nome}</NomeColaborador></td>
                           <td className="py-2.5 px-3 text-slate-600">{c.cargo ?? "—"}</td>
                           <td className="py-2.5 px-3 text-right tabular-nums">{brl(c.salario_base ?? 0)}</td>
                           <td className="py-2.5 px-3 text-right tabular-nums">

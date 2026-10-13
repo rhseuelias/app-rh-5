@@ -1,5 +1,6 @@
 import { getDaysInMonth, getDay } from "date-fns";
 import SugerirFeriasBotao from "./SugerirFeriasBotao";
+import NomeColaborador from "@/components/NomeColaborador";
 
 const NOMES_MES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -72,7 +73,7 @@ export default function MapaFerias({
                 {linhas.map((linha) => (
                   <tr key={linha.id} className="border-b border-slate-50">
                     <td className="sticky left-0 bg-white px-2 py-1.5 whitespace-nowrap">
-                      <span className="text-slate-700">{linha.nome}</span>{" "}
+                      <span className="text-slate-700"><NomeColaborador id={linha.id}>{linha.nome}</NomeColaborador></span>{" "}
                       <SugerirFeriasBotao colaboradorId={linha.id} periodoAquisitivoId={linha.periodoAbertoId} />
                     </td>
                     {diasArray.map((d) => {

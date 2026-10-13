@@ -8,6 +8,7 @@ import type { ObservacaoUnidade } from "@/lib/actions-folha-observacoes";
 import CelulaLancamento from "./CelulaLancamento";
 import ObservacoesUnidade from "./ObservacoesUnidade";
 import type { ColaboradorFolha, GrupoFolha, ValorCelula } from "./FolhaWizard";
+import NomeColaborador from "@/components/NomeColaborador";
 
 const ROTULO_CATEGORIA: Record<string, string> = {
   provento: "PROVENTO",
@@ -259,7 +260,7 @@ function EventoForm({
           const inicial = iniciais.get(c.id) ?? { valor: 0, valor_texto: null };
           return (
             <div key={c.id} className="flex items-center justify-between gap-3 px-4 py-2">
-              <span className="text-sm font-medium text-slate-700">{c.nome}</span>
+              <span className="text-sm font-medium text-slate-700"><NomeColaborador id={c.id}>{c.nome}</NomeColaborador></span>
               <CelulaLancamento
                 formato={tipo.formato}
                 valorInicial={inicial.valor}

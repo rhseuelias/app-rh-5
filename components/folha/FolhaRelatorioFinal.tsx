@@ -6,6 +6,7 @@ import { salvarFolhaLote } from "@/lib/actions-folha";
 import { tiposDoGrupo } from "@/lib/folha-calculos";
 import { formatarReais } from "@/lib/formatadores";
 import type { GrupoFolha, ValorCelula } from "./FolhaWizard";
+import NomeColaborador from "@/components/NomeColaborador";
 
 const TODAS = "__todas__";
 
@@ -320,7 +321,7 @@ function LinhaColaborador({
 
   return (
     <tr>
-      <td className="border border-stone-800 px-2 py-1 font-medium text-slate-800 whitespace-nowrap">{nome}</td>
+      <td className="border border-stone-800 px-2 py-1 font-medium text-slate-800 whitespace-nowrap"><NomeColaborador id={colaboradorId}>{nome}</NomeColaborador></td>
       <td className="border border-stone-800 px-2 py-1 text-center text-slate-700">{matricula}</td>
       {provs.map((t) => celula(t, "bg-white"))}
       {descs.map((t) => celula(t, "bg-[#FEF3EC]"))}

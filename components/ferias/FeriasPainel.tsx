@@ -20,6 +20,7 @@ import {
 import { aprovarFeriasColaborador, excluirPeriodoFerias, lancarFeriasPainel } from "@/lib/actions-ferias-painel";
 import { amortizarFerias, excluirFeriasAmortizada } from "@/lib/actions-ferias-amortizar";
 import BotaoPdf from "@/components/BotaoPdf";
+import NomeColaborador from "@/components/NomeColaborador";
 
 // ------------------------------------------------------------
 // Tipos (o servidor monta isso em app/(app)/ferias/page.tsx)
@@ -737,7 +738,7 @@ export default function FeriasPainel({
                           style={{ gridTemplateColumns: "220px 1fr 150px", borderTopColor: COR.div }}
                         >
                           <span className="text-[13px] font-medium truncate" title={p.nome}>
-                            {p.nome}
+                            <NomeColaborador id={p.id}>{p.nome}</NomeColaborador>
                           </span>
                           <div
                             className="relative h-6 rounded cursor-copy hover:bg-[#fbf6f0]"
@@ -963,7 +964,7 @@ export default function FeriasPainel({
                       >
                         <div className="flex flex-col gap-0.5 min-w-0">
                           <span className="font-medium truncate" title={p.nome}>
-                            {p.nome}
+                            <NomeColaborador id={p.id}>{p.nome}</NomeColaborador>
                           </span>
                           <span className="text-[12px] text-[#737373]">
                             {p.unidade}

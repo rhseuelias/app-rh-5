@@ -26,6 +26,7 @@ import {
   type LinhaVT,
   type OperadoraVT,
 } from "@/lib/vale-transporte";
+import NomeColaborador from "@/components/NomeColaborador";
 
 export interface LinhaTela extends LinhaVT {
   nome: string;
@@ -674,7 +675,7 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
           />
         </td>
       )}
-      <td className="px-1.5 py-1.5 text-[14.5px] font-semibold uppercase leading-tight">{linha.nome}</td>
+      <td className="px-1.5 py-1.5 text-[14.5px] font-semibold uppercase leading-tight"><NomeColaborador id={linha.colaborador_id}>{linha.nome}</NomeColaborador></td>
       <td className="px-1.5 py-1.5">
         <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide" style={{ background: corUnidade(linha.unidade).tom, color: corUnidade(linha.unidade).cor }}>
           {linha.unidade}
