@@ -265,10 +265,10 @@ export default function ValeTransporteTela({
 
   const linkExcel = `/api/vale-transporte/excel?competencia=${competencia}&empresa=${encodeURIComponent(empresa)}`;
 
-  function Cab({ col, rotulo, direita }: { col: ColunaOrdem; rotulo: string; direita?: boolean }) {
+  function Cab({ col, rotulo, direita, destaque }: { col: ColunaOrdem; rotulo: string; direita?: boolean; destaque?: boolean }) {
     const ativo = ordem.col === col;
     return (
-      <th className={`px-1.5 py-3 ${direita ? "text-right" : ""}`} aria-sort={ativo ? (ordem.dir === 1 ? "ascending" : "descending") : "none"}>
+      <th className={`px-1.5 py-3 ${direita ? "text-right" : ""} ${destaque ? "border-b-[3px] border-b-[#e0a800] bg-[#ffe9a8] text-[#5c4300]" : ""}`} aria-sort={ativo ? (ordem.dir === 1 ? "ascending" : "descending") : "none"}>
         <button type="button" onClick={() => ordenar(col)} className="inline-flex items-center gap-1 text-left font-semibold uppercase tracking-[.06em] hover:text-stone-900" title="Clique para ordenar">
           {rotulo}
           <span className={ativo ? "text-stone-800" : "text-stone-300"}>{ativo ? (ordem.dir === 1 ? "▲" : "▼") : "↕"}</span>
@@ -486,7 +486,7 @@ export default function ValeTransporteTela({
               {caju && <Cab col="alimentacao" rotulo="Alimentação" direita />}
               {caju && <Cab col="premio" rotulo="Prêmio" direita />}
               {caju && <Cab col="multi" rotulo="Multi" direita />}
-              <Cab col="saldo" rotulo="Saldo atual · dias até a recarga" direita />
+              <Cab col="saldo" rotulo="Saldo atual · dias até a recarga" direita destaque />
               <Cab col="carga" rotulo="Carga" direita />
               <th className="px-2 py-3" />
             </tr>
@@ -511,7 +511,7 @@ export default function ValeTransporteTela({
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(somaTransporte)}</td>
                 {caju && <td colSpan={3} />}
-                <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(soma.saldo)}</td>
+                <td className="bg-[#ffe9a8] px-3 py-2.5 text-right tabular-nums text-[#5c4300]">{numeroVT(soma.saldo)}</td>
                 <td className="px-3 py-2.5 text-right text-base tabular-nums text-[#b0302a]">{numeroVT(soma.carga)}</td>
                 <td />
               </tr>
@@ -737,7 +737,7 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
           <input aria-label="Multi" className={campo} inputMode="decimal" value={multi} onChange={(e) => digitou("multi", e.target.value, setMulti)} onBlur={() => aoSair("multi", multi)} />
         </td>
       )}
-      <td className="px-1.5 py-1.5">
+      <td className="bg-[#fff6d6] px-1.5 py-1.5">
         <div className="flex items-center justify-end gap-1.5">
           <input aria-label="Saldo atual" title="Saldo que está no cartão hoje" className={campo} inputMode="decimal" value={saldo} onChange={(e) => digitou("saldo", e.target.value, setSaldo)} onBlur={() => aoSair("saldo", saldo)} />
           <span className="text-stone-400" aria-hidden="true">−</span>
@@ -753,7 +753,7 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
           />
         </div>
         {vivo.dias_ate_recarga > 0 && (
-          <div className="mt-0.5 text-right text-[11px] text-stone-500">na recarga: {numeroVT(saldoNaRecargaVT(vivo))}</div>
+          <div className="mt-0.5 text-right text-[12.5px] font-semibold text-[#7a5a00]">na recarga: {numeroVT(saldoNaRecargaVT(vivo))}</div>
         )}
       </td>
       <td className="px-1.5 py-1.5 text-right text-base font-bold tabular-nums text-[#b0302a]">{numeroVT(ok ? cargaVT(vivo) : 0)}</td>
