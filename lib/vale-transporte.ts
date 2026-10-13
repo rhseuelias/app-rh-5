@@ -144,7 +144,7 @@ export const EMPRESAS_VT = ["BSE MG", "BSE SP", "BABOON", "BDU"] as const;
 /** Operadoras de cada empresa (na ordem das abas). */
 export const OPERADORAS_DA_EMPRESA: Record<string, OperadoraVT[]> = {
   "BSE MG": ["CAJU", "BHBUS", "OTIMO"],
-  "BSE SP": ["CAJU", "BHBUS", "OTIMO"],
+  "BSE SP": ["CAJU", "SEMPARAR"],
   BABOON: ["CAJU", "BHBUS", "OTIMO"],
   BDU: ["CAJU", "SEMPARAR"],
 };
