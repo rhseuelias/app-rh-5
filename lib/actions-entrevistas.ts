@@ -8,7 +8,7 @@ export type RespostaEnt = { ok: true; id?: string } | { ok: false; erro: string 
 const TABELAS: Record<ChaveTabela, { tabela: string; colunas: string[] }> = {
   vagas: {
     tabela: "sel_vagas",
-    colunas: ["cargo", "empresa", "unidade", "gestor", "status", "data_abertura", "observacoes"],
+    colunas: ["cargo", "empresa", "unidade", "gestor", "status", "data_abertura", "observacoes", "posicoes"],
   },
   candidatos: {
     tabela: "sel_candidatos",

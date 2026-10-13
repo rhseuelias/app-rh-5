@@ -44,6 +44,7 @@ export interface Vaga {
   status: string;
   data_abertura: string;
   observacoes: string | null;
+  posicoes?: number | null;
 }
 
 export interface CandidatoSel {
@@ -157,7 +158,13 @@ export function ordemEtapa(etapa: string): number | null {
 /** Texto da etapa para chips: "2ª etapa · Técnica". */
 export function rotuloEtapaEntrevista(etapa: string): string {
   const o = ordemEtapa(etapa);
-  return o ? `${o}ª etapa · ${ESTILO_ETAPA[etapa]?.curto ?? etapa}` : etapa;
+  const nomes: Record<string, string> = {
+    "Entrevista RH": "1ª etapa · RH",
+    "Etapa técnica": "2ª etapa · Técnica",
+    "Entrevista gestor": "Gestor (opcional)",
+    "Entrevista final": "Etapa final",
+  };
+  return o ? nomes[etapa] ?? etapa : etapa;
 }
 
 /** Etapa que normalmente vem a seguir para o candidato (a próxima depois da última entrevista realizada). */

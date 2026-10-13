@@ -241,13 +241,14 @@ function ModalVaga({ hoje, executar, aoFechar, aoCriar }: { hoje: string; execut
   const [uni, setUni] = useState<string>(UNIDADES_BSE[0]);
   const [gestor, setGestor] = useState("");
   const [abertura, setAbertura] = useState(hoje);
+  const [posicoes, setPosicoes] = useState(1);
   const [msg, setMsg] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
   async function salvar() {
     if (!cargo.trim()) return setMsg("Informe o cargo.");
     setSalvando(true);
-    const campos = { cargo: cargo.trim(), empresa: emp, unidade: emp === "BSE" ? uni : null, gestor: gestor.trim() || null, status: "Aberta", data_abertura: abertura, observacoes: null };
+    const campos = { cargo: cargo.trim(), empresa: emp, unidade: emp === "BSE" ? uni : null, gestor: gestor.trim() || null, status: "Aberta", data_abertura: abertura, observacoes: null, posicoes };
     const r = await executar(criarRegistro("vagas", campos));
     setSalvando(false);
     if (!r.ok) return setMsg(r.erro);
@@ -280,6 +281,13 @@ function ModalVaga({ hoje, executar, aoFechar, aoCriar }: { hoje: string; execut
         </Campo>
         <Campo rotulo="Data de abertura">
           <input type="date" className="input" value={abertura} onChange={(e) => setAbertura(e.target.value)} />
+        </Campo>
+        <Campo rotulo="Quantas vagas (posições)">
+          <div className="flex items-center gap-2">
+            <button type="button" aria-label="Menos uma posição" className="btn-secondary !px-3 !py-1.5" onClick={() => setPosicoes((n) => Math.max(1, n - 1))}>−</button>
+            <b className="font-display text-xl w-8 text-center tabular-nums">{posicoes}</b>
+            <button type="button" aria-label="Mais uma posição" className="btn-secondary !px-3 !py-1.5" onClick={() => setPosicoes((n) => Math.min(50, n + 1))}>+</button>
+          </div>
         </Campo>
       </div>
       {msg && <p className="text-sm text-red-700">{msg}</p>}
@@ -719,75 +727,102 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
             </button>
           </div>
         )}
-        {vagasFiltradas.map((v) => {
-          const cs = cands.filter((c) => c.vaga_id === v.id);
-          const dias = diasEntre(v.data_abertura, hoje);
-          return (
-            <section key={v.id} className="card space-y-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-sm text-ink-500">
+        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
+          {vagasFiltradas.map((v) => {
+            const cs = cands.filter((c) => c.vaga_id === v.id);
+            const dias = diasEntre(v.data_abertura, hoje);
+            const total = v.posicoes ?? 1;
+            const preenchidas = cs.filter((c) => c.etapa === "Admitido").length;
+            const cheia = preenchidas >= total;
+            const ativos = cs.filter((c) => c.etapa !== "Admitido" && !encerrado(c.etapa));
+            const candIds = new Set(cs.map((c) => c.id));
+            const prox = ents
+              .filter((e) => candIds.has(e.candidato_id) && e.status === "Agendada" && e.data >= hoje)
+              .sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora))[0];
+            const candProx = prox ? cs.find((c) => c.id === prox.candidato_id) : undefined;
+            return (
+              <section key={v.id} className="card !p-3 space-y-2 min-w-0">
+                <div className="flex items-center justify-between gap-2 text-xs text-ink-500">
+                  <span className="flex items-center gap-1.5 min-w-0">
                     <Ponto empresa={v.empresa} />
-                    {rotuloEmpresa(v)}
+                    <span className="truncate">{rotuloEmpresa(v)}</span>
                   </span>
-                  <h3 className="text-2xl leading-tight">{v.cargo}</h3>
+                  <span className={dias > 30 ? "text-red-700 font-bold" : ""}>{dias} dias</span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-ink-500">
-                  <select
-                    aria-label="Situação da vaga"
-                    className="input !w-auto !py-1.5"
-                    value={v.status}
-                    onChange={(e) => patchVaga(v.id, { status: e.target.value })}
-                  >
+                <h3 className="text-base leading-tight uppercase break-words">{v.cargo}</h3>
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span className={`inline-flex items-center gap-1.5 tabular-nums ${cheia ? "text-green-700" : ""}`} title={`${preenchidas} de ${total} posições preenchidas`}>
+                    <span className="inline-flex gap-0.5">
+                      {Array.from({ length: Math.min(total, 12) }).map((_, i) => (
+                        <i key={i} className={`inline-block w-2.5 h-2.5 rounded-full border-[1.5px] ${i < preenchidas ? (cheia ? "bg-green-600 border-green-600" : "bg-brand-500 border-brand-500") : "border-brand-500"}`} />
+                      ))}
+                    </span>
+                    <b>{preenchidas}/{total}</b>
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-ink-500">
+                    <button type="button" aria-label="Menos uma posição" className="w-6 h-6 rounded border border-brand-200 leading-none" onClick={() => patchVaga(v.id, { posicoes: Math.max(1, total - 1) })}>−</button>
+                    <button type="button" aria-label="Mais uma posição" className="w-6 h-6 rounded border border-brand-200 leading-none" onClick={() => patchVaga(v.id, { posicoes: Math.min(50, total + 1) })}>+</button>
+                  </span>
+                </div>
+                <div className="flex gap-0.5" aria-label="Candidatos por etapa">
+                  {ETAPAS.map((et) => {
+                    const n = cs.filter((c) => c.etapa === et).length;
+                    return (
+                      <i
+                        key={et}
+                        title={`${et}: ${n}`}
+                        className="flex-1 h-1.5 rounded-sm"
+                        style={{ background: n ? (et === "Etapa técnica" ? ESTILO_ETAPA["Etapa técnica"].cor : "#c9763a") : "#ecdccd" }}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {ativos.length === 0 && <span className="text-xs text-ink-500">Sem candidatos em andamento</span>}
+                  {ativos.map((c) => {
+                    const est = ESTILO_ETAPA[c.etapa];
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        title={`${c.nome} · ${rotuloEtapaEntrevista(c.etapa)}`}
+                        onClick={() => abrirFicha(c.id)}
+                        className="inline-flex items-center gap-1 rounded-full border border-brand-200 pl-0.5 pr-2 py-0.5 text-xs hover:bg-brand-50"
+                      >
+                        <em className="not-italic w-4 h-4 rounded-full grid place-items-center text-[9px] font-bold" style={{ background: est?.bg ?? "#fdf0e3", color: est?.cor ?? "#a85822" }}>
+                          {c.nome.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase()}
+                        </em>
+                        {c.nome.split(" ")[0]}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="border-t border-dashed border-brand-200 pt-2 flex items-center justify-between gap-2 text-xs">
+                  <span className="min-w-0 truncate text-ink-500">
+                    {prox && candProx ? (
+                      <>
+                        Próxima: <b className="text-ink-800">{candProx.nome.split(" ")[0]}</b> · {rotuloEtapaEntrevista(prox.etapa)} · {prox.data === hoje ? "hoje" : fmtCurta(prox.data)} {prox.hora}
+                      </>
+                    ) : (
+                      "Nenhuma entrevista marcada"
+                    )}
+                  </span>
+                  <button type="button" className="font-semibold text-brand-500 hover:underline shrink-0" onClick={() => setModal({ tipo: "candidato", vagaId: v.id })}>
+                    + Candidato
+                  </button>
+                </div>
+                <div className="flex items-center justify-between gap-2 text-xs text-ink-500">
+                  <select aria-label="Situação da vaga" className="input !w-auto !py-1 !text-xs" value={v.status} onChange={(e) => patchVaga(v.id, { status: e.target.value })}>
                     {STATUS_VAGA.map((s) => (
                       <option key={s}>{s}</option>
                     ))}
                   </select>
-                  {v.gestor && <span>Gestor: {v.gestor}</span>}
-                  <span>{dias} dias em aberto</span>
+                  {v.gestor && <span className="truncate">Gestor: {v.gestor}</span>}
                 </div>
-              </div>
-              <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5" aria-label="Candidatos por etapa">
-                {ETAPAS.map((et) => {
-                  const n = cs.filter((c) => c.etapa === et).length;
-                  return (
-                    <div key={et} className={`rounded-lg border px-1 py-1.5 text-center min-w-0 ${n ? "bg-brand-100 border-brand-300" : "bg-brand-50 border-brand-200"}`}>
-                      <b className={`block font-display text-xl leading-tight ${n ? "text-brand-600" : "text-ink-500"}`}>{n}</b>
-                      <small className="block text-[10.5px] leading-tight font-semibold text-ink-500 break-words">
-                        {et.replace("Entrevista ", "Entr. ").replace("Triagem de currículo", "Triagem")}
-                      </small>
-                    </div>
-                  );
-                })}
-              </div>
-              <div>
-                {cs.length === 0 && <p className="text-sm text-ink-500 border border-dashed border-brand-300 rounded-xl p-3">Nenhum candidato nesta vaga ainda.</p>}
-                {cs.map((c) => {
-                  const n = proxima(c.id);
-                  const atrasada = !encerrado(c.etapa) && c.proxima_data && c.proxima_data < hoje;
-                  return (
-                    <div key={c.id} className="grid grid-cols-[minmax(150px,1.3fr)_auto_auto_minmax(0,2fr)_auto] max-lg:grid-cols-[1fr_auto] gap-x-3 gap-y-1 items-center py-2.5 border-t border-brand-100">
-                      <button type="button" className="text-left font-bold hover:underline break-words" onClick={() => abrirFicha(c.id)}>
-                        {c.nome}
-                      </button>
-                      <Etiqueta>{c.etapa}</Etiqueta>
-                      <Nota valor={notaDe(c.id)} />
-                      <span className={`text-sm max-lg:col-span-2 ${atrasada ? "text-red-700 font-bold" : "text-ink-500"}`}>
-                        {n ? `${ESTILO_ETAPA[n.etapa]?.curto ?? "Entrevista"} · ${n.data === hoje ? "hoje" : fmtCurta(n.data)} ${n.hora}` : c.proxima_acao ? `${c.proxima_acao} · ${fmtCurta(c.proxima_data)}` : "Sem próxima ação"}
-                      </span>
-                      <button type="button" className="btn-secondary !px-3 !py-1.5 text-sm" onClick={() => setModal({ tipo: "entrevista", candidatoId: c.id })}>
-                        + Entrevista
-                      </button>
-                    </div>
-                  );
-                })}
-                <button type="button" className="mt-2 text-sm font-semibold text-brand-500 hover:underline" onClick={() => setModal({ tipo: "candidato", vagaId: v.id })}>
-                  + Adicionar candidato a esta vaga
-                </button>
-              </div>
-            </section>
-          );
-        })}
+              </section>
+            );
+          })}
+        </div>
       </div>
     );
   }
