@@ -51,9 +51,8 @@ export async function GET(req: Request) {
     const c = colabPorId.get(l.colaborador_id);
     if (!c) continue;
     if (empresaFiltro) {
-      // empresa escolhida na tela (BSE continua sem a unidade Alphaville)
+      // empresa escolhida na tela
       if (empresaVT(c, empresaPorId, unidadePorId) !== empresaFiltro) continue;
-      if (empresaFiltro === "BSE" && grupoVT(c, empresaPorId, unidadePorId).toLowerCase().includes("alphaville")) continue;
     } else {
       const emp = c.empresa_id ? empresaPorId.get(c.empresa_id)?.nome ?? "" : "";
       if (!ehBseSemAlphaville(`${grupoVT(c, empresaPorId, unidadePorId)} ${emp}`)) continue;

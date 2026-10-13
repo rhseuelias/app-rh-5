@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { EMPRESAS_VT } from "@/lib/vale-transporte";
 
-/** Escolhe a empresa (BSE, BABOON ou BDU) e abre o relatório em PDF para conferência. */
+/** Escolhe a empresa (BSE MG, BSE SP, BABOON ou BDU) e abre o relatório em PDF para conferência. */
 export default function RelatorioPdfVT({ competencia }: { competencia: string }) {
   const [empresa, setEmpresa] = useState<string>(EMPRESAS_VT[0]);
   const href = `/api/vale-transporte/pdf?competencia=${competencia}&empresa=${encodeURIComponent(empresa)}&inline=1`;

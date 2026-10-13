@@ -139,16 +139,18 @@ export function grupoVT(
 }
 
 /** Empresas do grupo, na ordem em que aparecem nas telas. */
-export const EMPRESAS_VT = ["BSE", "BABOON", "BDU"] as const;
+export const EMPRESAS_VT = ["BSE MG", "BSE SP", "BABOON", "BDU"] as const;
 
-/** Operadoras de cada empresa (na ordem das abas). As unidades (Savassi, Belvedere...) ficam dentro da BSE. */
+/** Operadoras de cada empresa (na ordem das abas). */
 export const OPERADORAS_DA_EMPRESA: Record<string, OperadoraVT[]> = {
-  BSE: ["CAJU", "BHBUS", "OTIMO"],
+  "BSE MG": ["CAJU", "BHBUS", "OTIMO"],
+  "BSE SP": ["CAJU", "BHBUS", "OTIMO"],
   BABOON: ["CAJU", "BHBUS", "OTIMO"],
   BDU: ["CAJU", "SEMPARAR"],
 };
 
-const UNIDADES_BSE = ["savassi", "belvedere", "pampulha", "ouro minas", "lagoa santa", "confins", "alphaville"];
+/** Unidades da BSE em Minas Gerais (a BSE SP tem só a Alphaville). */
+const UNIDADES_BSE_MG = ["savassi", "belvedere", "pampulha", "ouro minas", "lagoa santa", "confins"];
 
 function semAcentoVT(s: string): string {
   return s
@@ -157,7 +159,7 @@ function semAcentoVT(s: string): string {
     .toLowerCase();
 }
 
-/** A qual empresa (BSE, BABOON ou BDU) o colaborador pertence. Se não reconhecer, devolve o nome da empresa cadastrada. */
+/** A qual empresa (BSE MG, BSE SP, BABOON ou BDU) o colaborador pertence. Se não reconhecer, devolve o nome da empresa cadastrada. */
 export function empresaVT(
   c: Colaborador,
   empresaPorId: Map<string, Empresa>,
@@ -166,13 +168,15 @@ export function empresaVT(
   const emp = c.empresa_id ? empresaPorId.get(c.empresa_id)?.nome ?? "" : "";
   const uni = c.unidade_id ? unidadePorId.get(c.unidade_id) : undefined;
   const uniEmp = uni?.empresa_id ? empresaPorId.get(uni.empresa_id)?.nome ?? "" : "";
-  for (const texto of [emp, uniEmp, uni?.nome ?? ""]) {
-    const t = semAcentoVT(texto);
-    if (t.includes("baboon")) return "BABOON";
-    if (t.includes("bdu")) return "BDU";
-    if (t.includes("bse")) return "BSE";
-  }
-  if (uni && UNIDADES_BSE.includes(semAcentoVT(uni.nome).trim())) return "BSE";
+  const textos = [emp, uniEmp, uni?.nome ?? ""].map(semAcentoVT);
+  const unidade = semAcentoVT(uni?.nome ?? "").trim();
+
+  if (textos.some((t) => t.includes("baboon"))) return "BABOON";
+  if (textos.some((t) => t.includes("bdu"))) return "BDU";
+  // BSE: Alphaville (ou uma empresa cadastrada como "BSE SP") é São Paulo; o resto é Minas Gerais.
+  const ehSP = unidade.includes("alphaville") || textos.some((t) => /\bsp\b|sao paulo/.test(t));
+  if (ehSP) return "BSE SP";
+  if (textos.some((t) => t.includes("bse")) || UNIDADES_BSE_MG.includes(unidade)) return "BSE MG";
   return emp || uniEmp || "Sem empresa";
 }
 

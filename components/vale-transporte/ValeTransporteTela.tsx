@@ -47,7 +47,7 @@ interface Props {
   rotuloMes: string;
   linhas: LinhaTela[];
   colaboradores: OpcaoColaborador[];
-  /** Empresas que aparecem em "Escolher Empresa" (BSE, BABOON, BDU...). */
+  /** Empresas que aparecem em "Escolher Empresa" (BSE MG, BSE SP, BABOON, BDU...). */
   empresas: string[];
   empresaInicial: string;
   temMesAnterior: boolean;
@@ -61,7 +61,8 @@ const campo =
   "w-full min-w-0 rounded-[7px] border border-[#e4dfd8] bg-white px-2 py-1 text-right text-[15px] tabular-nums text-[#2b2623] focus:outline-none focus:ring-2 focus:ring-stone-300";
 
 const COR_UNIDADE: Record<string, { cor: string; tom: string }> = {
-  BSE: { cor: "#1d5fb8", tom: "#e3eefc" },
+  "BSE MG": { cor: "#1d5fb8", tom: "#e3eefc" },
+  "BSE SP": { cor: "#7a3fb5", tom: "#efe5fa" },
   BELVEDERE: { cor: "#1d5fb8", tom: "#e3eefc" },
   PAMPULHA: { cor: "#1b8a4b", tom: "#e1f5e9" },
   SAVASSI: { cor: "#7a3fb5", tom: "#efe5fa" },
