@@ -27,6 +27,9 @@ const TABELAS: Record<ChaveTabela, { tabela: string; colunas: string[] }> = {
 };
 
 function mensagem(m: string): string {
+  if (/posicoes/i.test(m)) {
+    return "Falta criar a coluna de posições no banco. Rode o arquivo migration_029_posicoes.sql no Supabase (SQL Editor).";
+  }
   if (/does not exist|schema cache/i.test(m)) {
     return "Falta criar as tabelas no banco. Rode o arquivo migration_027_entrevistas.sql no Supabase (SQL Editor).";
   }
