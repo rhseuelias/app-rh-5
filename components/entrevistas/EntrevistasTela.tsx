@@ -9,6 +9,7 @@ import {
   EMPRESAS_SEL,
   ENCERRADOS,
   ETAPAS,
+  ESTILO_ETAPA,
   ETAPAS_ENTREVISTA,
   FONTES,
   RECOMENDACOES,
@@ -25,6 +26,8 @@ import {
   mediaNotas,
   mesCurto,
   rotuloEmpresa,
+  rotuloEtapaEntrevista,
+  sugerirEtapaEntrevista,
   somaDias,
   type AvaliacaoSel,
   type CandidatoSel,
@@ -379,10 +382,14 @@ function ModalCandidato({ vagas, vagaIdInicial, executar, aoFechar, aoCriar }: {
   );
 }
 
-function ModalEntrevista({ cands, vagaPor, candidatoIdInicial, hoje, executar, aoFechar, aoCriar }: { cands: CandidatoSel[]; vagaPor: Map<string, Vaga>; candidatoIdInicial?: string; hoje: string; executar: Exec; aoFechar: () => void; aoCriar: (e: EntrevistaSel) => void }) {
+function ModalEntrevista({ cands, ents, vagaPor, candidatoIdInicial, hoje, executar, aoFechar, aoCriar }: { cands: CandidatoSel[]; ents: EntrevistaSel[]; vagaPor: Map<string, Vaga>; candidatoIdInicial?: string; hoje: string; executar: Exec; aoFechar: () => void; aoCriar: (e: EntrevistaSel) => void }) {
   const ativos = cands.filter((c) => !encerrado(c.etapa));
   const [candId, setCandId] = useState(candidatoIdInicial ?? ativos[0]?.id ?? "");
-  const [etapa, setEtapa] = useState<string>("Entrevista RH");
+  const sugerida = (id: string) => {
+    const c = cands.find((x) => x.id === id);
+    return c ? sugerirEtapaEntrevista(c.etapa, ents.filter((e) => e.candidato_id === id)) : "Entrevista RH";
+  };
+  const [etapa, setEtapa] = useState<string>(() => sugerida(candidatoIdInicial ?? ativos[0]?.id ?? ""));
   const [tipo, setTipo] = useState<string>("Vídeo");
   const [data, setData] = useState(somaDias(hoje, 1));
   const [hora, setHora] = useState("10:00");
@@ -404,7 +411,14 @@ function ModalEntrevista({ cands, vagaPor, candidatoIdInicial, hoje, executar, a
   return (
     <JanelaModal titulo="Agendar entrevista" aoFechar={() => aoFechar()}>
       <Campo rotulo="Candidato">
-        <select className="input" value={candId} onChange={(e) => setCandId(e.target.value)}>
+        <select
+          className="input"
+          value={candId}
+          onChange={(e) => {
+            setCandId(e.target.value);
+            setEtapa(sugerida(e.target.value));
+          }}
+        >
           {ativos.length === 0 && <option value="">Nenhum candidato ativo</option>}
           {ativos.map((c) => {
             const v = vagaPor.get(c.vaga_id);
@@ -420,7 +434,9 @@ function ModalEntrevista({ cands, vagaPor, candidatoIdInicial, hoje, executar, a
         <Campo rotulo="Etapa">
           <select className="input" value={etapa} onChange={(e) => setEtapa(e.target.value)}>
             {ETAPAS_ENTREVISTA.map((x) => (
-              <option key={x}>{x}</option>
+              <option key={x} value={x}>
+                {rotuloEtapaEntrevista(x)}
+              </option>
             ))}
           </select>
         </Campo>
@@ -649,14 +665,19 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
     const v = c ? vagaPor.get(c.vaga_id) : undefined;
     if (!c || !v) return null;
     const atrasada = e.status === "Agendada" && e.data < hoje;
+    const est = ESTILO_ETAPA[e.etapa];
     return (
       <button
         type="button"
         onClick={() => abrirFicha(c.id, e.id)}
+        style={est ? { borderLeft: `6px solid ${est.cor}` } : undefined}
         className={`text-left bg-white rounded-xl border p-3.5 flex gap-3 hover:border-brand-400 transition-colors ${atrasada ? "border-red-500" : "border-brand-200"}`}
       >
         <span className="font-display text-2xl font-semibold leading-tight tabular-nums">{e.hora}</span>
         <span className="min-w-0 space-y-1">
+          <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-bold" style={est ? { background: est.bg, color: est.cor } : undefined}>
+            {rotuloEtapaEntrevista(e.etapa)}
+          </span>
           <strong className="block leading-tight break-words">{c.nome}</strong>
           <span className="flex items-center gap-1.5 text-sm text-ink-500">
             <Ponto empresa={v.empresa} />
@@ -752,7 +773,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                       <Etiqueta>{c.etapa}</Etiqueta>
                       <Nota valor={notaDe(c.id)} />
                       <span className={`text-sm max-lg:col-span-2 ${atrasada ? "text-red-700 font-bold" : "text-ink-500"}`}>
-                        {n ? `Entrevista ${n.data === hoje ? "hoje" : fmtCurta(n.data)} ${n.hora}` : c.proxima_acao ? `${c.proxima_acao} · ${fmtCurta(c.proxima_data)}` : "Sem próxima ação"}
+                        {n ? `${ESTILO_ETAPA[n.etapa]?.curto ?? "Entrevista"} · ${n.data === hoje ? "hoje" : fmtCurta(n.data)} ${n.hora}` : c.proxima_acao ? `${c.proxima_acao} · ${fmtCurta(c.proxima_data)}` : "Sem próxima ação"}
                       </span>
                       <button type="button" className="btn-secondary !px-3 !py-1.5 text-sm" onClick={() => setModal({ tipo: "entrevista", candidatoId: c.id })}>
                         + Entrevista
@@ -779,6 +800,14 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
     const pendentesReg = ordenadas.filter((e) => e.status === "Agendada" && e.data < hoje);
     return (
       <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-xs font-bold uppercase tracking-wider text-ink-500">Etapas</span>
+          {ETAPAS_ENTREVISTA.map((x) => (
+            <span key={x} className="rounded-full px-3 py-1 font-semibold" style={{ background: ESTILO_ETAPA[x].bg, color: ESTILO_ETAPA[x].cor }}>
+              {rotuloEtapaEntrevista(x)}
+            </span>
+          ))}
+        </div>
         {pendentesReg.length > 0 && (
           <section className="rounded-2xl border border-red-500 bg-red-50 p-4 space-y-3">
             <h3 className="text-base text-red-700 uppercase">
@@ -826,7 +855,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
         <div className="grid grid-flow-col auto-cols-[minmax(230px,1fr)] gap-3 overflow-x-auto pb-3 items-start">
           {ETAPAS.map((et) => {
             const lista = candsFiltrados.filter((c) => c.etapa === et);
-            const quente = et.startsWith("Entrevista");
+            const quente = et.startsWith("Entrevista") || et === "Etapa técnica";
             return (
               <section key={et} className={`rounded-2xl border p-3 space-y-2.5 min-h-[150px] ${quente ? "bg-brand-100 border-brand-300" : "bg-brand-50 border-brand-200"}`}>
                 <header className="flex items-baseline justify-between gap-2">
@@ -1443,6 +1472,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
       {modal?.tipo === "entrevista" && (
         <ModalEntrevista
           cands={cands}
+          ents={ents}
           vagaPor={vagaPor}
           candidatoIdInicial={modal.candidatoId}
           hoje={hoje}

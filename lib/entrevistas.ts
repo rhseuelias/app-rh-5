@@ -9,14 +9,14 @@ export const ETAPAS = [
   "Inscrito",
   "Triagem de currículo",
   "Entrevista RH",
-  "Teste técnico",
+  "Etapa técnica",
   "Entrevista gestor",
   "Entrevista final",
   "Proposta",
   "Admitido",
 ] as const;
 export const ENCERRADOS = ["Reprovado", "Desistiu", "Banco de talentos"] as const;
-export const ETAPAS_ENTREVISTA = ["Entrevista RH", "Teste técnico", "Entrevista gestor", "Entrevista final"] as const;
+export const ETAPAS_ENTREVISTA = ["Entrevista RH", "Etapa técnica", "Entrevista gestor", "Entrevista final"] as const;
 
 export const STATUS_VAGA = ["Aberta", "Em triagem", "Em entrevistas", "Proposta", "Congelada", "Fechada", "Cancelada"] as const;
 export const STATUS_ENTREVISTA = ["Agendada", "Realizada", "Reagendar", "Cancelada", "Não compareceu"] as const;
@@ -139,4 +139,32 @@ export function mesCurto(iso: string): string {
 }
 export function fmtCurta(iso: string | null | undefined): string {
   return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—";
+}
+
+/** Cor, nome curto e número de cada etapa de entrevista (usado na agenda). */
+export const ESTILO_ETAPA: Record<string, { cor: string; bg: string; curto: string }> = {
+  "Entrevista RH": { cor: "#a85822", bg: "#fdf0e3", curto: "RH" },
+  "Etapa técnica": { cor: "#0f766e", bg: "#e0f5f2", curto: "Técnica" },
+  "Entrevista gestor": { cor: "#6d28d9", bg: "#efe8fc", curto: "Gestor" },
+  "Entrevista final": { cor: "#15803d", bg: "#dff3e5", curto: "Final" },
+};
+
+export function ordemEtapa(etapa: string): number | null {
+  const i = (ETAPAS_ENTREVISTA as readonly string[]).indexOf(etapa);
+  return i < 0 ? null : i + 1;
+}
+
+/** Texto da etapa para chips: "2ª etapa · Técnica". */
+export function rotuloEtapaEntrevista(etapa: string): string {
+  const o = ordemEtapa(etapa);
+  return o ? `${o}ª etapa · ${ESTILO_ETAPA[etapa]?.curto ?? etapa}` : etapa;
+}
+
+/** Etapa que normalmente vem a seguir para o candidato (a próxima depois da última entrevista realizada). */
+export function sugerirEtapaEntrevista(etapaAtual: string, entrevistas: { etapa: string; status: string }[]): string {
+  const lista = ETAPAS_ENTREVISTA as readonly string[];
+  const feitas = entrevistas.filter((e) => e.status === "Realizada").map((e) => lista.indexOf(e.etapa));
+  const maior = feitas.length ? Math.max(...feitas) : -1;
+  if (maior >= 0) return lista[Math.min(maior + 1, lista.length - 1)];
+  return lista.includes(etapaAtual) ? etapaAtual : lista[0];
 }

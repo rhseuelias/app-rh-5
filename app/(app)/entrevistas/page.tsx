@@ -28,11 +28,16 @@ export default async function EntrevistasPage() {
     );
   }
 
+  // "Teste técnico" foi renomeada para "Etapa técnica": registros antigos aparecem com o nome novo.
+  const nova = (e: string) => (e === "Teste técnico" ? "Etapa técnica" : e);
+  const candidatos = ((candRes.data ?? []) as CandidatoSel[]).map((c) => ({ ...c, etapa: nova(c.etapa) }));
+  const entrevistas = ((entRes.data ?? []) as EntrevistaSel[]).map((e) => ({ ...e, etapa: nova(e.etapa) }));
+
   return (
     <EntrevistasTela
       vagasIniciais={(vagasRes.data ?? []) as Vaga[]}
-      candidatosIniciais={(candRes.data ?? []) as CandidatoSel[]}
-      entrevistasIniciais={(entRes.data ?? []) as EntrevistaSel[]}
+      candidatosIniciais={candidatos}
+      entrevistasIniciais={entrevistas}
       avaliacoesIniciais={(avalRes.data ?? []) as AvaliacaoSel[]}
     />
   );
