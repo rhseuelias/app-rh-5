@@ -21,6 +21,7 @@ import {
   saldoNaRecargaVT,
   somaVT,
   totalVT,
+  transporteVT,
   valorDiarioVT,
   type LinhaVT,
   type OperadoraVT,
@@ -75,7 +76,7 @@ const FONTE_TITULO = { fontFamily: "Oswald, 'Arial Narrow', sans-serif" } as con
 
 type ColunaOrdem =
   | "matricula" | "nome" | "unidade" | "cartao" | "diaria" | "valor_unit" | "valor_diario"
-  | "dias_uteis" | "alimentacao" | "premio" | "total" | "saldo" | "carga";
+  | "dias_uteis" | "total_vt" | "alimentacao" | "premio" | "saldo" | "carga";
 
 function valorOrdem(l: LinhaTela, c: ColunaOrdem): string | number {
   switch (c) {
@@ -89,7 +90,7 @@ function valorOrdem(l: LinhaTela, c: ColunaOrdem): string | number {
     case "dias_uteis": return Number(l.dias_uteis) || 0;
     case "alimentacao": return Number(l.alimentacao) || 0;
     case "premio": return Number(l.premio) || 0;
-    case "total": return totalVT(l);
+    case "total_vt": return transporteVT(l);
     case "saldo": return saldoNaRecargaVT(l);
     case "carga": return cargaVT(l);
   }
@@ -122,6 +123,7 @@ export default function ValeTransporteTela({
     });
   }, [doOperadora, incluidas, filtro, ordem]);
   const soma = somaVT(visiveis);
+  const somaTransporte = Math.round(visiveis.reduce((acc, l) => acc + transporteVT(l), 0) * 100) / 100;
   const filtroValido = filtro && incluidas.has(filtro) ? filtro : "";
 
   // Só quem ainda não está nesta operadora; se uma unidade estiver escolhida no filtro, só os dessa unidade.
@@ -398,7 +400,7 @@ export default function ValeTransporteTela({
       <div className="mt-3 border-t border-[#e4dfd8]">
         {caju && (
           <p className="border-b border-brand-100 bg-blue-50/40 px-6 py-3 text-sm text-stone-600">
-            No CAJU o Total soma transporte + alimentação + prêmio. Se você também lança alimentação e prêmio no Controle de Benefícios, não repita aqui para não contar duas vezes.
+            No CAJU a Carga soma transporte + alimentação + prêmio. Se você também lança alimentação e prêmio no Controle de Benefícios, não repita aqui para não contar duas vezes.
           </p>
         )}
         <table className="w-full table-fixed text-[15px]">
@@ -411,9 +413,9 @@ export default function ValeTransporteTela({
             <col style={{ width: 80 }} />
             <col style={{ width: 80 }} />
             <col style={{ width: 62 }} />
+            <col style={{ width: 100 }} />
             {caju && <col style={{ width: 90 }} />}
             {caju && <col style={{ width: 90 }} />}
-            <col style={{ width: 92 }} />
             <col style={{ width: 190 }} />
             <col style={{ width: 98 }} />
             <col style={{ width: 44 }} />
@@ -428,9 +430,9 @@ export default function ValeTransporteTela({
               <Cab col="valor_unit" rotulo="Valor unit." direita />
               <Cab col="valor_diario" rotulo="Valor diário" direita />
               <Cab col="dias_uteis" rotulo="Dias úteis" direita />
+              <Cab col="total_vt" rotulo="Total VT" direita />
               {caju && <Cab col="alimentacao" rotulo="Alimentação" direita />}
               {caju && <Cab col="premio" rotulo="Prêmio" direita />}
-              <Cab col="total" rotulo="Total" direita />
               <Cab col="saldo" rotulo="Saldo atual · dias até a recarga" direita />
               <Cab col="carga" rotulo="Carga" direita />
               <th className="px-2 py-3" />
@@ -451,10 +453,11 @@ export default function ValeTransporteTela({
           {visiveis.length > 0 && (
             <tfoot>
               <tr className={`border-t border-[#e4dfd8] bg-[#f3efe9] text-[15px] font-bold text-[#2b2623]`}>
-                <td className="px-3 py-2.5" colSpan={(caju ? 9 : 7) + (comMatricula ? 1 : 0)}>
+                <td className="px-3 py-2.5" colSpan={7 + (comMatricula ? 1 : 0)}>
                   TOTAL — {ROTULO_OPERADORA[ativa]} · {filtroValido || "unidades incluídas"}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(soma.total)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(somaTransporte)}</td>
+                {caju && <td colSpan={2} />}
                 <td className="px-3 py-2.5 text-right tabular-nums">{numeroVT(soma.saldo)}</td>
                 <td className="px-3 py-2.5 text-right text-base tabular-nums text-[#b0302a]">{numeroVT(soma.carga)}</td>
                 <td />
@@ -464,7 +467,7 @@ export default function ValeTransporteTela({
         </table>
       </div>
       <p className="px-5 py-3 text-[13px] text-stone-600">
-        Total = valor diário × dias úteis · Carga = Total − Saldo atual · Tudo o que você digita é salvo sozinho e repetido no mês seguinte (menos o saldo). Clique no título de uma coluna para ordenar.
+        Total VT = valor diário × dias úteis · Carga = Total VT (no CAJU, mais alimentação e prêmio) − Saldo atual · Tudo o que você digita é salvo sozinho e repetido no mês seguinte (menos o saldo). Clique no título de uma coluna para ordenar.
       </p>
     </section>
   );
@@ -661,6 +664,7 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
           onBlur={() => aoSair("dias_uteis", dias)}
         />
       </td>
+      <td className="px-1.5 py-1.5 text-right font-semibold tabular-nums">{numeroVT(ok ? transporteVT(vivo) : 0)}</td>
       {caju && (
         <td className="px-1.5 py-1.5">
           <input aria-label="Alimentação" className={campo} inputMode="decimal" value={alim} onChange={(e) => digitou("alimentacao", e.target.value, setAlim)} onBlur={() => aoSair("alimentacao", alim)} />
@@ -671,7 +675,6 @@ function LinhaEditavel({ linha, caju, comMatricula }: { linha: LinhaTela; caju: 
           <input aria-label="Prêmio" className={campo} inputMode="decimal" value={premio} onChange={(e) => digitou("premio", e.target.value, setPremio)} onBlur={() => aoSair("premio", premio)} />
         </td>
       )}
-      <td className="px-1.5 py-1.5 text-right font-semibold tabular-nums">{numeroVT(ok ? totalVT(vivo) : 0)}</td>
       <td className="px-1.5 py-1.5">
         <div className="flex items-center justify-end gap-1.5">
           <input aria-label="Saldo atual" title="Saldo que está no cartão hoje" className={campo} inputMode="decimal" value={saldo} onChange={(e) => digitou("saldo", e.target.value, setSaldo)} onBlur={() => aoSair("saldo", saldo)} />
