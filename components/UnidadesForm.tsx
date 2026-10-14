@@ -8,6 +8,35 @@ import DadosCadastraisCampos from "@/components/campos/DadosCadastraisCampos";
 import { ADIANTAMENTO_OPCOES } from "@/lib/calculos";
 import { cadastroEmpresaCompleto, unidadeTemEnderecoProprio } from "@/lib/dados-empresa";
 
+const CAMPOS_INDICADORES = [
+  { nome: "absenteismo_pct", rotulo: "Absenteísmo (%)" },
+  { nome: "performance_pct", rotulo: "Performance (%)" },
+  { nome: "treinamento_pct", rotulo: "Treinamento (%)" },
+  { nome: "clima_pct", rotulo: "Clima organizacional (%)" },
+] as const;
+
+/** Os 4 indicadores de cada unidade — alimentam o Dashboard. Em branco = ainda não informado. */
+function IndicadoresUnidade({ unidade }: { unidade?: Unidade }) {
+  return (
+    <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+      {CAMPOS_INDICADORES.map((c) => (
+        <div key={c.nome}>
+          <label className="label">{c.rotulo}</label>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            max="100"
+            name={c.nome}
+            className="input"
+            defaultValue={unidade?.[c.nome] ?? ""}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function UnidadeItem({ unidade, empresaId }: { unidade: Unidade; empresaId: string }) {
   const [isPending, startTransition] = useTransition();
 
@@ -78,6 +107,7 @@ function UnidadeItem({ unidade, empresaId }: { unidade: Unidade; empresaId: stri
               ))}
             </select>
           </div>
+          <IndicadoresUnidade unidade={unidade} />
           <div className="md:col-span-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
             <p className="text-xs text-slate-500">
               Se esta unidade tem endereço próprio, preencha aqui. Se deixar o endereço em branco, os documentos usam o
@@ -142,6 +172,7 @@ export default function UnidadesForm({
               ))}
             </select>
           </div>
+          <IndicadoresUnidade />
           <div className="md:col-span-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
             <p className="text-xs text-slate-500">
               Endereço da unidade (opcional). Em branco, os documentos usam o endereço da empresa.

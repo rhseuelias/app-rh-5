@@ -1299,18 +1299,35 @@ export async function salvarUnidade(formData: FormData) {
   };
   const completo = { ...payload, ...dadosCadastrais(formData) };
 
-  // Se a migration_032 ainda não foi rodada no Supabase, grava só o básico
-  // (como era antes) para não travar o cadastro.
+  // Indicadores da unidade (aparecem no Dashboard). Campo em branco = ainda não informado.
+  const indicadores = {
+    absenteismo_pct: numOrNull(formData, "absenteismo_pct"),
+    performance_pct: numOrNull(formData, "performance_pct"),
+    treinamento_pct: numOrNull(formData, "treinamento_pct"),
+    clima_pct: numOrNull(formData, "clima_pct"),
+  };
+  const comIndicadores = { ...completo, ...indicadores };
+
+  // Se a migration_035 (indicadores) ou a migration_032 (dados cadastrais) ainda
+  // não foram rodadas no Supabase, grava só o que der (como era antes) para não
+  // travar o cadastro.
   if (id) {
-    const { error } = await supabase.from("unidades").update(completo).eq("id", id);
-    if (error) await supabase.from("unidades").update(payload).eq("id", id);
+    const { error } = await supabase.from("unidades").update(comIndicadores).eq("id", id);
+    if (error) {
+      const { error: e2 } = await supabase.from("unidades").update(completo).eq("id", id);
+      if (e2) await supabase.from("unidades").update(payload).eq("id", id);
+    }
   } else {
-    const { error } = await supabase.from("unidades").insert(completo);
-    if (error) await supabase.from("unidades").insert(payload);
+    const { error } = await supabase.from("unidades").insert(comIndicadores);
+    if (error) {
+      const { error: e2 } = await supabase.from("unidades").insert(completo);
+      if (e2) await supabase.from("unidades").insert(payload);
+    }
   }
 
   revalidatePath("/projecao-custo");
   revalidatePath("/colaboradores");
+  revalidatePath("/dashboard");
 }
 
 // Exclui uma filial/unidade. Nada é apagado em cascata — colaboradores e

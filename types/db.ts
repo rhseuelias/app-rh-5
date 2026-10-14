@@ -28,6 +28,11 @@ export interface Unidade {
   cnpj: string | null;
   adiantamento_pct: 20 | 30 | 40 | null;
   created_at: string;
+  // indicadores da unidade (migration_035) — aparecem no Dashboard
+  absenteismo_pct?: number | null;
+  performance_pct?: number | null;
+  treinamento_pct?: number | null;
+  clima_pct?: number | null;
   // dados cadastrais (migration_032) — fonte para os documentos
   razao_social?: string | null;
   cep?: string | null;

@@ -9,6 +9,7 @@ import type {
   Ferias,
   PeriodoAquisitivo,
   ProcessoIntegracao,
+  Unidade,
 } from "@/types/db";
 import {
   custoMensalColaborador,
@@ -102,6 +103,7 @@ export default async function DashboardPage({
     { data: periodosAbertos },
     { data: franquias },
     { data: feriasFuturas },
+    { data: unidades },
   ] = await Promise.all([
     supabase.from("colaboradores").select("*"),
     supabase.from("empresas").select("*"),
@@ -111,6 +113,7 @@ export default async function DashboardPage({
     supabase.from("periodos_aquisitivos").select("*").eq("status", "aberto"),
     supabase.from("franquias_bse").select("*"),
     supabase.from("ferias").select("*").gte("data_inicio", hojeISO).order("data_inicio", { ascending: true }).limit(80),
+    supabase.from("unidades").select("*"),
   ]);
 
   const lista = (colaboradores ?? []) as Colaborador[];
@@ -198,8 +201,30 @@ export default async function DashboardPage({
     const v = vals.filter((x): x is number => x != null && x > 0);
     return v.length > 0 ? v.reduce((a, c) => a + c, 0) / v.length : null;
   };
-  const climaMedio = media(empresasNoEscopo.map((e) => e.clima_pct));
-  const treinoMedio = media(empresasNoEscopo.map((e) => e.treinamento_pct));
+
+  // Indicadores: vêm de cada unidade (Clima e Treinamento). Se nenhuma unidade tiver
+  // o número preenchido, usa o que está cadastrado na empresa.
+  const unidadesNoEscopo = ((unidades ?? []) as Unidade[]).filter(
+    (u) => empresaSel === "todas" || u.empresa_id === empresaSel
+  );
+  const unidadesComClima = unidadesNoEscopo.filter((u) => u.clima_pct != null && u.clima_pct > 0);
+  const unidadesComTreino = unidadesNoEscopo.filter((u) => u.treinamento_pct != null && u.treinamento_pct > 0);
+  const climaMedio =
+    unidadesComClima.length > 0 ? media(unidadesComClima.map((u) => u.clima_pct)) : media(empresasNoEscopo.map((e) => e.clima_pct));
+  const treinoMedio =
+    unidadesComTreino.length > 0
+      ? media(unidadesComTreino.map((u) => u.treinamento_pct))
+      : media(empresasNoEscopo.map((e) => e.treinamento_pct));
+  const climaPorUnidade = unidadesComClima.length > 0;
+  const itensClima = climaPorUnidade
+    ? unidadesComClima.map((u) => ({ nome: u.nome, pct: u.clima_pct as number }))
+    : empresasNoEscopo.map((e) => ({ nome: e.nome, pct: e.clima_pct != null && e.clima_pct > 0 ? e.clima_pct : null }));
+  const notaMedia =
+    unidadesComClima.length > 1 || unidadesComTreino.length > 1
+      ? "Média das unidades informadas"
+      : empresasNoEscopo.length > 1
+        ? "Média das empresas informadas"
+        : undefined;
 
   // folha / faturamento por empresa
   const empresasFolha = empresasNoEscopo.map((e) => {
@@ -457,7 +482,7 @@ export default async function DashboardPage({
             titulo="Clima organizacional"
             pct={climaMedio}
             meta={META_CLIMA}
-            nota={empresasNoEscopo.length > 1 ? "Média das empresas informadas" : undefined}
+            nota={notaMedia}
           />
         </Cartao7>
         <Cartao7>
@@ -465,7 +490,7 @@ export default async function DashboardPage({
             titulo="Treinamento"
             pct={treinoMedio}
             meta={META_TREINAMENTO}
-            nota={empresasNoEscopo.length > 1 ? "Média das empresas informadas" : undefined}
+            nota={notaMedia}
           />
         </Cartao7>
 
@@ -546,11 +571,10 @@ export default async function DashboardPage({
       {/* Clima por empresa, experiência e pendências */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr_.8fr]">
         <Cartao7>
-          <Titulo7 sub={`Comparado com a meta de ${META_CLIMA}%`}>Clima de cada empresa</Titulo7>
-          <ClimaPorEmpresa
-            itens={empresasNoEscopo.map((e) => ({ nome: e.nome, pct: e.clima_pct != null && e.clima_pct > 0 ? e.clima_pct : null }))}
-            meta={META_CLIMA}
-          />
+          <Titulo7 sub={`Comparado com a meta de ${META_CLIMA}%`}>
+            {climaPorUnidade ? "Clima de cada unidade" : "Clima de cada empresa"}
+          </Titulo7>
+          <ClimaPorEmpresa itens={itensClima} meta={META_CLIMA} />
         </Cartao7>
 
         <Cartao7>
