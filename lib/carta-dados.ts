@@ -71,6 +71,8 @@ export const TITULO_CARTA: Record<TipoAviso, string> = {
   trabalhado: "AVISO PRÉVIO TRABALHADO",
   indenizado: "AVISO PRÉVIO INDENIZADO",
   acordo: "COMUNICADO DE RESCISÃO POR ACORDO (ART. 484-A DA CLT)",
+  pedido_cumprindo: "RECEBIMENTO DE PEDIDO DE DEMISSÃO (COM CUMPRIMENTO DO AVISO)",
+  pedido_sem_cumprir: "RECEBIMENTO DE PEDIDO DE DEMISSÃO (SEM CUMPRIMENTO DO AVISO)",
 };
 
 /** Parágrafos do corpo da carta, por tipo. */
@@ -101,6 +103,18 @@ export function paragrafosCarta(d: DadosCarta): string[] {
       "Durante o aviso, V.Sa. tem direito à redução de 2 (duas) horas diárias na jornada de trabalho, sem prejuízo do " +
         "salário integral, ou, se preferir cumprir a jornada normal, a faltar 7 (sete) dias corridos ao final do período " +
         "(art. 488 da CLT).",
+    ];
+  } else if (d.tipo === "pedido_cumprindo") {
+    const dias = d.diasAviso ?? 30;
+    abertura = [
+      "Pelo presente, a empresa toma ciência do pedido de demissão apresentado por V.Sa., que cumprirá o Aviso Prévio " +
+        `de ${fDias(dias)}, com início em ${br(somarDias(d.comunicacao, 1))} e término em ${ultimo}, sendo este o seu último dia de trabalho.`,
+    ];
+  } else if (d.tipo === "pedido_sem_cumprir") {
+    abertura = [
+      "Pelo presente, a empresa toma ciência do pedido de demissão apresentado por V.Sa., que não cumprirá o Aviso Prévio, " +
+        "ficando a empresa autorizada a descontar das verbas rescisórias o valor correspondente ao período do aviso " +
+        `(art. 487, § 2º, da CLT). O contrato de trabalho termina em ${ultimo}.`,
     ];
   } else {
     abertura = [

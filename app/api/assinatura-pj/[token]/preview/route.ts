@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
-import { gerarContratoPjDocx } from "@/lib/contrato-pj";
-import type { Colaborador, ConfigAssinaturasPJ, Unidade } from "@/types/db";
+import { emitirContratoPj } from "@/lib/contrato-pj-emitir";
+import type { Colaborador, ConfigAssinaturasPJ, Empresa, Unidade } from "@/types/db";
 
 /** Baixa o contrato (Word) pelo token do link de assinatura — sem precisar
  * de login, é o que o profissional PJ usa pra ler o contrato antes (ou
@@ -23,10 +23,16 @@ export async function GET(_req: Request, { params }: { params: { token: string }
     unidade = (data as Unidade) ?? null;
   }
 
+  let empresa: Empresa | null = null;
+  if (colaborador.empresa_id) {
+    const { data } = await admin.from("empresas").select("*").eq("id", colaborador.empresa_id).maybeSingle();
+    empresa = (data as Empresa) ?? null;
+  }
+
   const { data: configData } = await admin.from("config_assinaturas_pj").select("*").limit(1).maybeSingle();
   const config = (configData as ConfigAssinaturasPJ) ?? null;
 
-  const resultado = await gerarContratoPjDocx(colaborador, unidade?.nome ?? null, config, admin);
+  const resultado = await emitirContratoPj(colaborador, unidade?.nome ?? null, empresa, config, admin);
 
   if (!resultado.ok) {
     return NextResponse.json({ error: resultado.motivo }, { status: 400 });

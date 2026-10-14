@@ -28,6 +28,7 @@ import RenovarContratoPJBotao from "@/components/RenovarContratoPJBotao";
 import ContratoPJEmissao from "@/components/ContratoPJEmissao";
 import HistoricoContratoPJAcoes from "@/components/HistoricoContratoPJAcoes";
 import { ehAlphaville } from "@/lib/contrato-pj";
+import { modeloContratoPj, ROTULO_MODELO_CONTRATO_PJ } from "@/lib/contrato-pj-emitir";
 import IncluirNoProcessoBotao from "@/components/integracao/IncluirNoProcessoBotao";
 import GerarPrimeiroPeriodoAquisitivoBotao from "@/components/GerarPrimeiroPeriodoAquisitivoBotao";
 import GerarPrevisaoPdfBotao from "@/components/GerarPrevisaoPdfBotao";
@@ -253,6 +254,8 @@ export default async function ColaboradorPage({ params }: { params: { id: string
 
   const status = STATUS_COLABORADOR[c.status] ?? { label: c.status, classe: "bg-slate-100 text-slate-600" };
   const empresa = ((empresas ?? []) as Empresa[]).find((e) => e.id === c.empresa_id) ?? null;
+  // PJ da BDU na área comercial usa o contrato de prestação de serviços; os demais (barbeiros) seguem como sempre
+  const modeloContrato = modeloContratoPj(c, empresa?.nome);
   const idade = idadeEmAnos(c.data_nascimento);
   const ehPJ = c.tipo === "PJ";
   const rotuloDoc = ehPJ ? "CNPJ" : "CPF";
@@ -694,7 +697,9 @@ export default async function ColaboradorPage({ params }: { params: { id: string
 
           <ContratoPJEmissao
             colaboradorId={c.id}
-            bloqueadoMotivo={bloqueadoContratoMotivo}
+            bloqueadoMotivo={modeloContrato === "comercial_bdu" ? null : bloqueadoContratoMotivo}
+            modeloRotulo={ROTULO_MODELO_CONTRATO_PJ[modeloContrato]}
+            comercial={modeloContrato === "comercial_bdu"}
             assinaturaUrl={assinaturaPjUrl}
           />
         </div>

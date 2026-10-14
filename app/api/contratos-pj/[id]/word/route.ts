@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { gerarContratoPjDocx } from "@/lib/contrato-pj";
-import type { Colaborador, ConfigAssinaturasPJ, Unidade } from "@/types/db";
+import { emitirContratoPj } from "@/lib/contrato-pj-emitir";
+import type { Colaborador, ConfigAssinaturasPJ, Empresa, Unidade } from "@/types/db";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const supabase = createClient();
@@ -24,10 +24,16 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     unidade = (data as Unidade) ?? null;
   }
 
+  let empresa: Empresa | null = null;
+  if (colaborador.empresa_id) {
+    const { data } = await supabase.from("empresas").select("*").eq("id", colaborador.empresa_id).maybeSingle();
+    empresa = (data as Empresa) ?? null;
+  }
+
   const { data: configData } = await supabase.from("config_assinaturas_pj").select("*").limit(1).maybeSingle();
   const config = (configData as ConfigAssinaturasPJ) ?? null;
 
-  const resultado = await gerarContratoPjDocx(colaborador, unidade?.nome ?? null, config);
+  const resultado = await emitirContratoPj(colaborador, unidade?.nome ?? null, empresa, config);
 
   if (!resultado.ok) {
     return NextResponse.json({ error: resultado.motivo }, { status: 400 });

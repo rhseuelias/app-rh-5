@@ -16,18 +16,21 @@ import {
   br,
   calcularPrazos,
   dataValida,
-  diasDeAviso,
+  diasPadraoDoTipo,
+  ehPedidoDemissao,
   faixaDesligamento,
   fDias,
   progressoAviso,
   situacaoHomologacao,
   situacaoPagamento,
+  temAvisoTrabalhado,
   type Desligamento,
   type Tom,
   type TipoAviso,
 } from "@/lib/desligamento";
 
-const TIPOS: TipoAviso[] = ["trabalhado", "indenizado", "acordo"];
+const TIPOS_EMPRESA: TipoAviso[] = ["trabalhado", "indenizado", "acordo"];
+const TIPOS_PEDIDO: TipoAviso[] = ["pedido_cumprindo", "pedido_sem_cumprir"];
 
 const FAIXA: Record<Tom, string> = {
   ok: "bg-emerald-50 border-emerald-200 text-emerald-900",
@@ -226,7 +229,7 @@ export default function AcompanhamentoDesligamento({
   // campos do formulário (começam com o que já está salvo)
   const [tipo, setTipo] = useState<TipoAviso>(d?.tipo_aviso ?? "trabalhado");
   const [comunicacao, setComunicacao] = useState(d?.data_comunicacao ?? hoje);
-  const [diasTexto, setDiasTexto] = useState(d?.tipo_aviso === "trabalhado" && d.dias_aviso ? String(d.dias_aviso) : "");
+  const [diasTexto, setDiasTexto] = useState(d && temAvisoTrabalhado(d.tipo_aviso) && d.dias_aviso ? String(d.dias_aviso) : "");
   const [precisaHomol, setPrecisaHomol] = useState(d?.homologacao_necessaria ?? true);
   const [homolData, setHomolData] = useState(d?.homologacao_data ?? "");
   const [homolHora, setHomolHora] = useState(d?.homologacao_hora ?? "");
@@ -234,14 +237,14 @@ export default function AcompanhamentoDesligamento({
   const [obs, setObs] = useState(d?.observacao ?? "");
 
   const diasAuto = useMemo(
-    () => (dataValida(comunicacao) ? diasDeAviso(dataAdmissao, comunicacao) : 30),
-    [comunicacao, dataAdmissao]
+    () => (dataValida(comunicacao) ? diasPadraoDoTipo(tipo, dataAdmissao, comunicacao) : 30),
+    [tipo, comunicacao, dataAdmissao]
   );
   const diasUsados = diasTexto.trim() === "" ? diasAuto : Number(diasTexto);
   const previa = useMemo(() => {
     if (!dataValida(comunicacao)) return null;
-    if (tipo === "trabalhado" && !(Number.isInteger(diasUsados) && diasUsados >= 1 && diasUsados <= 90)) return null;
-    return calcularPrazos(tipo, comunicacao, tipo === "trabalhado" ? diasUsados : null);
+    if (temAvisoTrabalhado(tipo) && !(Number.isInteger(diasUsados) && diasUsados >= 1 && diasUsados <= 90)) return null;
+    return calcularPrazos(tipo, comunicacao, temAvisoTrabalhado(tipo) ? diasUsados : null);
   }, [tipo, comunicacao, diasUsados]);
 
   function executar(acao: () => Promise<{ ok: true } | { ok: false; erro: string }>, depois?: () => void) {
@@ -260,7 +263,7 @@ export default function AcompanhamentoDesligamento({
           colaboradorId,
           tipoAviso: tipo,
           dataComunicacao: comunicacao,
-          diasAviso: tipo === "trabalhado" ? diasUsados : null,
+          diasAviso: temAvisoTrabalhado(tipo) ? diasUsados : null,
           homologacaoNecessaria: precisaHomol,
           homologacaoData: homolData || null,
           homologacaoHora: homolHora || null,
@@ -285,41 +288,50 @@ export default function AcompanhamentoDesligamento({
   // ---------- formulário (novo ou edição) ----------
   const formulario = (
     <div className="space-y-4">
-      <fieldset className="space-y-2">
-        <legend className="label">Tipo de desligamento</legend>
-        <div className="grid gap-2 md:grid-cols-3">
-          {TIPOS.map((t) => (
-            <label
-              key={t}
-              className={`flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer text-sm ${
-                tipo === t ? "border-brand-500 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-300"
-              }`}
-            >
-              <input
-                type="radio"
-                name="tipo_aviso"
-                value={t}
-                checked={tipo === t}
-                onChange={() => setTipo(t)}
-                className="mt-1"
-              />
-              <span>
-                <span className="font-semibold text-slate-900 block">{ROTULO_TIPO_AVISO[t]}</span>
-                <span className="text-xs text-slate-500">{DICA_TIPO_AVISO[t]}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      {[
+        { titulo: "A empresa desliga o colaborador", tipos: TIPOS_EMPRESA, colunas: "md:grid-cols-3" },
+        { titulo: "O colaborador pede demissão", tipos: TIPOS_PEDIDO, colunas: "md:grid-cols-2" },
+      ].map((grupo) => (
+        <fieldset key={grupo.titulo} className="space-y-2">
+          <legend className="label">{grupo.titulo}</legend>
+          <div className={`grid gap-2 ${grupo.colunas}`}>
+            {grupo.tipos.map((t) => (
+              <label
+                key={t}
+                className={`flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer text-sm ${
+                  tipo === t ? "border-brand-500 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="tipo_aviso"
+                  value={t}
+                  checked={tipo === t}
+                  onChange={() => setTipo(t)}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="font-semibold text-slate-900 block">{ROTULO_TIPO_AVISO[t]}</span>
+                  <span className="text-xs text-slate-500">{DICA_TIPO_AVISO[t]}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))}
 
       <div className="grid gap-3 md:grid-cols-3">
         <div>
           <label className="label" htmlFor="desl-comunicacao">
-            {tipo === "acordo" ? "Data do acordo assinado" : "Data da comunicação"}
+            {tipo === "acordo"
+              ? "Data do acordo assinado"
+              : ehPedidoDemissao(tipo)
+              ? "Data do pedido de demissão"
+              : "Data da comunicação"}
           </label>
           <DateInput id="desl-comunicacao" value={comunicacao} onChange={setComunicacao} className="input" />
         </div>
-        {tipo === "trabalhado" && (
+        {temAvisoTrabalhado(tipo) && (
           <div>
             <label className="label" htmlFor="desl-dias">
               Dias de aviso
@@ -332,7 +344,11 @@ export default function AcompanhamentoDesligamento({
               placeholder={`${diasAuto} (automático)`}
               className="input"
             />
-            <p className="text-xs text-slate-500 mt-1">30 dias + 3 por ano de casa. Deixe vazio para calcular.</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {ehPedidoDemissao(tipo)
+                ? "No pedido de demissão são 30 dias. Deixe vazio para usar 30."
+                : "30 dias + 3 por ano de casa. Deixe vazio para calcular."}
+            </p>
           </div>
         )}
       </div>
@@ -445,7 +461,15 @@ export default function AcompanhamentoDesligamento({
   const hom = situacaoHomologacao(d, hoje);
   const prog = progressoAviso(d, hoje);
   const tipoComunicacao =
-    d.tipo_aviso === "acordo" ? "Acordo assinado" : d.tipo_aviso === "indenizado" ? "Dispensa comunicada, aviso indenizado" : "Aviso prévio comunicado";
+    d.tipo_aviso === "acordo"
+      ? "Acordo assinado"
+      : d.tipo_aviso === "indenizado"
+      ? "Dispensa comunicada, aviso indenizado"
+      : d.tipo_aviso === "pedido_cumprindo"
+      ? "Pedido de demissão recebido, aviso a cumprir"
+      : d.tipo_aviso === "pedido_sem_cumprir"
+      ? "Pedido de demissão recebido, aviso não cumprido"
+      : "Aviso prévio comunicado";
   let n = 1;
 
   return (
@@ -468,7 +492,8 @@ export default function AcompanhamentoDesligamento({
           <Etapa numero={n++} tom="feito" titulo={tipoComunicacao} pilula="Feito">
             <p className="text-sm text-slate-500">
               {br(d.data_comunicacao)}
-              {d.tipo_aviso !== "trabalhado" && " · o contrato terminou nesta data"}
+              {!temAvisoTrabalhado(d.tipo_aviso) && " · o contrato terminou nesta data"}
+              {d.tipo_aviso === "pedido_sem_cumprir" && " · a empresa pode descontar 30 dias das verbas"}
             </p>
             <a href="#carta-aviso" className="text-sm text-brand-600 hover:underline inline-block">
               Gerar a carta de aviso (PDF ou Word)

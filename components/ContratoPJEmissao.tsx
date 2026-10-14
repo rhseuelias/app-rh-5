@@ -5,14 +5,21 @@ export default function ContratoPJEmissao({
   colaboradorId,
   bloqueadoMotivo,
   assinaturaUrl,
+  modeloRotulo,
+  comercial = false,
 }: {
   colaboradorId: string;
   bloqueadoMotivo: string | null;
   assinaturaUrl: string | null;
+  /** Nome do modelo de contrato que será emitido para este colaborador. */
+  modeloRotulo?: string;
+  /** Modelo comercial (BDU): contratante e testemunhas assinam à mão. */
+  comercial?: boolean;
 }) {
   return (
     <div className="space-y-3 pt-3 border-t border-slate-100 mt-3">
       <h3 className="text-sm font-medium text-slate-700">📝 Emitir contrato</h3>
+      {modeloRotulo && !bloqueadoMotivo && <p className="text-xs text-slate-500">Modelo: {modeloRotulo}</p>}
 
       {bloqueadoMotivo ? (
         <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">{bloqueadoMotivo}</p>
@@ -22,9 +29,13 @@ export default function ContratoPJEmissao({
             <a href={`/api/contratos-pj/${colaboradorId}/word`} className="btn-secondary text-sm">
               ⬇️ Baixar contrato (Word)
             </a>
-            <Link href="/configuracoes/contrato-pj" className="text-xs text-brand-600 hover:underline">
-              ⚙️ Configurar assinaturas fixas (Salão + testemunhas)
-            </Link>
+            {comercial ? (
+              <span className="text-xs text-slate-500">Contratante e testemunhas assinam à mão no papel.</span>
+            ) : (
+              <Link href="/configuracoes/contrato-pj" className="text-xs text-brand-600 hover:underline">
+                ⚙️ Configurar assinaturas fixas (Salão + testemunhas)
+              </Link>
+            )}
           </div>
 
           <div className="space-y-2">

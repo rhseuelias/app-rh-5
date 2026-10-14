@@ -19,7 +19,7 @@ import type { Colaborador, ConfigAssinaturasPJ } from "@/types/db";
 // Aceita tanto o cliente autenticado (createClient) quanto o cliente admin
 // (createAdminClient, usado no fluxo público do link de assinatura, que não
 // tem sessão de login) — só precisamos do .storage daqui.
-type SupabaseComStorage = {
+export type SupabaseComStorage = {
   storage: {
     from: (bucket: string) => {
       download: (path: string) => Promise<{ data: Blob | null; error: unknown }>;
@@ -45,7 +45,7 @@ const MESES = [
 ];
 
 /** "2026-09-21" -> "21 de setembro de 2026". Sem data cadastrada, usa hoje. */
-function dataPorExtenso(iso: string | null): string {
+export function dataPorExtenso(iso: string | null): string {
   const base = iso && iso.length >= 10 ? iso.slice(0, 10) : new Date().toISOString().slice(0, 10);
   const [ano, mes, dia] = base.split("-").map(Number);
   const diaSemZero = String(dia).replace(/^0/, "");
@@ -85,7 +85,7 @@ function tipoImagemDocx(bytes: Uint8Array): "png" | "jpg" | "gif" | "bmp" {
   return "png"; // desconhecido — chute seguro, a maioria dos uploads é print/png
 }
 
-async function baixarImagem(
+export async function baixarImagem(
   supabase: SupabaseComStorage,
   path: string | null | undefined
 ): Promise<{ bytes: Uint8Array; tipo: "png" | "jpg" | "gif" | "bmp" } | null> {
@@ -102,7 +102,7 @@ async function baixarImagem(
 
 /** Uma assinatura dentro de uma célula do rodapé: imagem (se tiver) em cima
  * da linha, com o rótulo embaixo — igual ao modelo em PDF. */
-function celulaAssinatura(
+export function celulaAssinatura(
   rotulo: string,
   imagem: { bytes: Uint8Array; tipo: "png" | "jpg" | "gif" | "bmp" } | null
 ): TableCell {

@@ -3,13 +3,24 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase-server";
 import { souAssistente } from "@/lib/permissoes";
-import { calcularPrazos, dataValida, diasDeAviso, hojeBrasilia, type TipoAviso } from "@/lib/desligamento";
+import {
+  TIPOS_AVISO,
+  calcularPrazos,
+  dataValida,
+  diasPadraoDoTipo,
+  hojeBrasilia,
+  temAvisoTrabalhado,
+  type TipoAviso,
+} from "@/lib/desligamento";
 
 export type RespostaDesligamento = { ok: true } | { ok: false; erro: string };
 
 function mensagem(m: string): string {
   if (/does not exist|schema cache/i.test(m)) {
     return "Falta criar a tabela no banco. Rode o arquivo migration_025_desligamento_avisos.sql no Supabase.";
+  }
+  if (/desligamentos_tipo_aviso_check|check constraint/i.test(m)) {
+    return "Falta liberar o pedido de demissão no banco. Rode o arquivo migration_034_pedido_demissao.sql no Supabase.";
   }
   if (/row-level security|permission denied|policy/i.test(m)) return "O banco não permitiu salvar (falta permissão).";
   return m;
@@ -46,7 +57,7 @@ export async function salvarDesligamento(e: EntradaDesligamento): Promise<Respos
   const bloqueio = await podeUsar();
   if (bloqueio) return bloqueio;
 
-  if (!["trabalhado", "indenizado", "acordo"].includes(e.tipoAviso)) return { ok: false, erro: "Escolha o tipo." };
+  if (!TIPOS_AVISO.includes(e.tipoAviso)) return { ok: false, erro: "Escolha o tipo." };
   if (!dataValida(e.dataComunicacao)) return { ok: false, erro: "Confira a data da comunicação." };
   if (e.homologacaoNecessaria && e.homologacaoData && !dataValida(e.homologacaoData)) {
     return { ok: false, erro: "Confira a data da homologação." };
@@ -61,8 +72,10 @@ export async function salvarDesligamento(e: EntradaDesligamento): Promise<Respos
   if (!colab) return { ok: false, erro: "Colaborador não encontrado." };
 
   let dias: number | null = null;
-  if (e.tipoAviso === "trabalhado") {
-    dias = e.diasAviso ?? diasDeAviso((colab as { data_admissao: string | null }).data_admissao, e.dataComunicacao);
+  if (temAvisoTrabalhado(e.tipoAviso)) {
+    dias =
+      e.diasAviso ??
+      diasPadraoDoTipo(e.tipoAviso, (colab as { data_admissao: string | null }).data_admissao, e.dataComunicacao);
     if (!Number.isInteger(dias) || dias < 1 || dias > 90) {
       return { ok: false, erro: "Os dias do aviso devem ficar entre 1 e 90." };
     }

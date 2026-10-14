@@ -7,19 +7,44 @@
 // pode exigir — por isso ela pode ser marcada como "dispensada".
 // Confirme sempre com a contabilidade.
 
-export type TipoAviso = "trabalhado" | "indenizado" | "acordo";
+// trabalhado / indenizado / acordo = a empresa desliga.
+// pedido_cumprindo / pedido_sem_cumprir = o colaborador pede demissão.
+export type TipoAviso = "trabalhado" | "indenizado" | "acordo" | "pedido_cumprindo" | "pedido_sem_cumprir";
+
+export const TIPOS_AVISO: TipoAviso[] = [
+  "trabalhado",
+  "indenizado",
+  "acordo",
+  "pedido_cumprindo",
+  "pedido_sem_cumprir",
+];
 
 export const ROTULO_TIPO_AVISO: Record<TipoAviso, string> = {
   trabalhado: "Aviso trabalhado",
   indenizado: "Aviso indenizado",
   acordo: "Acordo consensual",
+  pedido_cumprindo: "Pedido de demissão, cumprindo o aviso",
+  pedido_sem_cumprir: "Pedido de demissão, sem cumprir o aviso",
 };
 
 export const DICA_TIPO_AVISO: Record<TipoAviso, string> = {
-  trabalhado: "O colaborador cumpre o aviso. O prazo conta a partir do último dia de trabalho.",
-  indenizado: "O contrato termina na data da comunicação. O prazo conta a partir dela.",
+  trabalhado: "A empresa desliga e o colaborador cumpre o aviso. O prazo conta a partir do último dia de trabalho.",
+  indenizado: "A empresa desliga. O contrato termina na data da comunicação. O prazo conta a partir dela.",
   acordo: "Acordo entre as duas partes (art. 484-A). Aviso pago a 50%, multa do FGTS de 20%.",
+  pedido_cumprindo: "O colaborador pede demissão e trabalha os 30 dias de aviso. O prazo conta a partir do último dia.",
+  pedido_sem_cumprir:
+    "O colaborador pede demissão e não cumpre o aviso. A empresa pode descontar 30 dias das verbas (art. 487, § 2º).",
 };
+
+/** O colaborador pediu demissão (não foi a empresa que desligou). */
+export function ehPedidoDemissao(tipo: TipoAviso): boolean {
+  return tipo === "pedido_cumprindo" || tipo === "pedido_sem_cumprir";
+}
+
+/** Tem período de aviso trabalhado (com contagem de dias). */
+export function temAvisoTrabalhado(tipo: TipoAviso): boolean {
+  return tipo === "trabalhado" || tipo === "pedido_cumprindo";
+}
 
 export const PRAZO_PAGAMENTO_DIAS = 10;
 export const DIAS_ATENCAO = 5;
@@ -105,12 +130,17 @@ export function diasDeAviso(admissao: string | null, comunicacao: string): numbe
   return Math.min(90, 30 + 3 * anosCompletos(admissao, comunicacao));
 }
 
+/** Dias de aviso sugeridos: no pedido de demissão são sempre 30; quando a empresa desliga, é o proporcional. */
+export function diasPadraoDoTipo(tipo: TipoAviso, admissao: string | null, comunicacao: string): number {
+  return tipo === "pedido_cumprindo" ? 30 : diasDeAviso(admissao, comunicacao);
+}
+
 export function calcularPrazos(
   tipo: TipoAviso,
   comunicacao: string,
   diasAviso: number | null
 ): { ultimoDia: string; prazoPagamento: string } {
-  const ultimoDia = tipo === "trabalhado" ? somarDias(comunicacao, diasAviso ?? 30) : comunicacao;
+  const ultimoDia = temAvisoTrabalhado(tipo) ? somarDias(comunicacao, diasAviso ?? 30) : comunicacao;
   return { ultimoDia, prazoPagamento: somarDias(ultimoDia, PRAZO_PAGAMENTO_DIAS) };
 }
 
@@ -148,9 +178,9 @@ export interface ProgressoAviso {
   terminou: boolean;
 }
 
-/** Só para o aviso trabalhado: em que dia do aviso estamos. */
+/** Só quando há aviso trabalhado: em que dia do aviso estamos. */
 export function progressoAviso(d: Desligamento, hoje: string): ProgressoAviso | null {
-  if (d.tipo_aviso !== "trabalhado" || !d.dias_aviso) return null;
+  if (!temAvisoTrabalhado(d.tipo_aviso) || !d.dias_aviso) return null;
   const total = d.dias_aviso;
   const decorridos = diasEntre(d.data_comunicacao, hoje);
   const diaAtual = Math.max(0, Math.min(total, decorridos));
