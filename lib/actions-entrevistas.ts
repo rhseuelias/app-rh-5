@@ -21,12 +21,15 @@ const TABELAS: Record<ChaveTabela, { tabela: string; colunas: string[] }> = {
     tabela: "sel_entrevistas",
     colunas: [
       "candidato_id", "etapa", "data", "hora", "tipo", "entrevistador", "status", "link_local", "resumo",
-      "aprofundar", "recomendacao", "proxima_acao", "proxima_data",
+      "aprofundar", "recomendacao", "proxima_acao", "proxima_data", "roteiro", "nota_media",
     ],
   },
 };
 
 function mensagem(m: string): string {
+  if (/roteiro|nota_media/i.test(m)) {
+    return "Falta criar as colunas do roteiro no banco. Rode o arquivo migration_031_roteiro_entrevista.sql no Supabase (SQL Editor).";
+  }
   if (/posicoes/i.test(m)) {
     return "Falta criar a coluna de posições no banco. Rode o arquivo migration_029_posicoes.sql no Supabase (SQL Editor).";
   }

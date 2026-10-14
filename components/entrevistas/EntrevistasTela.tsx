@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { corDaEmpresa } from "@/lib/empresa-cores";
+import RoteiroFicha from "@/components/entrevistas/RoteiroFicha";
+import type { CargoDesc } from "@/lib/cargos";
 import { createClient } from "@/lib/supabase-browser";
 import { atualizarRegistro, criarRegistro, excluirRegistro, salvarAvaliacao, type RespostaEnt } from "@/lib/actions-entrevistas";
 import {
@@ -45,6 +47,7 @@ interface Props {
   candidatosIniciais: CandidatoSel[];
   entrevistasIniciais: EntrevistaSel[];
   avaliacoesIniciais: AvaliacaoSel[];
+  cargos: CargoDesc[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -539,7 +542,7 @@ function ModalEntrevista({ cands, ents, vagaPor, candidatoIdInicial, hoje, execu
 /* Tela principal                                                      */
 /* ------------------------------------------------------------------ */
 
-export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, entrevistasIniciais, avaliacoesIniciais }: Props) {
+export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, entrevistasIniciais, avaliacoesIniciais, cargos }: Props) {
   const [vagas, setVagas] = useState(vagasIniciais);
   const [cands, setCands] = useState(candidatosIniciais);
   const [ents, setEnts] = useState(entrevistasIniciais);
@@ -1221,6 +1224,17 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                     <Campo rotulo="Link ou local">
                       <TextoSalvo nome="link_local" tipo="text" valor={e.link_local} aoSalvar={(x) => patchEnt(e.id, { link_local: x })} />
                     </Campo>
+                    {(e.etapa === "Entrevista RH" || e.etapa === "Etapa técnica") && (
+                      <RoteiroFicha
+                        key={`${e.id}-${e.etapa}-${e.respondida_em ?? ""}`}
+                        e={e}
+                        candidatoNome={c.nome}
+                        vaga={vagaPor.get(c.vaga_id)}
+                        cargos={cargos}
+                        aoSalvar={(campos) => patchEnt(e.id, campos)}
+                        aoLocal={(campos) => setEnts((p) => p.map((x) => (x.id === e.id ? { ...x, ...campos } : x)))}
+                      />
+                    )}
                     <Campo rotulo="Resumo da conversa">
                       <TextoSalvo longo nome="resumo" valor={e.resumo} placeholder="O que o candidato contou, com exemplos concretos." aoSalvar={(x) => patchEnt(e.id, { resumo: x })} />
                     </Campo>

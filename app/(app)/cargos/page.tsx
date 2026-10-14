@@ -20,5 +20,6 @@ export default async function CargosPage() {
       </div>
     );
   }
-  return <CargosTela iniciais={(data ?? []) as CargoDesc[]} />;
+  const cargos = ((data ?? []) as CargoDesc[]).map((c) => ({ ...c, cenarios: c.cenarios ?? [] }));
+  return <CargosTela iniciais={cargos} />;
 }

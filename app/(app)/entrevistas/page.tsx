@@ -1,16 +1,18 @@
 import { createClient } from "@/lib/supabase-server";
 import EntrevistasTela from "@/components/entrevistas/EntrevistasTela";
+import type { CargoDesc } from "@/lib/cargos";
 import type { AvaliacaoSel, CandidatoSel, EntrevistaSel, Vaga } from "@/lib/entrevistas";
 
 export const dynamic = "force-dynamic";
 
 export default async function EntrevistasPage() {
   const supabase = createClient();
-  const [vagasRes, candRes, entRes, avalRes] = await Promise.all([
+  const [vagasRes, candRes, entRes, avalRes, cargosRes] = await Promise.all([
     supabase.from("sel_vagas").select("*").order("data_abertura", { ascending: false }),
     supabase.from("sel_candidatos").select("*").order("created_at", { ascending: true }),
     supabase.from("sel_entrevistas").select("*").order("data", { ascending: true }),
     supabase.from("sel_avaliacoes").select("*"),
+    supabase.from("cargos_desc").select("*"),
   ]);
 
   const erro = vagasRes.error ?? candRes.error ?? entRes.error ?? avalRes.error;
@@ -39,6 +41,7 @@ export default async function EntrevistasPage() {
       candidatosIniciais={candidatos}
       entrevistasIniciais={entrevistas}
       avaliacoesIniciais={(avalRes.data ?? []) as AvaliacaoSel[]}
+      cargos={((cargosRes.data ?? []) as CargoDesc[]).map((c) => ({ ...c, cenarios: c.cenarios ?? [] }))}
     />
   );
 }

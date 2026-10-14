@@ -83,6 +83,12 @@ export interface EntrevistaSel {
   recomendacao: string | null;
   proxima_acao: string | null;
   proxima_data: string | null;
+  roteiro?: unknown;
+  nota_media?: number | null;
+  token?: string | null;
+  token_expira?: string | null;
+  respondida_em?: string | null;
+  respondida_por?: string | null;
 }
 
 export interface AvaliacaoSel {

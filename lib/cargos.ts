@@ -11,6 +11,11 @@ export interface Indicador {
   meta: string;
   freq: string;
 }
+export interface CenarioCargo {
+  titulo: string;
+  /** O que se espera ouvir do candidato (um item por linha na edição). */
+  sinais: string[];
+}
 export interface CargoDesc {
   id: string;
   cargo: string;
@@ -29,11 +34,12 @@ export interface CargoDesc {
   habilitacao: string | null;
   tecnicos: string[];
   comportamentais: string[];
+  cenarios: CenarioCargo[];
 }
 
 export const CAMPOS_CARGO = [
   "cargo", "empresa", "departamento", "cbo", "identificador", "missao", "sumaria", "resp", "sucesso", "resultados",
-  "indicadores", "escolaridade", "experiencia", "habilitacao", "tecnicos", "comportamentais",
+  "indicadores", "escolaridade", "experiencia", "habilitacao", "tecnicos", "comportamentais", "cenarios",
 ] as const;
 
 export function cargoCompleto(c: CargoDesc): boolean {

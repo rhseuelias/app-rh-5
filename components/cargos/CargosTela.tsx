@@ -101,7 +101,7 @@ function ModalNovo({ aoFechar, aoCriar }: { aoFechar: () => void; aoCriar: (c: C
     if (!r.ok) return setMsg(r.erro);
     aoCriar({
       id: r.id as string, cbo: null, identificador: null, missao: null, sumaria: null, resp: [], sucesso: [], resultados: [], indicadores: [],
-      escolaridade: null, experiencia: null, habilitacao: null, tecnicos: [], comportamentais: [], ...campos,
+      escolaridade: null, experiencia: null, habilitacao: null, tecnicos: [], comportamentais: [], cenarios: [], ...campos,
     } as CargoDesc);
   }
   return (
@@ -269,6 +269,20 @@ function Documento({ c }: { c: CargoDesc }) {
           </div>
         </div>
       </Secao>
+      <Secao titulo="Cenários práticos (entrevista técnica)">
+        {c.cenarios.length ? (
+          <div className="space-y-2 text-sm">
+            {c.cenarios.map((x, i) => (
+              <div key={i} className="border border-brand-200 rounded-lg px-3 py-2">
+                <b>{x.titulo}</b>
+                <Lista itens={x.sinais} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className="text-ink-500">Sem cenários. Eles aparecem no roteiro da entrevista técnica deste cargo.</span>
+        )}
+      </Secao>
       <Secao titulo="Termo de ciência">
         <p className="text-sm text-ink-600">
           Declaro que recebi, li e compreendi a descrição do meu cargo, incluindo minhas responsabilidades, atividades, resultados esperados, indicadores e comportamentos esperados. Estou ciente de que meu desempenho será avaliado considerando o que faço, os resultados que entrego e a forma como trabalho.
@@ -399,6 +413,37 @@ function Editor({ c, aoSalvar, aoCancelar, salvando, erro }: { c: CargoDesc; aoS
         </div>
       </div>
 
+      <div className="space-y-2">
+        <h4 className="font-display text-sm uppercase tracking-wider">Cenários práticos (entrevista técnica)</h4>
+        <p className="text-sm text-ink-500">Situações reais do cargo. O supervisor marca o que o candidato respondeu e a nota sai sozinha.</p>
+        {d.cenarios.map((x, i) => (
+          <div key={i} className="rounded-xl border border-brand-200 bg-white p-3 space-y-2">
+            <div className="flex gap-2">
+              <input
+                name="cenario_titulo"
+                className="input flex-1"
+                placeholder="Situação (ex.: Cliente alterado reclama da demora)"
+                value={x.titulo}
+                onChange={(e) => set("cenarios", d.cenarios.map((y, j) => (j === i ? { ...y, titulo: e.target.value } : y)))}
+              />
+              <button type="button" className="btn-secondary !px-3 text-red-700" onClick={() => set("cenarios", d.cenarios.filter((_, j) => j !== i))}>
+                Remover
+              </button>
+            </div>
+            <textarea
+              className="input"
+              rows={4}
+              placeholder="O que se espera ouvir do candidato, um item por linha"
+              value={juntar(x.sinais)}
+              onChange={(e) => set("cenarios", d.cenarios.map((y, j) => (j === i ? { ...y, sinais: e.target.value.split("\n") } : y)))}
+            />
+          </div>
+        ))}
+        <button type="button" className="btn-secondary" onClick={() => set("cenarios", [...d.cenarios, { titulo: "", sinais: [] }])}>
+          + Cenário
+        </button>
+      </div>
+
       {erro && <p className="text-sm text-red-700">{erro}</p>}
       <div className="flex justify-end gap-2">
         <button type="button" className="btn-secondary" onClick={aoCancelar}>
@@ -417,6 +462,7 @@ function Editor({ c, aoSalvar, aoCancelar, salvando, erro }: { c: CargoDesc; aoS
               indicadores: d.indicadores.filter((r) => r.nome.trim()),
               tecnicos: linhas(juntar(d.tecnicos)),
               comportamentais: linhas(juntar(d.comportamentais)),
+              cenarios: d.cenarios.map((x) => ({ titulo: x.titulo.trim(), sinais: x.sinais.map((y) => y.trim()).filter(Boolean) })).filter((x) => x.titulo),
             })
           }
         >
