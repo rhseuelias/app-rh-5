@@ -5,6 +5,7 @@ import type { Empresa } from "@/types/db";
 import { salvarEmpresa, excluirEmpresa } from "@/lib/actions";
 import CampoMoeda from "@/components/campos/CampoMoeda";
 import CampoDocumento from "@/components/campos/CampoDocumento";
+import DadosCadastraisCampos from "@/components/campos/DadosCadastraisCampos";
 
 export default function EmpresaForm({
   empresa,
@@ -48,6 +49,21 @@ export default function EmpresaForm({
         name="faturamento_mensal"
         defaultValue={empresa?.faturamento_mensal ?? 0}
       />
+
+      <div className="md:col-span-3 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-800">Dados cadastrais da empresa</h3>
+          <p className="text-xs text-slate-500">
+            Esses dados ficam guardados aqui e saem sozinhos nos documentos, como o Aviso Prévio.
+          </p>
+        </div>
+        <DadosCadastraisCampos
+          idBase={`empresa-${empresa?.id ?? "nova"}`}
+          valores={empresa}
+          dicaRazao="Nome completo, como está no CNPJ."
+        />
+      </div>
+
       <div>
         <label className="label">Absenteísmo (%)</label>
         <input

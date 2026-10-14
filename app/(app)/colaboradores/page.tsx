@@ -33,9 +33,14 @@ export default async function ColaboradoresPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Colaboradores</h1>
           <p className="text-slate-500 text-sm">{todos.length} cadastrados</p>
         </div>
-        <Link href="/colaboradores/novo" className="btn-primary whitespace-nowrap">
-          + Novo colaborador
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/colaboradores/relatorio" className="btn-secondary whitespace-nowrap">
+            📋 Relatório por unidade
+          </Link>
+          <Link href="/colaboradores/novo" className="btn-primary whitespace-nowrap">
+            + Novo colaborador
+          </Link>
+        </div>
       </div>
 
       <details className="group card">

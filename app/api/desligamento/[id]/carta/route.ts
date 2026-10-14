@@ -4,8 +4,10 @@ import { souAssistente } from "@/lib/permissoes";
 import { disposicaoPdf } from "@/lib/pdf-disposicao";
 import { gerarCartaPdf } from "@/lib/carta-desligamento";
 import { gerarCartaDocx } from "@/lib/carta-desligamento-docx";
-import { empresaConhecidaPorCnpj, type DadosCarta } from "@/lib/carta-dados";
+import type { DadosCarta } from "@/lib/carta-dados";
+import { combinarDadosEmpresa } from "@/lib/dados-empresa";
 import type { Desligamento } from "@/lib/desligamento";
+import type { Empresa, Unidade } from "@/types/db";
 
 export const dynamic = "force-dynamic";
 
@@ -38,36 +40,31 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     unidade_id: string | null;
   };
 
-  // padrões da empresa: o que vier no link tem prioridade; depois o endereço
-  // já conhecido do CNPJ; depois o que existe no cadastro
+  // dados da empresa: o que vier no link tem prioridade; o resto vem do cadastro
+  // de Projeção de Custo > Empresas / Unidades (unidade primeiro, depois empresa)
   const [{ data: emp }, { data: uni }] = await Promise.all([
     colab.empresa_id
-      ? supabase.from("empresas").select("nome, cnpj").eq("id", colab.empresa_id).maybeSingle()
+      ? supabase.from("empresas").select("*").eq("id", colab.empresa_id).maybeSingle()
       : Promise.resolve({ data: null }),
     colab.unidade_id
-      ? supabase.from("unidades").select("cnpj").eq("id", colab.unidade_id).maybeSingle()
+      ? supabase.from("unidades").select("*").eq("id", colab.unidade_id).maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
+  const cadastro = combinarDadosEmpresa(emp as Empresa | null, uni as Unidade | null);
 
   const sp = new URL(req.url).searchParams;
-  const cnpj =
-    campo(sp, "cnpj") ||
-    (uni as { cnpj: string | null } | null)?.cnpj ||
-    (emp as { cnpj: string | null } | null)?.cnpj ||
-    "";
-  const conhecida = empresaConhecidaPorCnpj(cnpj);
 
   const dados: DadosCarta = {
     tipo: desl.tipo_aviso,
     empresa: {
-      razao: campo(sp, "razao") || conhecida?.razao || (emp as { nome: string } | null)?.nome || "",
-      cnpj: conhecida?.cnpj && !campo(sp, "cnpj") ? conhecida.cnpj : cnpj,
-      endereco: campo(sp, "endereco") || conhecida?.endereco || "",
-      numero: campo(sp, "numero") || conhecida?.numero || "",
-      complemento: campo(sp, "complemento") || conhecida?.complemento || "",
-      bairro: campo(sp, "bairro") || conhecida?.bairro || "",
-      cidade: campo(sp, "cidade") || conhecida?.cidade || "",
-      uf: (campo(sp, "uf") || conhecida?.uf || "").toUpperCase().slice(0, 2),
+      razao: campo(sp, "razao") || cadastro.razao,
+      cnpj: campo(sp, "cnpj") || cadastro.cnpj,
+      endereco: campo(sp, "endereco") || cadastro.endereco,
+      numero: campo(sp, "numero") || cadastro.numero,
+      complemento: campo(sp, "complemento") || cadastro.complemento,
+      bairro: campo(sp, "bairro") || cadastro.bairro,
+      cidade: campo(sp, "cidade") || cadastro.cidade,
+      uf: (campo(sp, "uf") || cadastro.uf).toUpperCase().slice(0, 2),
     },
     colaborador: {
       nome: colab.nome,

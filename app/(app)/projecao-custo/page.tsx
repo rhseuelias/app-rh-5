@@ -10,6 +10,7 @@ import { corDaEmpresa } from "@/lib/empresa-cores";
 import EmpresaForm from "@/components/EmpresaForm";
 import UnidadesForm from "@/components/UnidadesForm";
 import FranquiasBSE, { type Franquia } from "@/components/projecao/FranquiasBSE";
+import { cadastroEmpresaCompleto } from "@/lib/dados-empresa";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,10 @@ export default async function ProjecaoCustoPage() {
   const listaEmpresas = (empresas ?? []) as Empresa[];
   const listaUnidades = (unidades ?? []) as Unidade[];
   const listaFranquias = (franquias ?? []) as Franquia[];
+
+  // Se as colunas de dados cadastrais ainda não existem no banco (migration_032 não rodada),
+  // avisa na tela em vez de falhar em silêncio.
+  const cadastroPronto = listaEmpresas.length === 0 || "razao_social" in listaEmpresas[0];
 
   const porEmpresa = listaEmpresas.map((empresa) => {
     const colaboradoresDaEmpresa = listaColaboradores.filter((c) => c.empresa_id === empresa.id);
@@ -137,10 +142,12 @@ export default async function ProjecaoCustoPage() {
                 </dd>
               </dl>
 
-              <UnidadesForm
-                empresaId={empresa.id}
-                unidades={listaUnidades.filter((u) => u.empresa_id === empresa.id)}
-              />
+              <p className="text-xs text-slate-400 mt-3 border-t border-slate-100 pt-3">
+                {listaUnidades.filter((u) => u.empresa_id === empresa.id).length} filial(is)/unidade(s).{" "}
+                <a href="#empresas-unidades" className="text-brand-600 hover:underline">
+                  Dados e filiais: Empresas / Unidades ↓
+                </a>
+              </p>
             </div>
           );
         })}
@@ -158,22 +165,44 @@ export default async function ProjecaoCustoPage() {
 
       <FranquiasBSE franquias={listaFranquias} tabelaFaltando={Boolean(erroFranquias)} />
 
-      <div className="card">
-        <h2 className="font-medium text-slate-900 mb-3">Empresas / Unidades</h2>
+      <div id="empresas-unidades" className="card scroll-mt-6">
+        <h2 className="font-medium text-slate-900">Empresas / Unidades</h2>
+        <p className="text-sm text-slate-500 mb-3">
+          Cadastre aqui os dados de cada empresa e unidade (razão social, CNPJ e endereço). Eles servem de fonte para
+          os documentos do app, como o Aviso Prévio, e saem preenchidos sozinhos.
+        </p>
+
+        {!cadastroPronto && (
+          <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800 mb-4">
+            Falta liberar os campos de endereço no Supabase. Rode o arquivo <strong>migration_032_cadastro_empresas.sql</strong>{" "}
+            no SQL Editor do Supabase e depois recarregue esta página. Enquanto isso, o endereço não é gravado.
+          </div>
+        )}
+
         <div className="space-y-4">
-          {listaEmpresas.map((e) => (
-            <details key={e.id} className="border border-slate-100 rounded-lg p-3">
-              <summary className="cursor-pointer text-sm font-medium text-slate-700">
-                {e.nome}
-              </summary>
-              <div className="mt-3">
-                <EmpresaForm
-                  empresa={e}
-                  unidadesCount={listaUnidades.filter((u) => u.empresa_id === e.id).length}
-                />
-              </div>
-            </details>
-          ))}
+          {listaEmpresas.map((e) => {
+            const unidadesDaEmpresa = listaUnidades.filter((u) => u.empresa_id === e.id);
+            const completo = cadastroEmpresaCompleto(e);
+            return (
+              <details key={e.id} className="border border-slate-100 rounded-lg p-3">
+                <summary className="cursor-pointer text-sm font-medium text-slate-700 flex items-center gap-2 flex-wrap">
+                  <span>{e.nome}</span>
+                  <span className="text-xs font-normal text-slate-400">
+                    {unidadesDaEmpresa.length} unidade{unidadesDaEmpresa.length !== 1 ? "s" : ""}
+                  </span>
+                  {completo ? (
+                    <span className="badge bg-emerald-100 text-emerald-700">Dados completos</span>
+                  ) : (
+                    <span className="badge bg-amber-100 text-amber-800">Faltam dados</span>
+                  )}
+                </summary>
+                <div className="mt-3">
+                  <EmpresaForm empresa={e} unidadesCount={unidadesDaEmpresa.length} />
+                </div>
+                <UnidadesForm empresaId={e.id} unidades={unidadesDaEmpresa} />
+              </details>
+            );
+          })}
         </div>
 
         <details className="mt-4">

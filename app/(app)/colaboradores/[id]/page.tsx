@@ -39,6 +39,7 @@ import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes"
 import { assistentePodeGerarFicha } from "@/lib/acesso-assistente";
 import AcompanhamentoDesligamento from "@/components/desligamento/AcompanhamentoDesligamento";
 import { hojeBrasilia, type Desligamento } from "@/lib/desligamento";
+import { combinarDadosEmpresa } from "@/lib/dados-empresa";
 
 export const dynamic = "force-dynamic";
 
@@ -331,11 +332,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
           desligamento={desligamento}
           hoje={hojeBrasilia()}
           tabelaFaltando={tabelaDesligamentoFaltando}
-          empresaPadrao={{
-            razao: empresa?.nome ?? "",
-            cnpj: unidadeDoColaborador?.cnpj ?? empresa?.cnpj ?? "",
-          }}
-          unidadeId={c.unidade_id}
+          empresaPadrao={combinarDadosEmpresa(empresa, unidadeDoColaborador)}
         />
       )}
 

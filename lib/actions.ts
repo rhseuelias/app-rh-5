@@ -50,6 +50,25 @@ function str(formData: FormData, campo: string): string | null {
   return v && v !== "" ? String(v) : null;
 }
 
+// Dados cadastrais de empresa/unidade (razão social, CEP e endereço).
+// Fonte dos documentos como o Aviso Prévio — ver lib/dados-empresa.ts.
+function dadosCadastrais(formData: FormData) {
+  const texto = (campo: string) => {
+    const v = str(formData, campo)?.trim();
+    return v ? v : null;
+  };
+  return {
+    razao_social: texto("razao_social"),
+    cep: texto("cep"),
+    endereco: texto("endereco"),
+    numero: texto("numero"),
+    complemento: texto("complemento"),
+    bairro: texto("bairro"),
+    cidade: texto("cidade"),
+    uf: texto("uf")?.toUpperCase().slice(0, 2) ?? null,
+  };
+}
+
 // nomes de pessoas sempre em MAIÚSCULAS
 function maiusculo(v: string | null | undefined): string | null {
   const t = (v ?? "").trim().replace(/\s+/g, " ");
@@ -1278,14 +1297,20 @@ export async function salvarUnidade(formData: FormData) {
     cnpj: str(formData, "cnpj"),
     adiantamento_pct: adiantamento ? Number(adiantamento) : null,
   };
+  const completo = { ...payload, ...dadosCadastrais(formData) };
 
+  // Se a migration_032 ainda não foi rodada no Supabase, grava só o básico
+  // (como era antes) para não travar o cadastro.
   if (id) {
-    await supabase.from("unidades").update(payload).eq("id", id);
+    const { error } = await supabase.from("unidades").update(completo).eq("id", id);
+    if (error) await supabase.from("unidades").update(payload).eq("id", id);
   } else {
-    await supabase.from("unidades").insert(payload);
+    const { error } = await supabase.from("unidades").insert(completo);
+    if (error) await supabase.from("unidades").insert(payload);
   }
 
   revalidatePath("/projecao-custo");
+  revalidatePath("/colaboradores");
 }
 
 // Exclui uma filial/unidade. Nada é apagado em cascata — colaboradores e
@@ -2701,15 +2726,21 @@ export async function salvarEmpresa(formData: FormData) {
     treinamento_pct: num(formData, "treinamento_pct"),
     clima_pct: num(formData, "clima_pct"),
   };
+  const completo = { ...payload, ...dadosCadastrais(formData) };
 
+  // Se a migration_032 ainda não foi rodada no Supabase, grava só o básico
+  // (como era antes) para não travar o cadastro.
   if (id) {
-    await supabase.from("empresas").update(payload).eq("id", id);
+    const { error } = await supabase.from("empresas").update(completo).eq("id", id);
+    if (error) await supabase.from("empresas").update(payload).eq("id", id);
   } else {
-    await supabase.from("empresas").insert(payload);
+    const { error } = await supabase.from("empresas").insert(completo);
+    if (error) await supabase.from("empresas").insert(payload);
   }
 
   revalidatePath("/projecao-custo");
   revalidatePath("/dashboard");
+  revalidatePath("/colaboradores");
 }
 
 // Exclui uma empresa. Isso APAGA EM CASCATA todas as filiais/unidades dela

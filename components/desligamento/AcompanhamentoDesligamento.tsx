@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import DateInput from "@/components/DateInput";
-import { empresaConhecidaPorCnpj, type EmpresaCarta } from "@/lib/carta-dados";
+import type { EmpresaCarta } from "@/lib/carta-dados";
+import { cadastroEmpresaCompleto } from "@/lib/dados-empresa";
 import {
   marcarHomologacao,
   marcarPagamento,
@@ -61,9 +62,9 @@ interface Props {
   desligamento: Desligamento | null;
   hoje: string;
   tabelaFaltando: boolean;
-  /** Dados da empresa que já existem no sistema (a carta usa como padrão). */
-  empresaPadrao: { razao: string; cnpj: string };
-  unidadeId: string | null;
+  /** Dados da empresa/unidade vindos do cadastro (Projeção de Custo > Empresas / Unidades). */
+  empresaPadrao: EmpresaCarta;
+  unidadeId?: string | null;
 }
 
 type DadosEmpresaCarta = EmpresaCarta;
@@ -79,47 +80,24 @@ const CAMPOS_VAZIOS: DadosEmpresaCarta = {
   uf: "",
 };
 
-/** Bloco "Carta de aviso": PDF e Word no modelo da empresa. Empresas do grupo
- * já saem com o endereço; as outras guardam o que for digitado neste navegador. */
+/** Bloco "Carta de aviso": PDF e Word no modelo da empresa. Os dados da empresa
+ * vêm do cadastro em Projeção de Custo > Empresas / Unidades. Mudar aqui vale
+ * só para esta carta; para mudar de vez, edite no cadastro. */
 function CartaDeAviso({
   colaboradorId,
   tipoRotulo,
   empresaPadrao,
-  unidadeId,
 }: {
   colaboradorId: string;
   tipoRotulo: string;
-  empresaPadrao: { razao: string; cnpj: string };
-  unidadeId: string | null;
+  empresaPadrao: EmpresaCarta;
 }) {
-  const chave = `carta-empresa-v2-${unidadeId ?? "geral"}`;
   const [aberto, setAberto] = useState(false);
-  const [e, setE] = useState<DadosEmpresaCarta>(() => ({
-    ...CAMPOS_VAZIOS,
-    razao: empresaPadrao.razao,
-    cnpj: empresaPadrao.cnpj,
-    ...(empresaConhecidaPorCnpj(empresaPadrao.cnpj) ?? {}),
-  }));
-
-  useEffect(() => {
-    try {
-      const salvo = window.localStorage.getItem(chave);
-      if (salvo) setE((atual) => ({ ...atual, ...(JSON.parse(salvo) as Partial<DadosEmpresaCarta>) }));
-    } catch {
-      /* sem armazenamento do navegador: segue só com os padrões */
-    }
-  }, [chave]);
+  const [e, setE] = useState<DadosEmpresaCarta>(() => ({ ...CAMPOS_VAZIOS, ...empresaPadrao }));
+  const faltaCadastro = !cadastroEmpresaCompleto(e);
 
   function mudar(campo: keyof DadosEmpresaCarta, valor: string) {
-    setE((atual) => {
-      const novo = { ...atual, [campo]: valor };
-      try {
-        window.localStorage.setItem(chave, JSON.stringify(novo));
-      } catch {
-        /* ignora */
-      }
-      return novo;
-    });
+    setE((atual) => ({ ...atual, [campo]: valor }));
   }
 
   function link(formato: "pdf" | "docx") {
@@ -172,8 +150,24 @@ function CartaDeAviso({
             {campo("cidade", "Cidade")}
             {campo("uf", "UF")}
           </div>
-          <p className="text-xs text-slate-500">Fica guardado neste navegador para as próximas cartas desta unidade.</p>
+          <p className="text-xs text-slate-500">
+            O que você mudar aqui vale só para esta carta. Para mudar de vez, edite em{" "}
+            <a href="/projecao-custo#empresas-unidades" className="text-brand-600 hover:underline">
+              Projeção de Custo → Empresas / Unidades
+            </a>
+            .
+          </p>
         </div>
+      )}
+      {faltaCadastro && (
+        <p className="text-xs rounded-lg bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2">
+          Faltam dados da empresa no cadastro (CNPJ ou endereço), então a carta pode sair com campos em branco.
+          Cadastre em{" "}
+          <a href="/projecao-custo#empresas-unidades" className="underline">
+            Projeção de Custo → Empresas / Unidades
+          </a>
+          .
+        </p>
       )}
     </div>
   );
@@ -224,7 +218,6 @@ export default function AcompanhamentoDesligamento({
   hoje,
   tabelaFaltando,
   empresaPadrao,
-  unidadeId,
 }: Props) {
   const [pendente, iniciar] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
@@ -581,7 +574,6 @@ export default function AcompanhamentoDesligamento({
             colaboradorId={colaboradorId}
             tipoRotulo={ROTULO_TIPO_AVISO[d.tipo_aviso]}
             empresaPadrao={empresaPadrao}
-            unidadeId={unidadeId}
           />
 
           <div className="card space-y-2">

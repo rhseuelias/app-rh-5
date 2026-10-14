@@ -10,6 +10,15 @@ export interface Empresa {
   performance_pct: number | null;
   treinamento_pct: number | null;
   clima_pct: number | null;
+  // dados cadastrais (migration_032) — fonte para os documentos
+  razao_social?: string | null;
+  cep?: string | null;
+  endereco?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  uf?: string | null;
 }
 
 export interface Unidade {
@@ -19,6 +28,15 @@ export interface Unidade {
   cnpj: string | null;
   adiantamento_pct: 20 | 30 | 40 | null;
   created_at: string;
+  // dados cadastrais (migration_032) — fonte para os documentos
+  razao_social?: string | null;
+  cep?: string | null;
+  endereco?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  uf?: string | null;
 }
 
 export type EstadoCivil = "solteiro" | "casado" | "divorciado" | "viuvo" | "uniao_estavel";
