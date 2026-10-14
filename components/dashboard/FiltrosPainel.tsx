@@ -12,7 +12,7 @@ export interface OpcaoMes {
   rotulo: string; // "Outubro 2026"
 }
 
-/** Filtro de empresa (controle segmentado) e seletor de mês do Painel de RH.
+/** Filtro de empresa e seletor de mês do Painel de RH (visual do modelo 7).
  * Tudo vai pela URL (?empresa=&mes=), então dá pra favoritar/compartilhar. */
 export default function FiltrosPainel({
   empresas,
@@ -30,8 +30,13 @@ export default function FiltrosPainel({
     `/dashboard?empresa=${encodeURIComponent(empresa)}&mes=${encodeURIComponent(mes)}`;
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="inline-flex flex-wrap rounded-[10px] bg-[#f0e8df] p-[3px]" role="tablist" aria-label="Empresa">
+    <div className="flex flex-wrap items-center gap-2.5" style={{ fontFamily: "'Manrope', 'Inter', sans-serif" }}>
+      <div
+        className="inline-flex flex-wrap gap-1 rounded-full border bg-white p-1"
+        style={{ borderColor: "#d3dfdd" }}
+        role="tablist"
+        aria-label="Empresa"
+      >
         {empresas.map((o) => {
           const ativo = o.chave === empresaAtual;
           return (
@@ -40,9 +45,8 @@ export default function FiltrosPainel({
               href={href(o.chave, mesAtual)}
               role="tab"
               aria-selected={ativo}
-              className={`rounded-[8px] px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${
-                ativo ? "bg-white text-[#262626] shadow-[0_1px_2px_rgba(61,40,20,.1)]" : "text-[#5c5c5c] hover:text-[#262626]"
-              }`}
+              className="rounded-full px-3.5 py-1.5 text-[12.5px] font-bold transition-colors"
+              style={ativo ? { background: "#0f5c55", color: "#fff" } : { color: "#12302c" }}
             >
               {o.rotulo}
             </Link>
@@ -57,7 +61,8 @@ export default function FiltrosPainel({
         id="painel-mes"
         value={mesAtual}
         onChange={(e) => router.push(href(empresaAtual, e.target.value))}
-        className="rounded-[8px] border border-[#e7ddd2] bg-white px-3 py-2 text-[13px] font-semibold text-[#262626] focus:outline-none focus:ring-2 focus:ring-[#fbb26e]"
+        className="rounded-full border bg-white px-4 py-2 text-[12.5px] font-bold focus:outline-none focus:ring-2 focus:ring-[#0f5c55]"
+        style={{ borderColor: "#d3dfdd", color: "#12302c" }}
       >
         {meses.map((m) => (
           <option key={m.chave} value={m.chave}>

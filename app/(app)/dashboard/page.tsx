@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { CSSProperties, ReactNode } from "react";
 import { differenceInCalendarDays } from "date-fns";
 import { createClient } from "@/lib/supabase-server";
 import type {
@@ -23,27 +24,26 @@ import FiltrosPainel from "@/components/dashboard/FiltrosPainel";
 import IntegracaoPainel from "@/components/dashboard/IntegracaoPainel";
 import AvisosRescisoes from "@/components/dashboard/AvisosRescisoes";
 import { montarLinhasIntegracao } from "@/components/dashboard/integracao-dados";
-import { Gauge, ClimaPorEmpresa, LegendaSemaforo, COR_SEM } from "@/components/dashboard/Semaforo";
+import { Gauge, ClimaPorEmpresa, LegendaSemaforo } from "@/components/dashboard/Semaforo";
 import {
-  Cartao,
-  TituloCartao,
-  Pilula,
-  Vazio,
-  LINK_SUTIL,
-  INTER,
-  OSWALD,
-  TONS,
-  iniciais,
-  fmt1,
-  type Tom,
-} from "@/components/dashboard/Blocos";
+  Cartao7,
+  Icone,
+  Ponto,
+  Selo,
+  Titulo7,
+  MANROPE,
+  P7,
+  ST7,
+  TXT_ATRASO,
+  corEmpresa,
+  LINK7,
+  LINK7_STYLE,
+  type K,
+} from "@/components/dashboard/tema7";
 
 export const dynamic = "force-dynamic";
 
-const COR_CLT = "#3d3d3d";
-const COR_PJ = "#fbb26e";
-const COR_ESTAGIO = "#ffd5aa";
-const COR_TRILHA = "#f4ebe1";
+const COR_ESTAGIO = "#9fb5b1";
 
 const META_CLIMA = 80;
 const META_TREINAMENTO = 80;
@@ -58,6 +58,7 @@ const normalizar = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toL
 const dois = (n: number) => String(n).padStart(2, "0");
 const dia10 = (s?: string | null) => (s ? s.slice(0, 10) : "");
 const ddmm = (s?: string | null) => (s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : "");
+const fmt1 = (v: number) => v.toFixed(1).replace(".", ",");
 const reais = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 
 function hojeBrasilia() {
@@ -72,16 +73,6 @@ function hojeBrasilia() {
     .map(Number);
   return { ano: partes[0], mes: partes[1], dia: partes[2] };
 }
-
-interface LinhaAtencao {
-  chave: string;
-  rotulo: string;
-  n: number;
-  tom: Tom;
-  href: string;
-}
-
-const ICONE_TOM: Record<Tom, string> = { red: "✕", orange: "▲", green: "✓", off: "✓" };
 
 export default async function DashboardPage({
   searchParams,
@@ -204,7 +195,7 @@ export default async function DashboardPage({
   // empresas que entram nos indicadores (Franquias não têm clima/treinamento/folha cadastrados)
   const empresasNoEscopo = empresaSel === "franquias" ? [] : empresaEscolhida ? [empresaEscolhida] : listaEmpresas;
   const media = (vals: (number | null)[]) => {
-    const v = vals.filter((x): x is number => x != null);
+    const v = vals.filter((x): x is number => x != null && x > 0);
     return v.length > 0 ? v.reduce((a, c) => a + c, 0) / v.length : null;
   };
   const climaMedio = media(empresasNoEscopo.map((e) => e.clima_pct));
@@ -267,12 +258,14 @@ export default async function DashboardPage({
     return d >= 0 && d <= 30;
   }).length;
 
-  const linhasAtencao = ([
-    { chave: "etapas", rotulo: "Etapas de integração atrasadas", n: atrasadasPainel, tom: "red", href: "/onboarding" },
-    { chave: "exp", rotulo: "Experiências terminando (até 15 dias)", n: experienciaVencendo.length, tom: "orange", href: "/colaboradores" },
-    { chave: "ferias", rotulo: "Férias vencendo (até 30 dias)", n: feriasVencendo, tom: "orange", href: "/ferias" },
-    { chave: "pj", rotulo: "Contratos PJ vencendo (até 60 dias)", n: contratosPJVencendo, tom: "orange", href: "/colaboradores" },
-  ] as LinhaAtencao[]).sort((a, b) => Number(b.n > 0) - Number(a.n > 0));
+  // "Pendências de hoje": quadradinhos grandes com o semáforo
+  const expUrgente = experienciaVencendo.filter((c) => diasParaFimExperiencia(c.data_fim_experiencia!) < 7).length;
+  const pendencias: { chave: string; n: number; k: K; texto: string; href: string }[] = [
+    { chave: "etapas", n: atrasadasPainel, k: atrasadasPainel > 0 ? "bad" : "good", texto: atrasadasPainel === 1 ? "Etapa de integração atrasada" : "Etapas de integração atrasadas", href: "/onboarding" },
+    { chave: "exp", n: experienciaVencendo.length, k: experienciaVencendo.length === 0 ? "good" : expUrgente > 0 ? "bad" : "warn", texto: experienciaVencendo.length === 1 ? "Experiência terminando (até 15 dias)" : "Experiências terminando (até 15 dias)", href: "/colaboradores" },
+    { chave: "ferias", n: feriasVencendo, k: feriasVencendo > 0 ? "bad" : "good", texto: feriasVencendo === 1 ? "Período de férias vencendo (até 30 dias)" : "Períodos de férias vencendo (até 30 dias)", href: "/ferias" },
+    { chave: "pj", n: contratosPJVencendo, k: contratosPJVencendo > 0 ? "warn" : "good", texto: contratosPJVencendo === 1 ? "Contrato PJ vencendo (até 60 dias)" : "Contratos PJ vencendo (até 60 dias)", href: "/colaboradores" },
+  ];
 
   // aniversariantes do mês escolhido
   const aniversariantes = ativosAgora
@@ -317,40 +310,70 @@ export default async function DashboardPage({
   if (semEmpresa.length > 0) linhasEmpresa.push({ chave: "sem", nome: "Sem empresa", ...contar(semEmpresa) });
   const totalLinha = (l: LinhaEmpresa) => l.clt + l.pj + l.estagio;
 
-  const diaSemana = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long" }).format(new Date());
-  const subtitulo = `${diaSemana.charAt(0).toUpperCase()}${diaSemana.slice(1)}, ${dois(b.dia)} de ${MESES_NOME[b.mes - 1].toLowerCase()} de ${b.ano} · atualizado agora`;
-
   const nPct = (v: number, t: number) => (t > 0 ? Math.round((v / t) * 100) : 0);
-  const rotuloKpi = "text-[11px] font-semibold uppercase tracking-[0.06em] text-[#737373]";
+  const hojeTexto = `${dois(b.dia)}/${dois(b.mes)}/${b.ano}`;
+  const COR_CLT = P7.azul;
+  const COR_PJ = P7.laranja;
 
-  // barra CLT / PJ / Estágio reaproveitada nos cartões do topo
+  // barra CLT / PJ / Estágio: segmentos com 2px de espaço, pontas arredondadas
   const BarraVinculo = ({ clt, pj, est, alto = 8 }: { clt: number; pj: number; est: number; alto?: number }) => {
-    const t = clt + pj + est;
+    const partes = [
+      { v: clt, cor: COR_CLT },
+      { v: pj, cor: COR_PJ },
+      { v: est, cor: COR_ESTAGIO },
+    ].filter((x) => x.v > 0);
+    const raio = alto / 2;
     return (
-      <div className="flex rounded-full overflow-hidden" style={{ background: COR_TRILHA, height: alto }}>
-        {t > 0 && (
-          <>
-            <span style={{ width: `${(clt / t) * 100}%`, background: COR_CLT }} />
-            <span style={{ width: `${(pj / t) * 100}%`, background: COR_PJ }} />
-            {est > 0 && <span style={{ width: `${(est / t) * 100}%`, background: COR_ESTAGIO }} />}
-          </>
-        )}
+      <div className="flex gap-[2px]" style={{ height: alto, background: partes.length === 0 ? P7.track : undefined, borderRadius: raio }}>
+        {partes.map((x, i) => (
+          <div
+            key={i}
+            style={{
+              flex: x.v,
+              background: x.cor,
+              borderRadius: `${i === 0 ? raio : 2}px ${i === partes.length - 1 ? raio : 2}px ${i === partes.length - 1 ? raio : 2}px ${i === 0 ? raio : 2}px`,
+            }}
+          />
+        ))}
       </div>
     );
   };
 
+  const lista7 = (linhas: { chave: string; esq: ReactNode; dir: ReactNode }[]) => (
+    <div>
+      {linhas.map((l) => (
+        <div
+          key={l.chave}
+          className="flex items-center justify-between gap-3 border-t py-2 text-[13px]"
+          style={{ borderColor: P7.grid, color: P7.ink }}
+        >
+          {l.esq}
+          {l.dir}
+        </div>
+      ))}
+    </div>
+  );
+
   return (
-    <div className="space-y-5" style={{ fontFamily: INTER }}>
+    <div
+      className="space-y-5 rounded-[20px] p-4 md:p-6"
+      style={{ background: P7.bg, color: P7.ink, fontFamily: MANROPE }}
+    >
+      {/* Fonte Manrope (a mesma do modelo) */}
+      <style>{`@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap");`}</style>
+
       {/* Cabeçalho */}
-      <div className="flex items-end justify-between flex-wrap gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1
-            className="text-[32px] leading-tight font-semibold text-[#262626] uppercase"
-            style={{ fontFamily: OSWALD, letterSpacing: "0.02em" }}
+          <div
+            className="text-[34px] font-extrabold leading-[1.05]"
+            style={{ fontFamily: MANROPE, color: P7.ink, textTransform: "none", letterSpacing: 0 }}
           >
-            Painel de RH
-          </h1>
-          <p className="text-[13px] text-[#737373] mt-1">{subtitulo}</p>
+            Dashboard
+          </div>
+          <div className="mt-[7px] text-[13.5px]" style={{ color: P7.lab }}>
+            Como estamos em relação às metas · {rotuloMes.toLowerCase()} de {anoSel}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <LegendaSemaforo />
@@ -363,132 +386,156 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* Cartões do topo: total + cada empresa */}
-      <div className="flex flex-wrap gap-4">
-        <Cartao className="flex-[1.5_1_280px]">
-          <p className={rotuloKpi}>Colaboradores</p>
-          <p className="mt-2 text-[40px] leading-none font-semibold text-[#262626] tabular-nums" style={{ fontFamily: OSWALD }}>
-            {totalHead}
-          </p>
-          <p className="text-[12px] mt-2 text-[#737373]">
-            <span
-              className="font-semibold"
-              style={{ color: saldoMes > 0 ? TONS.green.fg : saldoMes < 0 ? TONS.red.fg : "#737373" }}
-            >
-              {saldoMes > 0 ? `+${saldoMes}` : saldoMes} no mês
-            </span>
-            {emFranquias > 0 ? ` · ${emFranquias} em franquias` : ""}
-          </p>
+      {/* Topo: total + cada empresa */}
+      <div
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:[grid-template-columns:var(--cols)]"
+        style={{ "--cols": `1.6fr repeat(${Math.max(linhasEmpresa.length, 1)}, minmax(0, 1fr))` } as CSSProperties}
+      >
+        <Cartao7 className="flex flex-col justify-between gap-4 sm:col-span-2 lg:col-span-1">
+          <div>
+            <div className="text-[12px] font-bold uppercase tracking-[0.08em]" style={{ color: P7.lab }}>
+              Total de colaboradores
+            </div>
+            <div className="mt-1.5 text-[60px] font-extrabold leading-[1.05]" style={{ fontFamily: MANROPE, color: P7.ink }}>
+              {totalHead}
+            </div>
+            <div className="mt-1 text-[12.5px]" style={{ color: P7.sec }}>
+              <b style={{ color: saldoMes > 0 ? "#0b7a0b" : saldoMes < 0 ? TXT_ATRASO : P7.sec }}>
+                {saldoMes > 0 ? `+${saldoMes}` : saldoMes} no mês
+              </b>
+              {emFranquias > 0 ? ` · ${emFranquias} em franquias` : ""}
+            </div>
+          </div>
           {totalHead === 0 ? (
-            <p className="text-[13px] text-[#737373] mt-3">Sem colaboradores neste filtro.</p>
+            <p className="text-[13px]" style={{ color: P7.sec }}>
+              Sem colaboradores neste filtro.
+            </p>
           ) : (
-            <div className="mt-3">
-              <BarraVinculo clt={cltN} pj={pjN} est={estN} alto={10} />
-              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[12px] text-[#3d3d3d] tabular-nums">
-                <span className="inline-flex items-center gap-1.5">
-                  <i className="w-2 h-2 rounded-full" style={{ background: COR_CLT }} />
-                  CLT {cltN} · {nPct(cltN, totalHead)}%
+            <div>
+              <BarraVinculo clt={cltN} pj={pjN} est={estN} alto={16} />
+              <div className="mt-2.5 flex flex-wrap gap-x-[22px] gap-y-1 text-[13px]" style={{ color: P7.ink }}>
+                <span>
+                  <Ponto cor={COR_CLT} />
+                  <b>{cltN}</b> CLT · {nPct(cltN, totalHead)}%
                 </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <i className="w-2 h-2 rounded-full" style={{ background: COR_PJ }} />
-                  PJ {pjN} · {nPct(pjN, totalHead)}%
+                <span>
+                  <Ponto cor={COR_PJ} />
+                  <b>{pjN}</b> PJ · {nPct(pjN, totalHead)}%
                 </span>
                 {estN > 0 && (
-                  <span className="inline-flex items-center gap-1.5">
-                    <i className="w-2 h-2 rounded-full" style={{ background: COR_ESTAGIO }} />
-                    Estágio {estN}
+                  <span>
+                    <Ponto cor={COR_ESTAGIO} />
+                    <b>{estN}</b> Estágio
                   </span>
                 )}
               </div>
             </div>
           )}
-        </Cartao>
+        </Cartao7>
 
-        {linhasEmpresa.map((l) => {
-          const t = totalLinha(l);
-          return (
-            <Cartao key={l.chave} className="flex-1 min-w-[170px]">
-              <p className={`${rotuloKpi} truncate`}>{l.nome}</p>
-              <p className="mt-2 text-[32px] leading-none font-semibold text-[#262626] tabular-nums" style={{ fontFamily: OSWALD }}>
-                {t}
-              </p>
-              <p className="text-[12px] mt-2 text-[#737373] tabular-nums">
-                CLT {l.clt} · PJ {l.pj}
-                {l.estagio > 0 ? ` · Est. ${l.estagio}` : ""}
-              </p>
-              <div className="mt-3">
-                <BarraVinculo clt={l.clt} pj={l.pj} est={l.estagio} />
-              </div>
-            </Cartao>
-          );
-        })}
+        {linhasEmpresa.map((l) => (
+          <Cartao7 key={l.chave} style={{ padding: "18px 20px" }}>
+            <div className="truncate text-[13px] font-bold" style={{ color: P7.sec }}>
+              <Ponto cor={corEmpresa(l.nome)} redondo />
+              {l.nome}
+            </div>
+            <div className="mb-2.5 mt-1.5 text-[38px] font-extrabold leading-tight" style={{ fontFamily: MANROPE, color: P7.ink }}>
+              {totalLinha(l)}
+            </div>
+            <BarraVinculo clt={l.clt} pj={l.pj} est={l.estagio} />
+            <div className="mt-[7px] text-[12px]" style={{ color: P7.sec }}>
+              {l.clt} CLT · {l.pj} PJ{l.estagio > 0 ? ` · ${l.estagio} Est.` : ""}
+            </div>
+          </Cartao7>
+        ))}
       </div>
 
       {/* Clima, treinamento e custo da folha */}
       <div className={`grid grid-cols-1 gap-4 ${ocultarFinanceiro ? "lg:grid-cols-2" : "lg:grid-cols-[1fr_1fr_2.1fr]"}`}>
-        <Cartao>
+        <Cartao7>
           <Gauge
-            titulo="Clima"
+            titulo="Clima organizacional"
             pct={climaMedio}
             meta={META_CLIMA}
-            nota={empresasNoEscopo.length > 1 ? "média das empresas" : undefined}
+            nota={empresasNoEscopo.length > 1 ? "Média das empresas informadas" : undefined}
           />
-        </Cartao>
-        <Cartao>
+        </Cartao7>
+        <Cartao7>
           <Gauge
             titulo="Treinamento"
             pct={treinoMedio}
             meta={META_TREINAMENTO}
-            nota={empresasNoEscopo.length > 1 ? "média das empresas" : undefined}
+            nota={empresasNoEscopo.length > 1 ? "Média das empresas informadas" : undefined}
           />
-        </Cartao>
+        </Cartao7>
 
         {!ocultarFinanceiro && (
-          <Cartao>
-            <TituloCartao direita={<span>meta: até {LIMITE_SAUDAVEL_FOLHA_PCT}% do faturamento</span>}>
-              Custo da folha ÷ faturamento
-            </TituloCartao>
+          <Cartao7>
+            <Titulo7 sub={`A marca preta é o limite de ${LIMITE_SAUDAVEL_FOLHA_PCT}%. Verde está bem, vermelho pede atenção.`}>
+              Custo da folha sobre o faturamento
+            </Titulo7>
             {folhaComPct.length === 0 ? (
-              <Vazio>Sem faturamento cadastrado neste filtro.</Vazio>
+              <p className="text-[13px]" style={{ color: P7.sec }}>
+                Sem faturamento cadastrado neste filtro.
+              </p>
             ) : (
-              <div className="space-y-4">
+              <div>
                 {folhaComPct.map(({ empresa: e, custo, fat, pct }) => {
                   const bom = (pct as number) <= LIMITE_SAUDAVEL_FOLHA_PCT;
-                  const cor = bom ? COR_SEM.bom : COR_SEM.critico;
+                  const k: K = bom ? "good" : "bad";
                   return (
-                    <div key={e.id}>
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-[13px] font-semibold text-[#262626]">{e.nome}</span>
-                        <span className="text-[13px] font-semibold tabular-nums" style={{ color: bom ? TONS.green.fg : TONS.red.fg }}>
-                          {bom ? "✓" : "✕"} {fmt1(pct as number)}%
-                        </span>
+                    <div
+                      key={e.id}
+                      className="mb-5 grid grid-cols-1 items-center gap-x-4 gap-y-2 sm:grid-cols-[130px_1fr_auto]"
+                    >
+                      <div>
+                        <div className="text-[14px] font-bold" style={{ color: P7.ink }}>{e.nome}</div>
+                        <div className="mt-[3px] text-[11px] leading-[1.35]" style={{ color: P7.lab }}>
+                          Folha R$ {reais(custo)} · Faturamento R$ {reais(fat)}
+                        </div>
                       </div>
-                      <span className="relative block h-[10px] rounded-full mt-1.5" style={{ background: COR_TRILHA }}>
-                        <span
-                          className="absolute inset-y-0 left-0 rounded-full"
-                          style={{ width: `${Math.min(100, ((pct as number) / ESCALA_FOLHA) * 100)}%`, background: cor }}
+                      <div className="relative h-[18px] rounded-[9px]" style={{ background: P7.track }}>
+                        <div
+                          className="h-[18px] rounded-[9px]"
+                          style={{ width: `${Math.min(100, ((pct as number) / ESCALA_FOLHA) * 100)}%`, background: ST7[k] }}
                         />
-                        <span
-                          className="absolute -top-[3px] -bottom-[3px] w-[2px] bg-black"
-                          style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / ESCALA_FOLHA) * 100}%` }}
-                          title={`Meta: ${LIMITE_SAUDAVEL_FOLHA_PCT}%`}
+                        <div
+                          className="absolute -top-[5px] h-[28px] w-[2px]"
+                          style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / ESCALA_FOLHA) * 100}%`, background: P7.ink }}
+                          title={`Limite: ${LIMITE_SAUDAVEL_FOLHA_PCT}%`}
                         />
-                      </span>
-                      <p className="text-[12px] text-[#737373] mt-1 tabular-nums">
-                        folha R$ {reais(custo)} · faturamento R$ {reais(fat)}
-                      </p>
+                      </div>
+                      <div className="min-w-[150px] sm:text-right">
+                        <div className="text-[24px] font-extrabold" style={{ fontFamily: MANROPE, color: P7.ink }}>
+                          {fmt1(pct as number)}%
+                        </div>
+                        <Selo k={k}>{bom ? "Dentro do limite" : "Acima do limite"}</Selo>
+                      </div>
                     </div>
                   );
                 })}
-                <p className="text-[12px] text-[#737373]">A linha preta marca a meta de {LIMITE_SAUDAVEL_FOLHA_PCT}%.</p>
+                <div className="hidden grid-cols-[130px_1fr_150px] gap-4 text-[11px] sm:grid" style={{ color: P7.lab, marginTop: -8 }}>
+                  <span />
+                  <div className="relative h-[14px]">
+                    <span className="absolute left-0">0%</span>
+                    <span
+                      className="absolute -translate-x-1/2 font-bold"
+                      style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / ESCALA_FOLHA) * 100}%`, color: P7.ink }}
+                    >
+                      {LIMITE_SAUDAVEL_FOLHA_PCT}%
+                    </span>
+                    <span className="absolute right-0">{ESCALA_FOLHA}%</span>
+                  </div>
+                  <span />
+                </div>
               </div>
             )}
-          </Cartao>
+          </Cartao7>
         )}
       </div>
 
       {/* Processo de integração */}
-      <IntegracaoPainel linhas={linhasIntegracao} />
+      <IntegracaoPainel linhas={linhasIntegracao} hojeTexto={hojeTexto} />
 
       {/* Avisos prévios e rescisões */}
       <AvisosRescisoes
@@ -497,142 +544,136 @@ export default async function DashboardPage({
       />
 
       {/* Clima por empresa, experiência e pendências */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr_.8fr] gap-4">
-        <Cartao>
-          <TituloCartao direita={<span>meta: acima de {META_CLIMA}%</span>}>Clima de cada empresa</TituloCartao>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr_.8fr]">
+        <Cartao7>
+          <Titulo7 sub={`Comparado com a meta de ${META_CLIMA}%`}>Clima de cada empresa</Titulo7>
           <ClimaPorEmpresa
-            itens={empresasNoEscopo.map((e) => ({ nome: e.nome, pct: e.clima_pct }))}
+            itens={empresasNoEscopo.map((e) => ({ nome: e.nome, pct: e.clima_pct != null && e.clima_pct > 0 ? e.clima_pct : null }))}
             meta={META_CLIMA}
           />
-        </Cartao>
+        </Cartao7>
 
-        <Cartao>
-          <TituloCartao direita={<Link href="/colaboradores" className={LINK_SUTIL}>Ver todos</Link>}>
-            Experiência terminando
-          </TituloCartao>
+        <Cartao7>
+          <Titulo7 sub="Em vermelho quando faltam menos de 7 dias">Experiência terminando</Titulo7>
           {experienciaVencendo.length === 0 ? (
-            <Vazio>Nenhum caso nos próximos 15 dias.</Vazio>
+            <p className="text-[13px]" style={{ color: P7.sec }}>Nenhum caso nos próximos 15 dias.</p>
           ) : (
-            <ul className="space-y-3">
-              {experienciaVencendo.slice(0, 5).map((c) => {
-                const dias = diasParaFimExperiencia(c.data_fim_experiencia!);
-                const fim = dia10(c.data_fim_experiencia);
-                const urgente = dias <= 7;
-                return (
-                  <li key={c.id} className="flex items-center gap-3">
-                    <span
-                      className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-semibold shrink-0"
-                      style={{ background: COR_TRILHA, color: "#93440c" }}
-                    >
-                      {iniciais(c.nome)}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <Link href={`/colaboradores/${c.id}`} className="block text-[13px] font-semibold text-[#262626] truncate hover:underline">
-                        {c.nome}
-                      </Link>
-                      <p className="text-[12px] text-[#737373] truncate">
-                        {c.cargo ? `${c.cargo} · ` : ""}termina {ddmm(fim)}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <Pilula tom={urgente ? "red" : "orange"}>
-                        {urgente ? "✕" : "▲"} {dias} dia{dias !== 1 ? "s" : ""}
-                      </Pilula>
-                      <Link href="/onboarding" className={LINK_SUTIL}>
-                        {urgente ? "Efetivar" : "Revisar avaliação"}
-                      </Link>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Cartao>
-
-        <Cartao>
-          <TituloCartao>Pendências</TituloCartao>
-          <ul className="divide-y divide-[#f4ebe1]">
-            {linhasAtencao.map((l) => {
-              const zero = l.n === 0;
+            experienciaVencendo.slice(0, 5).map((c) => {
+              const left = diasParaFimExperiencia(c.data_fim_experiencia!);
+              const urgente = left < 7;
+              const adm = c.data_admissao ? new Date(c.data_admissao) : null;
+              const fim = new Date(c.data_fim_experiencia!);
+              const total = adm ? Math.max(1, differenceInCalendarDays(fim, adm)) : 90;
+              const feitos = Math.max(0, Math.min(total, total - left));
+              const empNome = c.empresa_id ? nomeEmpresaPorId[c.empresa_id] ?? "" : "";
               return (
-                <li key={l.chave} className="py-2.5" style={{ opacity: zero ? 0.6 : 1 }}>
-                  <Link href={l.href} className="flex items-center justify-between gap-3 group">
-                    <span className="text-[13px] text-[#3d3d3d] group-hover:text-[#262626] min-w-0">
-                      <span className="block">{l.rotulo}</span>
-                    </span>
-                    <Pilula tom={zero ? "green" : l.tom}>
-                      {zero ? "✓" : ICONE_TOM[l.tom]} {l.n} ›
-                    </Pilula>
-                  </Link>
-                </li>
+                <div key={c.id} className="mb-4">
+                  <div className="mb-[7px] flex items-center justify-between gap-2">
+                    <Link href={`/colaboradores/${c.id}`} className="min-w-0 truncate hover:underline">
+                      <span className="text-[13px] font-bold" style={{ color: P7.ink }}>{c.nome}</span>{" "}
+                      <span className="text-[11.5px]" style={{ color: P7.lab }}>{empNome ? `· ${empNome}` : ""}</span>
+                    </Link>
+                    {urgente ? (
+                      <Selo k="bad">{left} {left === 1 ? "dia" : "dias"}</Selo>
+                    ) : (
+                      <span className="whitespace-nowrap text-[12.5px] font-bold" style={{ color: P7.ink }}>{left} dias</span>
+                    )}
+                  </div>
+                  <div className="h-[10px] rounded-[5px]" style={{ background: P7.track }}>
+                    <div
+                      className="h-[10px] rounded-[5px]"
+                      style={{ width: `${(feitos / total) * 100}%`, background: urgente ? ST7.bad : P7.deep }}
+                    />
+                  </div>
+                  <div className="mt-1 text-[11px]" style={{ color: P7.lab }}>
+                    {feitos} de {total} dias de experiência
+                  </div>
+                </div>
               );
-            })}
-          </ul>
-        </Cartao>
+            })
+          )}
+        </Cartao7>
+
+        <Cartao7>
+          <Titulo7>Pendências de hoje</Titulo7>
+          <div className="flex flex-col gap-2.5">
+            {pendencias.map((p) => (
+              <Link
+                key={p.chave}
+                href={p.href}
+                className="flex items-center gap-3.5 rounded-[12px] p-4 hover:brightness-95"
+                style={{ background: P7.bg }}
+              >
+                <div className="min-w-[44px] text-[38px] font-extrabold leading-none" style={{ fontFamily: MANROPE, color: P7.ink }}>
+                  {p.n}
+                </div>
+                <div>
+                  <div className="mb-1"><Icone k={p.k} /></div>
+                  <div className="text-[13px] font-semibold leading-[1.3]" style={{ color: P7.ink }}>{p.texto}</div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </Cartao7>
       </div>
 
       {/* Aniversariantes e próximas férias */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Cartao>
-          <TituloCartao direita={<Link href="/aniversarios" className={LINK_SUTIL}>Ver todos</Link>}>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Cartao7>
+          <Titulo7 direita={<Link href="/aniversarios" className={LINK7} style={LINK7_STYLE}>Ver todos</Link>}>
             Aniversariantes de {rotuloMes.toLowerCase()}
-          </TituloCartao>
+          </Titulo7>
           {aniversariantes.length === 0 ? (
-            <Vazio>Nenhum aniversariante neste mês.</Vazio>
+            <p className="text-[13px]" style={{ color: P7.sec }}>Nenhum aniversariante neste mês.</p>
           ) : (
-            <ul className="space-y-2.5">
-              {aniversariantes.slice(0, 7).map((c) => (
-                <li key={c.id} className="flex items-baseline gap-3">
-                  <span className="text-[13px] font-semibold tabular-nums shrink-0 w-11" style={{ color: "#93440c" }}>
-                    {ddmm(c.data_nascimento)}
-                  </span>
-                  <Link href={`/colaboradores/${c.id}`} className="text-[13px] text-[#262626] truncate hover:underline min-w-0 flex-1">
+            lista7(
+              aniversariantes.slice(0, 7).map((c) => ({
+                chave: c.id,
+                esq: (
+                  <Link href={`/colaboradores/${c.id}`} className="min-w-0 truncate hover:underline">
                     {c.nome}
+                    {c.empresa_id && nomeEmpresaPorId[c.empresa_id] ? (
+                      <span className="text-[11.5px]" style={{ color: P7.lab }}> · {nomeEmpresaPorId[c.empresa_id]}</span>
+                    ) : null}
                   </Link>
-                  <span className="text-[12px] text-[#737373] truncate max-w-[40%]">
-                    {c.empresa_id ? nomeEmpresaPorId[c.empresa_id] ?? "" : ""}
-                  </span>
-                </li>
-              ))}
-              {aniversariantes.length > 7 && (
-                <li className="text-[12px] text-[#737373]">+ {aniversariantes.length - 7} neste mês</li>
-              )}
-            </ul>
+                ),
+                dir: <b className="tabular-nums">{ddmm(c.data_nascimento)}</b>,
+              }))
+            )
           )}
-        </Cartao>
+          {aniversariantes.length > 7 && (
+            <p className="mt-2 text-[12px]" style={{ color: P7.lab }}>+ {aniversariantes.length - 7} neste mês</p>
+          )}
+        </Cartao7>
 
-        <Cartao>
-          <TituloCartao direita={<Link href="/ferias" className={LINK_SUTIL}>Ver férias</Link>}>
+        <Cartao7>
+          <Titulo7 sub="Começam daqui para frente" direita={<Link href="/ferias" className={LINK7} style={LINK7_STYLE}>Ver férias</Link>}>
             Próximas férias
-          </TituloCartao>
+          </Titulo7>
           {proximasFerias.length === 0 ? (
-            <Vazio>Nenhuma férias marcada daqui para frente.</Vazio>
+            <p className="text-[13px]" style={{ color: P7.sec }}>Nenhuma férias marcada daqui para frente.</p>
           ) : (
-            <ul className="space-y-2.5">
-              {proximasFerias.map((f) => {
+            lista7(
+              proximasFerias.map((f) => {
                 const c = colabPorId.get(f.colaborador_id);
                 const [ya, ma, da] = f.data_inicio.slice(0, 10).split("-").map(Number);
                 const faltam = differenceInCalendarDays(new Date(ya, ma - 1, da), hoje);
-                return (
-                  <li key={f.id} className="flex items-baseline gap-3">
-                    <span className="text-[13px] font-semibold tabular-nums shrink-0 w-[92px]" style={{ color: "#93440c" }}>
-                      {ddmm(f.data_inicio)} a {ddmm(f.data_fim)}
-                    </span>
-                    <Link
-                      href={c ? `/colaboradores/${c.id}` : "/ferias"}
-                      className="text-[13px] text-[#262626] truncate hover:underline min-w-0 flex-1"
-                    >
+                return {
+                  chave: f.id,
+                  esq: (
+                    <Link href={c ? `/colaboradores/${c.id}` : "/ferias"} className="min-w-0 truncate hover:underline">
                       {c?.nome ?? "Colaborador"}
+                      <span className="text-[11.5px]" style={{ color: P7.lab }}>
+                        {" "}· {faltam === 0 ? "começa hoje" : `em ${faltam} dia${faltam === 1 ? "" : "s"}`}
+                      </span>
                     </Link>
-                    <span className="text-[12px] text-[#737373] whitespace-nowrap tabular-nums">
-                      {faltam === 0 ? "começa hoje" : `em ${faltam} dia${faltam === 1 ? "" : "s"}`}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
+                  ),
+                  dir: <b className="tabular-nums whitespace-nowrap">{ddmm(f.data_inicio)} a {ddmm(f.data_fim)}</b>,
+                };
+              })
+            )
           )}
-        </Cartao>
+        </Cartao7>
       </div>
     </div>
   );

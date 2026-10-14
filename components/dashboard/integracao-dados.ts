@@ -26,7 +26,10 @@ export interface LinhaIntegracao {
   etapas: EtapaVisual[];
   feitas: number;
   etapaAtual: string;
-  prazoTexto: string;
+  /** "dd/mm" do prazo da etapa em foco (vazio se não houver). */
+  prazoData: string;
+  /** "atrasada", "hoje", "em N dias"... */
+  prazoRel: string;
   situacao: SituacaoLinha;
   cronometro: string | null;
 }
@@ -106,13 +109,15 @@ export function montarLinhasIntegracao(
     // Prazo mostrado: o da etapa atrasada mais antiga, senão o da etapa atual.
     const alvo = lista.find((e) => !feita(e) && etapaAtrasada(e.prazo, e.status)) ?? atual;
     const dAlvo = alvo ? diasAte(alvo.prazo) : null;
-    let prazoTexto = "—";
+    let prazoData = "";
+    let prazoRel = "—";
     if (alvo && alvo.prazo && dAlvo !== null) {
-      if (dAlvo < 0) prazoTexto = `${-dAlvo} dia${dAlvo === -1 ? "" : "s"} de atraso`;
-      else if (dAlvo === 0) prazoTexto = "Vence hoje";
-      else prazoTexto = `${curta(alvo.prazo)} · em ${dAlvo} dia${dAlvo === 1 ? "" : "s"}`;
+      prazoData = curta(alvo.prazo);
+      if (dAlvo < 0) prazoRel = "atrasada";
+      else if (dAlvo === 0) prazoRel = "hoje";
+      else prazoRel = `em ${dAlvo} dia${dAlvo === 1 ? "" : "s"}`;
     } else if (!atual) {
-      prazoTexto = "Etapas concluídas";
+      prazoRel = "etapas concluídas";
     }
 
     // Cronômetro da integração (começa no exame admissional, vai até o onboarding).
@@ -134,7 +139,8 @@ export function montarLinhasIntegracao(
       etapas: visuais,
       feitas: visuais.filter((v) => v.estado === "feita").length,
       etapaAtual: atual?.nome ?? (lista.length > 0 ? "Concluída" : "—"),
-      prazoTexto,
+      prazoData,
+      prazoRel,
       situacao,
       cronometro,
     };

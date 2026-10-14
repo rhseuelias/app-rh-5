@@ -1,21 +1,10 @@
-import { INTER, OSWALD, TONS, fmt1, type Tom } from "./Blocos";
+import { MANROPE, P7, ST7, Icone, Selo, type K } from "./tema7";
 
-/** Semáforo do Painel de RH: toda cor vem junto com um ícone e um texto
- * (✓ dentro da meta, ▲ atenção, ✕ crítico), para não depender só da cor. */
+/** Semáforo do Painel de RH (visual do modelo 7). Toda cor vem com ícone e texto. */
 
 export type Sem = "bom" | "atencao" | "critico";
 
-export const COR_SEM: Record<Sem, string> = {
-  bom: "#2f9e6b",
-  atencao: "#f0913f",
-  critico: "#d92d20",
-};
-
-export const INFO_SEM: Record<Sem, { icone: string; rotulo: string; tom: Tom }> = {
-  bom: { icone: "✓", rotulo: "Dentro da meta", tom: "green" },
-  atencao: { icone: "▲", rotulo: "Atenção", tom: "orange" },
-  critico: { icone: "✕", rotulo: "Crítico", tom: "red" },
-};
+const K_DE: Record<Sem, K> = { bom: "good", atencao: "warn", critico: "bad" };
 
 /** Acima da meta = bom; até 10 pontos abaixo = atenção; mais que isso = crítico. */
 export function semPorMeta(valor: number, meta: number): Sem {
@@ -24,39 +13,28 @@ export function semPorMeta(valor: number, meta: number): Sem {
   return "critico";
 }
 
-export function SeloSemaforo({ sem, texto }: { sem: Sem; texto?: string }) {
-  const i = INFO_SEM[sem];
-  const t = TONS[i.tom];
-  return (
-    <span
-      className="inline-flex items-center gap-1 rounded-[10px] px-2.5 py-0.5 text-[12px] font-semibold whitespace-nowrap"
-      style={{ color: t.fg, background: t.bg }}
-    >
-      <span aria-hidden="true">{i.icone}</span>
-      {texto ?? i.rotulo}
-    </span>
-  );
-}
+const fmt0 = (v: number) => String(Math.round(v));
 
 export function LegendaSemaforo() {
   return (
     <div
-      className="inline-flex flex-wrap items-center gap-x-4 gap-y-1 rounded-full border border-[#f1e4d6] bg-white px-4 py-1.5 text-[12px] text-[#3d3d3d]"
-      style={{ fontFamily: INTER }}
+      className="inline-flex flex-wrap items-center gap-x-[18px] gap-y-1 rounded-full border bg-white px-4 py-[7px] text-[12.5px]"
+      style={{ borderColor: P7.bd, color: P7.ink, fontFamily: MANROPE }}
     >
-      {(["bom", "atencao", "critico"] as Sem[]).map((s) => (
-        <span key={s} className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className="font-bold" style={{ color: COR_SEM[s] }}>
-            {INFO_SEM[s].icone}
-          </span>
-          {INFO_SEM[s].rotulo}
-        </span>
-      ))}
+      <span className="inline-flex items-center gap-1.5">
+        <Icone k="good" /> Dentro da meta
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <Icone k="warn" /> Atenção
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <Icone k="bad" /> Crítico
+      </span>
     </div>
   );
 }
 
-/** Medidor em meia-lua com a meta marcada por um traço. */
+/** Medidor em meia-lua com a meta marcada por um traço preto. */
 export function Gauge({
   titulo,
   pct,
@@ -69,62 +47,76 @@ export function Gauge({
   nota?: string;
 }) {
   const sem = pct === null ? null : semPorMeta(pct, meta);
-  const R = 48;
-  const L = Math.PI * R;
+  const k = sem ? K_DE[sem] : null;
+  const W = 232;
+  const H = 138;
+  const cx = W / 2;
+  const cy = H - 18;
+  const R = 92;
+  const th = 16;
+  const pt = (f: number, rr = R) => [cx + rr * Math.cos(Math.PI * (1 - f)), cy - rr * Math.sin(Math.PI * (1 - f))];
   const f = pct === null ? 0 : Math.max(0, Math.min(1, pct / 100));
-  const ang = Math.PI * (1 - meta / 100);
-  const x1 = 60 + 40 * Math.cos(ang);
-  const y1 = 60 - 40 * Math.sin(ang);
-  const x2 = 60 + 57 * Math.cos(ang);
-  const y2 = 60 - 57 * Math.sin(ang);
-  const arco = "M 12 60 A 48 48 0 0 1 108 60";
+  const [x1, y1] = pt(f);
+  const [a1, b1] = pt(meta / 100, R - th / 2 - 5);
+  const [a2, b2] = pt(meta / 100, R + th / 2 + 5);
+  const arco = `M${cx - R},${cy} A${R},${R} 0 0 1 ${cx + R},${cy}`;
+  const faltam = pct !== null && pct < meta ? Math.round(meta - pct) : 0;
 
   return (
-    <div className="flex flex-col items-center text-center">
-      <p className="self-start text-[14px] font-semibold text-[#262626]">{titulo}</p>
-      <svg
-        viewBox="0 0 120 70"
-        className="w-full max-w-[200px] mt-2"
-        role="img"
-        aria-label={
-          pct === null ? `${titulo}: não informado` : `${titulo}: ${fmt1(pct)} por cento, meta ${meta} por cento`
-        }
-      >
-        <path d={arco} fill="none" stroke="#f4ebe1" strokeWidth="11" strokeLinecap="round" />
-        {pct !== null && sem && (
-          <path
-            d={arco}
-            fill="none"
-            stroke={COR_SEM[sem]}
-            strokeWidth="11"
-            strokeLinecap="round"
-            strokeDasharray={`${f * L} ${L}`}
-          />
-        )}
-        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#262626" strokeWidth="2" />
-        <text
-          x="60"
-          y="57"
-          textAnchor="middle"
-          fontSize="22"
-          fontWeight="600"
-          fill="#262626"
-          style={{ fontFamily: OSWALD }}
+    <div>
+      <div className="mb-1.5 text-[15px] font-extrabold" style={{ fontFamily: MANROPE, color: P7.ink }}>
+        {titulo}
+      </div>
+      <div className="flex justify-center">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width={W}
+          height={H}
+          className="max-w-full"
+          role="img"
+          aria-label={pct === null ? `${titulo}: não informado` : `${titulo}: ${fmt0(pct)} por cento, meta ${meta} por cento`}
         >
-          {pct === null ? "—" : `${Math.round(pct)}%`}
-        </text>
-      </svg>
-      <div className="mt-1 flex flex-col items-center gap-1">
-        {sem ? <SeloSemaforo sem={sem} /> : <span className="text-[12px] text-[#737373]">não informado</span>}
-        <p className="text-[12px] text-[#737373]">
-          meta: acima de {meta}%{nota ? ` · ${nota}` : ""}
-        </p>
+          <path d={arco} fill="none" stroke={P7.track} strokeWidth={th} strokeLinecap="round" />
+          {pct !== null && f > 0 && k && (
+            <path
+              d={`M${cx - R},${cy} A${R},${R} 0 0 1 ${x1.toFixed(1)},${y1.toFixed(1)}`}
+              fill="none"
+              stroke={ST7[k]}
+              strokeWidth={th}
+              strokeLinecap="round"
+            />
+          )}
+          <line x1={a1.toFixed(1)} y1={b1.toFixed(1)} x2={a2.toFixed(1)} y2={b2.toFixed(1)} stroke={P7.ink} strokeWidth="2.5" strokeLinecap="round" />
+          <text x={cx} y={cy - 6} textAnchor="middle" fontSize="38" fontWeight="800" fill={P7.ink} style={{ fontFamily: MANROPE }}>
+            {pct === null ? "—" : `${fmt0(pct)}%`}
+          </text>
+          <text x={cx - R} y={cy + 15} textAnchor="middle" fontSize="11" fill={P7.lab} style={{ fontFamily: MANROPE }}>
+            0
+          </text>
+          <text x={cx + R} y={cy + 15} textAnchor="middle" fontSize="11" fill={P7.lab} style={{ fontFamily: MANROPE }}>
+            100
+          </text>
+        </svg>
+      </div>
+      <div className="mt-1.5 text-center">
+        {k ? (
+          <Selo k={k}>
+            {k === "good" ? "Dentro da meta" : `${faltam} ${faltam === 1 ? "ponto abaixo" : "pontos abaixo"} da meta`}
+          </Selo>
+        ) : (
+          <span className="text-[12px]" style={{ color: P7.sec }}>
+            ainda não informado
+          </span>
+        )}
+      </div>
+      <div className="mt-2.5 text-center text-[12px] leading-[1.5]" style={{ color: P7.sec }}>
+        Meta: acima de {meta}%{nota ? <><br />{nota}</> : null}
       </div>
     </div>
   );
 }
 
-/** Clima de cada empresa contra a meta: barra com traço na meta. */
+/** Clima de cada empresa contra a meta: barras que saem da linha da meta (azul = acima, vermelho = abaixo). */
 export function ClimaPorEmpresa({
   itens,
   meta,
@@ -132,36 +124,72 @@ export function ClimaPorEmpresa({
   itens: { nome: string; pct: number | null }[];
   meta: number;
 }) {
-  if (itens.length === 0) return <p className="text-[13px] text-[#737373]">Nenhuma empresa cadastrada.</p>;
-  const ordenados = [...itens].sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1));
+  const comValor = itens.filter((i) => i.pct !== null) as { nome: string; pct: number }[];
+  if (comValor.length === 0)
+    return (
+      <p className="text-[13px]" style={{ color: P7.sec }}>
+        Nenhuma empresa com clima informado.
+      </p>
+    );
+  const ordenados = [...comValor].sort((a, b) => b.pct - a.pct);
+  const ALCANCE = 20; // pontos de cada lado da meta
   return (
-    <div className="space-y-3">
-      {ordenados.map((it) => {
-        const sem = it.pct === null ? null : semPorMeta(it.pct, meta);
-        return (
-          <div key={it.nome} className="grid grid-cols-[110px_1fr_92px] sm:grid-cols-[140px_1fr_104px] items-center gap-3">
-            <span className="text-[13px] text-[#3d3d3d] truncate">{it.nome}</span>
-            <span className="relative h-[10px] rounded-full" style={{ background: "#f4ebe1" }}>
-              {it.pct !== null && sem && (
+    <div>
+      <div className="relative mb-1 h-[16px]">
+        <span
+          className="absolute -translate-x-1/2 text-[11px] font-bold"
+          style={{ left: "calc(190px + (100% - 190px) / 2)", color: P7.ink }}
+        >
+          meta: {meta}%
+        </span>
+      </div>
+      <div className="space-y-1">
+        {ordenados.map((it) => {
+          const d = Math.round(it.pct - meta);
+          const larg = Math.min(50, (Math.abs(it.pct - meta) / ALCANCE) * 50);
+          const acima = d >= 0;
+          return (
+            <div key={it.nome} className="grid h-[36px] grid-cols-[190px_1fr] items-center">
+              <span className="truncate pr-2 text-[12.5px]" style={{ color: P7.ink }}>
+                {it.nome} · {Math.round(it.pct)}%
+              </span>
+              <span className="relative h-full">
+                <span className="absolute inset-y-0 left-1/2 w-0 border-l-[1.5px] border-dashed" style={{ borderColor: P7.ink }} />
                 <span
-                  className="absolute inset-y-0 left-0 rounded-full"
-                  style={{ width: `${Math.max(0, Math.min(100, it.pct))}%`, background: COR_SEM[sem] }}
+                  className="absolute top-[9px] h-[18px]"
+                  style={{
+                    background: acima ? P7.azul : "#e34948",
+                    borderRadius: 5,
+                    ...(acima ? { left: "50%" } : { right: "50%" }),
+                    width: `${larg}%`,
+                    minWidth: d === 0 ? 3 : undefined,
+                  }}
+                  title={`${it.nome}: ${Math.abs(d)} pontos ${acima ? "acima" : "abaixo"} da meta`}
                 />
-              )}
-              <span
-                className="absolute -top-[3px] -bottom-[3px] w-[2px] bg-black"
-                style={{ left: `${meta}%` }}
-                title={`Meta: ${meta}%`}
-              />
-            </span>
-            <span className="text-right text-[13px] font-semibold tabular-nums" style={{ color: sem ? TONS[INFO_SEM[sem].tom].fg : "#737373" }}>
-              {sem ? `${INFO_SEM[sem].icone} ` : ""}
-              {it.pct === null ? "—" : `${fmt1(it.pct)}%`}
-            </span>
-          </div>
-        );
-      })}
-      <p className="text-[12px] text-[#737373]">A linha preta marca a meta de {meta}%.</p>
+                <span
+                  className="absolute top-[8px] text-[12.5px] font-bold"
+                  style={{
+                    color: P7.ink,
+                    ...(acima ? { left: `calc(50% + ${larg}% + 8px)` } : { left: "calc(50% + 8px)" }),
+                  }}
+                >
+                  {acima ? `+${d} pts` : `−${Math.abs(d)} pts`}
+                </span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex gap-5 text-[12.5px]" style={{ color: P7.ink }}>
+        <span>
+          <i className="mr-[7px] inline-block h-[10px] w-[10px] rounded-[3px] align-middle" style={{ background: P7.azul }} />
+          Acima da meta
+        </span>
+        <span>
+          <i className="mr-[7px] inline-block h-[10px] w-[10px] rounded-[3px] align-middle" style={{ background: "#e34948" }} />
+          Abaixo da meta
+        </span>
+      </div>
     </div>
   );
 }
