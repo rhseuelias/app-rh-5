@@ -87,6 +87,15 @@ export interface DependenteColaborador {
   dependente_ir: boolean;
 }
 
+/** Colaborador que também recebe em outra empresa do grupo (migration_036). Fica
+ * cadastrado numa empresa só; aqui ficam as demais e quanto cada uma paga por mês. */
+export interface ColaboradorOutraEmpresa {
+  id: string;
+  colaborador_id: string;
+  empresa_id: string;
+  valor_mensal: number;
+}
+
 /** Um período de contrato PJ que já foi encerrado por uma renovação —
  * guardado pra manter o histórico anual de cada colaborador PJ. */
 export interface HistoricoContratoPJ {

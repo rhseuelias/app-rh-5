@@ -1,7 +1,15 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { Colaborador, DependenteColaborador, Empresa, HorarioDia, HorarioTrabalho, Unidade } from "@/types/db";
+import type {
+  Colaborador,
+  ColaboradorOutraEmpresa,
+  DependenteColaborador,
+  Empresa,
+  HorarioDia,
+  HorarioTrabalho,
+  Unidade,
+} from "@/types/db";
 import { salvarColaboradorComMatricula } from "@/lib/actions-colaborador-matricula";
 import {
   ESTADO_CIVIL_LABEL,
@@ -40,6 +48,7 @@ export default function ColaboradorForm({
   empresas,
   unidades = [],
   dependentes: dependentesDoColaborador,
+  outrasEmpresas: outrasEmpresasDoColaborador,
   restrito = false,
   contratoLiberado = false,
 }: {
@@ -47,6 +56,8 @@ export default function ColaboradorForm({
   empresas: Empresa[];
   unidades?: Unidade[];
   dependentes?: DependenteColaborador[];
+  /** Outras empresas do grupo em que o colaborador também recebe (e quanto cada uma paga por mês). */
+  outrasEmpresas?: ColaboradorOutraEmpresa[];
   /** true = usuário sem acesso a salário/custos (ex.: assistente). Na criação ela ainda preenche o
    * salário (é ela quem faz a admissão); depois de criado, esses campos ficam ocultos pra ela — o
    * valor salvo continua indo no formulário escondido, só não aparece na tela. */
@@ -63,6 +74,10 @@ export default function ColaboradorForm({
   const [dependentes, setDependentes] = useState<Dependente[]>(
     dependentesIniciais(dependentesDoColaborador)
   );
+  const [outras, setOutras] = useState<{ empresa_id: string; valor_mensal: string }[]>(
+    (outrasEmpresasDoColaborador ?? []).map((o) => ({ empresa_id: o.empresa_id, valor_mensal: String(o.valor_mensal ?? "") }))
+  );
+  const [recebeOutra, setRecebeOutra] = useState((outrasEmpresasDoColaborador ?? []).length > 0);
   const [horario, setHorario] = useState<HorarioTrabalho>(colaborador?.horario_trabalho ?? {});
   const [valeTransporte, setValeTransporte] = useState(colaborador?.vale_transporte ?? false);
   const [valeAlimentacao, setValeAlimentacao] = useState(colaborador?.vale_alimentacao ?? false);
@@ -73,6 +88,8 @@ export default function ColaboradorForm({
   function enviar(formData: FormData) {
     formData.set("dependentes_json", JSON.stringify(dependentes));
     formData.set("horario_trabalho_json", JSON.stringify(horario));
+    // Perfil restrito não vê esse bloco: não manda nada, para não apagar o que já está salvo.
+    if (!restrito) formData.set("outras_empresas_json", JSON.stringify(recebeOutra ? outras : []));
     startTransition(() => salvarColaboradorComMatricula(formData));
   }
 
@@ -435,6 +452,96 @@ export default function ColaboradorForm({
               💰 A bolsa auxílio e o auxílio transporte ficam ocultos pra você depois que o colaborador é
               cadastrado.
             </p>
+          )}
+        </section>
+      )}
+
+      {!restrito && (
+        <section className="card space-y-4">
+          <div>
+            <h2 className="font-medium text-slate-900">Recebe também em outra empresa?</h2>
+            <p className="text-xs text-slate-500">
+              A pessoa continua cadastrada só na empresa principal (e conta uma vez no total). Aqui você informa
+              as outras empresas do grupo que também pagam a ela, para o custo aparecer em cada uma no Dashboard.
+            </p>
+          </div>
+          <div className="flex items-center gap-5 text-sm text-slate-700">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="recebe_outra_empresa"
+                checked={!recebeOutra}
+                onChange={() => setRecebeOutra(false)}
+              />
+              Não
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="recebe_outra_empresa"
+                checked={recebeOutra}
+                onChange={() => {
+                  setRecebeOutra(true);
+                  if (outras.length === 0) setOutras([{ empresa_id: "", valor_mensal: "" }]);
+                }}
+              />
+              Sim
+            </label>
+          </div>
+
+          {recebeOutra && (
+            <div className="space-y-3">
+              {outras.map((o, i) => (
+                <div key={i} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end border-b border-slate-100 pb-3">
+                  <div>
+                    <label className="label">Empresa</label>
+                    <select
+                      className="input"
+                      value={o.empresa_id}
+                      onChange={(e) =>
+                        setOutras((l) => l.map((x, idx) => (idx === i ? { ...x, empresa_id: e.target.value } : x)))
+                      }
+                    >
+                      <option value="">Escolha a empresa</option>
+                      {empresas
+                        .filter((e) => e.id !== empresaId)
+                        .map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.nome}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Quanto essa empresa paga por mês (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="input"
+                      value={o.valor_mensal}
+                      onChange={(e) =>
+                        setOutras((l) => l.map((x, idx) => (idx === i ? { ...x, valor_mensal: e.target.value } : x)))
+                      }
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOutras((l) => l.filter((_, idx) => idx !== i))}
+                    className="text-red-500 text-xs hover:underline pb-2"
+                  >
+                    remover
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setOutras((l) => [...l, { empresa_id: "", valor_mensal: "" }])}
+                className="text-sm text-brand-600 hover:underline"
+              >
+                + Adicionar outra empresa
+              </button>
+            </div>
           )}
         </section>
       )}

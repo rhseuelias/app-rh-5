@@ -7,6 +7,7 @@ import type {
   Empresa,
   EtapaProcesso,
   Ferias,
+  ColaboradorOutraEmpresa,
   PeriodoAquisitivo,
   ProcessoIntegracao,
   Unidade,
@@ -104,6 +105,7 @@ export default async function DashboardPage({
     { data: franquias },
     { data: feriasFuturas },
     { data: unidades },
+    { data: outrasEmpresasRaw },
   ] = await Promise.all([
     supabase.from("colaboradores").select("*"),
     supabase.from("empresas").select("*"),
@@ -114,6 +116,7 @@ export default async function DashboardPage({
     supabase.from("franquias_bse").select("*"),
     supabase.from("ferias").select("*").gte("data_inicio", hojeISO).order("data_inicio", { ascending: true }).limit(80),
     supabase.from("unidades").select("*"),
+    supabase.from("colaborador_outras_empresas").select("*"),
   ]);
 
   const lista = (colaboradores ?? []) as Colaborador[];
@@ -197,7 +200,7 @@ export default async function DashboardPage({
 
   // empresas que entram nos indicadores (Franquias não têm clima/treinamento/folha cadastrados)
   const empresasNoEscopo = empresaSel === "franquias" ? [] : empresaEscolhida ? [empresaEscolhida] : listaEmpresas;
-  const media = (vals: (number | null)[]) => {
+  const media = (vals: (number | null | undefined)[]) => {
     const v = vals.filter((x): x is number => x != null && x > 0);
     return v.length > 0 ? v.reduce((a, c) => a + c, 0) / v.length : null;
   };
@@ -226,9 +229,16 @@ export default async function DashboardPage({
         ? "Média das empresas informadas"
         : undefined;
 
-  // folha / faturamento por empresa
+  // folha / faturamento por empresa. Quem recebe em mais de uma empresa tem o valor da
+  // outra empresa somado ao custo dela (a pessoa continua contando uma vez só no total).
+  const outrasEmpresas = (outrasEmpresasRaw ?? []) as ColaboradorOutraEmpresa[];
+  const idsAtivosMes = new Set(lista.filter((c) => ativoEm(c, fimMesISO, ehMesAtual)).map((c) => c.id));
   const empresasFolha = empresasNoEscopo.map((e) => {
-    const custo = ativosMes.filter((c) => c.empresa_id === e.id).reduce((a, c) => a + custoMensalColaborador(c), 0);
+    const extra = outrasEmpresas
+      .filter((o) => o.empresa_id === e.id && idsAtivosMes.has(o.colaborador_id))
+      .reduce((a, o) => a + (Number(o.valor_mensal) || 0), 0);
+    const custo =
+      ativosMes.filter((c) => c.empresa_id === e.id).reduce((a, c) => a + custoMensalColaborador(c), 0) + extra;
     return { empresa: e, custo, fat: e.faturamento_mensal || 0, pct: percentualFolhaSobreFaturamento(custo, e.faturamento_mensal) };
   });
   const folhaComPct = empresasFolha.filter((x) => x.pct !== null);

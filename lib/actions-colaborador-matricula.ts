@@ -1,7 +1,9 @@
 "use server";
 
 import { createClient } from "@/lib/supabase-server";
+import { revalidatePath } from "next/cache";
 import { salvarColaborador } from "@/lib/actions";
+import { souAssistente } from "@/lib/permissoes";
 
 // Salva o colaborador do jeito de sempre (salvarColaborador) e, em seguida,
 // grava a matrícula, que é um campo novo. Assim o arquivo lib/actions.ts não
@@ -40,5 +42,51 @@ export async function salvarColaboradorComMatricula(formData: FormData): Promise
     }
   }
 
+  // "Recebe também em outra empresa": só grava se o formulário mandou a lista
+  // (perfil assistente não vê esse bloco, então nunca apaga nada por engano).
+  if (salvouComSucesso && formData.has("outras_empresas_json") && !(await souAssistente())) {
+    await sincronizarOutrasEmpresas(formData, id, cpf);
+  }
+
   if (falhou) throw erro;
+}
+
+async function sincronizarOutrasEmpresas(formData: FormData, id: string, cpf: string): Promise<void> {
+  const supabase = createClient();
+
+  let colaboradorId = id;
+  if (!colaboradorId && cpf) {
+    const { data } = await supabase.from("colaboradores").select("id").eq("cpf_cnpj", cpf).maybeSingle();
+    colaboradorId = data?.id ?? "";
+  }
+  if (!colaboradorId) return;
+
+  let lista: { empresa_id?: string; valor_mensal?: number | string }[] = [];
+  try {
+    const bruto = JSON.parse(String(formData.get("outras_empresas_json") ?? "[]"));
+    if (Array.isArray(bruto)) lista = bruto;
+  } catch {
+    return;
+  }
+
+  const empresaPrincipal = String(formData.get("empresa_id") ?? "");
+  const vistos = new Set<string>();
+  const validas = lista
+    .map((x) => ({ empresa_id: String(x.empresa_id ?? ""), valor_mensal: Number(x.valor_mensal) || 0 }))
+    .filter((x) => {
+      if (!x.empresa_id || x.empresa_id === empresaPrincipal || vistos.has(x.empresa_id)) return false;
+      vistos.add(x.empresa_id);
+      return true;
+    });
+
+  // Se a migration_036 ainda não foi rodada, os comandos abaixo só falham em silêncio.
+  await supabase.from("colaborador_outras_empresas").delete().eq("colaborador_id", colaboradorId);
+  if (validas.length > 0) {
+    await supabase
+      .from("colaborador_outras_empresas")
+      .insert(validas.map((x) => ({ colaborador_id: colaboradorId, ...x })));
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/colaboradores");
 }

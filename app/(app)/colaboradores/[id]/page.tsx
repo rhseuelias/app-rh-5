@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
 import type {
   Colaborador,
+  ColaboradorOutraEmpresa,
   DependenteColaborador,
   Empresa,
   EventoCalendario,
@@ -163,6 +164,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
     { data: historicoContratosPJ },
     { data: eventosFuturos },
     { data: registroFerias },
+    { data: outrasEmpresasRaw },
   ] = await Promise.all([
     supabase.from("colaboradores").select("*").eq("id", params.id).single(),
     supabase.from("empresas").select("*"),
@@ -195,11 +197,14 @@ export default async function ColaboradorPage({ params }: { params: { id: string
       .or("tipo.like.ferias_*,tipo.like.periodo_*")
       .order("created_at", { ascending: false })
       .limit(100),
+    supabase.from("colaborador_outras_empresas").select("*").eq("colaborador_id", params.id),
   ]);
 
   if (!colaborador) notFound();
 
   const c = colaborador as Colaborador;
+  // outras empresas em que a pessoa também recebe (o assistente não vê valores nem esse bloco)
+  const outrasEmpresas = restrito ? [] : ((outrasEmpresasRaw ?? []) as ColaboradorOutraEmpresa[]);
   const custoMensal = custoMensalColaborador(c);
 
   // acompanhamento de pagamento e homologação do desligamento (só RH, só CLT)
@@ -488,6 +493,16 @@ export default async function ColaboradorPage({ params }: { params: { id: string
             />
             <dl>
               <Linha rotulo="Empresa">{empresa?.nome ?? "—"}</Linha>
+              {outrasEmpresas.length > 0 && (
+                <Linha rotulo="Recebe também em">
+                  {outrasEmpresas
+                    .map((o) => {
+                      const nomeOutra = ((empresas ?? []) as Empresa[]).find((e) => e.id === o.empresa_id)?.nome ?? "—";
+                      return `${nomeOutra} (${formatarReais(o.valor_mensal)})`;
+                    })
+                    .join(" · ")}
+                </Linha>
+              )}
               <Linha rotulo="Unidade">{unidadeDoColaborador?.nome ?? "—"}</Linha>
               <Linha rotulo="Departamento">{c.departamento || "—"}</Linha>
               <Linha rotulo="Líder direto">{c.lider || "—"}</Linha>
@@ -814,6 +829,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
           empresas={(empresas ?? []) as Empresa[]}
           unidades={(unidades ?? []) as Unidade[]}
           dependentes={(dependentes ?? []) as DependenteColaborador[]}
+          outrasEmpresas={outrasEmpresas}
           restrito={restrito}
           contratoLiberado={contratoLiberado}
         />
