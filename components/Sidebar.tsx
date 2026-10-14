@@ -148,6 +148,7 @@ const ITENS: { href: string; label: string; icon: IconeNome }[] = [
   { href: "/colaboradores", label: "Colaboradores", icon: "colaboradores" },
   { href: "/onboarding", label: "Painel de Integração", icon: "integracao" },
   { href: "/entrevistas", label: "Entrevistas", icon: "entrevistas" },
+  { href: "/cargos", label: "Descrição de Cargos", icon: "relatorio" },
   { href: "/calendario", label: "Calendário Geral", icon: "calendario" },
   { href: "/ferias", label: "Férias", icon: "ferias" },
   { href: "/previsao-ferias", label: "Previsão de Férias", icon: "relatorio" },
