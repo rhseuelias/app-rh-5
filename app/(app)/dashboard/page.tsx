@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { differenceInCalendarDays, subMonths } from "date-fns";
+import { differenceInCalendarDays } from "date-fns";
 import { createClient } from "@/lib/supabase-server";
 import type {
   Colaborador,
   Empresa,
   EtapaProcesso,
+  Ferias,
   PeriodoAquisitivo,
   ProcessoIntegracao,
 } from "@/types/db";
@@ -18,17 +19,16 @@ import {
 } from "@/lib/calculos";
 import { autoGerarProximosPeriodosVencidos } from "@/lib/actions";
 import { souAssistente } from "@/lib/permissoes";
-import TimelineResumo from "@/components/dashboard/TimelineResumo";
-import AvisosDesligamentoPainel from "@/components/desligamento/AvisosDesligamentoPainel";
 import FiltrosPainel from "@/components/dashboard/FiltrosPainel";
-import EvolucaoLinhas from "@/components/dashboard/EvolucaoLinhas";
+import IntegracaoPainel from "@/components/dashboard/IntegracaoPainel";
+import AvisosRescisoes from "@/components/dashboard/AvisosRescisoes";
+import { montarLinhasIntegracao } from "@/components/dashboard/integracao-dados";
+import { Gauge, ClimaPorEmpresa, LegendaSemaforo, COR_SEM } from "@/components/dashboard/Semaforo";
 import {
   Cartao,
   TituloCartao,
   Pilula,
-  SeloExemplo,
   Vazio,
-  CABECALHO_TABELA,
   LINK_SUTIL,
   INTER,
   OSWALD,
@@ -43,9 +43,11 @@ export const dynamic = "force-dynamic";
 const COR_CLT = "#3d3d3d";
 const COR_PJ = "#fbb26e";
 const COR_ESTAGIO = "#ffd5aa";
-const COR_CARGO = "#f0913f";
-const COR_FOLHA = "#2f9e6b";
 const COR_TRILHA = "#f4ebe1";
+
+const META_CLIMA = 80;
+const META_TREINAMENTO = 80;
+const ESCALA_FOLHA = 25;
 
 const MESES_NOME = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -55,21 +57,8 @@ const MESES_NOME = [
 const normalizar = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const dois = (n: number) => String(n).padStart(2, "0");
 const dia10 = (s?: string | null) => (s ? s.slice(0, 10) : "");
-
-/** Série mensal "de exemplo" (12 pontos), terminando no valor real de hoje.
- * Determinística, só para ilustrar até o app guardar histórico de verdade. */
-function gerarSerieExemplo(valorAtual: number, amplitude: number, hoje: Date) {
-  const MESES = 12;
-  return Array.from({ length: MESES }, (_, i) => {
-    const idx = MESES - 1 - i;
-    const d = subMonths(hoje, idx);
-    const mes = d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
-    if (idx === 0) return { mes, valor: Math.round(valorAtual * 10) / 10 };
-    const onda = Math.sin((MESES - idx) * 1.1) * amplitude;
-    const tendencia = valorAtual - amplitude * 0.6 * (idx / MESES);
-    return { mes, valor: Math.max(0, Math.round((tendencia + onda) * 10) / 10) };
-  });
-}
+const ddmm = (s?: string | null) => (s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : "");
+const reais = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 
 function hojeBrasilia() {
   const partes = new Intl.DateTimeFormat("en-CA", {
@@ -90,8 +79,9 @@ interface LinhaAtencao {
   n: number;
   tom: Tom;
   href: string;
-  exemplo?: boolean;
 }
+
+const ICONE_TOM: Record<Tom, string> = { red: "✕", orange: "▲", green: "✓", off: "✓" };
 
 export default async function DashboardPage({
   searchParams,
@@ -106,6 +96,12 @@ export default async function DashboardPage({
   // perfil "assistente" não vê custo/folha/faturamento
   const ocultarFinanceiro = await souAssistente();
 
+  // "hoje" em Brasília
+  const b = hojeBrasilia();
+  const hoje = new Date(b.ano, b.mes - 1, b.dia);
+  const hojeISO = `${b.ano}-${dois(b.mes)}-${dois(b.dia)}`;
+  const chaveMesAtual = `${b.ano}-${dois(b.mes)}`;
+
   const [
     { data: colaboradores },
     { data: empresas },
@@ -114,6 +110,7 @@ export default async function DashboardPage({
     { data: configIntegracao },
     { data: periodosAbertos },
     { data: franquias },
+    { data: feriasFuturas },
   ] = await Promise.all([
     supabase.from("colaboradores").select("*"),
     supabase.from("empresas").select("*"),
@@ -122,18 +119,15 @@ export default async function DashboardPage({
     supabase.from("config_integracao").select("*").eq("id", "default").maybeSingle(),
     supabase.from("periodos_aquisitivos").select("*").eq("status", "aberto"),
     supabase.from("franquias_bse").select("*"),
+    supabase.from("ferias").select("*").gte("data_inicio", hojeISO).order("data_inicio", { ascending: true }).limit(80),
   ]);
 
   const lista = (colaboradores ?? []) as Colaborador[];
   const listaEmpresas = (empresas ?? []) as Empresa[];
 
   // ------------------------------------------------------------
-  // Datas: "hoje" em Brasília, mês escolhido (padrão = mês atual)
+  // Datas: mês escolhido (padrão = mês atual)
   // ------------------------------------------------------------
-  const b = hojeBrasilia();
-  const hoje = new Date(b.ano, b.mes - 1, b.dia);
-  const chaveMesAtual = `${b.ano}-${dois(b.mes)}`;
-
   const opcoesMes = Array.from({ length: 12 }, (_, i) => {
     const d = new Date(b.ano, b.mes - 1 - i, 1);
     return {
@@ -149,10 +143,6 @@ export default async function DashboardPage({
   const ultimoDia = new Date(anoSel, mesSel, 0).getDate();
   const iniMesISO = `${anoSel}-${dois(mesSel)}-01`;
   const fimMesISO = `${anoSel}-${dois(mesSel)}-${dois(ultimoDia)}`;
-  const anoAnt = mesSel === 1 ? anoSel - 1 : anoSel;
-  const mesAnt = mesSel === 1 ? 12 : mesSel - 1;
-  const iniAntISO = `${anoAnt}-${dois(mesAnt)}-01`;
-  const fimAntISO = `${anoAnt}-${dois(mesAnt)}-${dois(new Date(anoAnt, mesAnt, 0).getDate())}`;
   const rotuloMes = MESES_NOME[mesSel - 1];
 
   function ativoEm(c: Colaborador, fimISO: string, atual: boolean): boolean {
@@ -162,13 +152,13 @@ export default async function DashboardPage({
     const des = dia10(c.data_desligamento);
     return !des || des > fimISO;
   }
-  const desligouNoMes = (c: Colaborador, iniISO: string, fimISO: string) => {
+  const desligouNoMes = (c: Colaborador) => {
     const d = dia10(c.data_desligamento);
-    return !!d && d >= iniISO && d <= fimISO;
+    return !!d && d >= iniMesISO && d <= fimMesISO;
   };
-  const admitiuNoMes = (c: Colaborador, iniISO: string, fimISO: string) => {
+  const admitiuNoMes = (c: Colaborador) => {
     const d = dia10(c.data_admissao);
-    return !!d && d >= iniISO && d <= fimISO;
+    return !!d && d >= iniMesISO && d <= fimMesISO;
   };
 
   // ------------------------------------------------------------
@@ -200,7 +190,6 @@ export default async function DashboardPage({
   const escopo = lista.filter(noEscopo);
   const ativosAgora = escopo.filter((c) => c.status === "ativo" || c.status === "experiencia");
   const ativosMes = escopo.filter((c) => ativoEm(c, fimMesISO, ehMesAtual));
-  const ativosMesAnterior = escopo.filter((c) => ativoEm(c, fimAntISO, false));
   const idsEscopo = new Set(escopo.map((c) => c.id));
 
   const cltN = ativosMes.filter((c) => c.tipo === "CLT").length + (incluiFranquias ? franqClt : 0);
@@ -210,34 +199,26 @@ export default async function DashboardPage({
   const emFranquias = incluiFranquias ? franqTotal : 0;
   const totalHead = noSistema + emFranquias;
 
-  const admissoesMes = escopo.filter((c) => admitiuNoMes(c, iniMesISO, fimMesISO)).length;
-  const desligMes = escopo.filter((c) => desligouNoMes(c, iniMesISO, fimMesISO)).length;
-  const saldoMes = admissoesMes - desligMes;
+  const saldoMes = escopo.filter(admitiuNoMes).length - escopo.filter(desligouNoMes).length;
 
-  const turnover = noSistema > 0 ? (desligMes / noSistema) * 100 : 0;
-  const desligAnt = escopo.filter((c) => desligouNoMes(c, iniAntISO, fimAntISO)).length;
-  const turnoverAnt = ativosMesAnterior.length > 0 ? (desligAnt / ativosMesAnterior.length) * 100 : null;
-  const deltaTurnover = turnoverAnt === null ? null : turnover - turnoverAnt;
+  // empresas que entram nos indicadores (Franquias não têm clima/treinamento/folha cadastrados)
+  const empresasNoEscopo = empresaSel === "franquias" ? [] : empresaEscolhida ? [empresaEscolhida] : listaEmpresas;
+  const media = (vals: (number | null)[]) => {
+    const v = vals.filter((x): x is number => x != null);
+    return v.length > 0 ? v.reduce((a, c) => a + c, 0) / v.length : null;
+  };
+  const climaMedio = media(empresasNoEscopo.map((e) => e.clima_pct));
+  const treinoMedio = media(empresasNoEscopo.map((e) => e.treinamento_pct));
 
-  // absenteísmo (campo cadastrado por empresa)
-  const empresasNoEscopo = empresaEscolhida ? [empresaEscolhida] : listaEmpresas;
-  const valoresAbs = empresasNoEscopo.map((e) => e.absenteismo_pct).filter((v): v is number => v != null);
-  const absenteismo = valoresAbs.length > 0 ? valoresAbs.reduce((a, c) => a + c, 0) / valoresAbs.length : null;
-
-  // folha / faturamento
-  const empresasFolha = empresasNoEscopo
-    .map((e) => {
-      const custo = ativosMes.filter((c) => c.empresa_id === e.id).reduce((a, c) => a + custoMensalColaborador(c), 0);
-      return { empresa: e, custo, pct: percentualFolhaSobreFaturamento(custo, e.faturamento_mensal) };
-    });
-  const comFat = empresasFolha.filter((x) => x.pct !== null);
-  const somaCusto = comFat.reduce((a, x) => a + x.custo, 0);
-  const somaFat = comFat.reduce((a, x) => a + (x.empresa.faturamento_mensal || 0), 0);
-  const folhaPct = percentualFolhaSobreFaturamento(somaCusto, somaFat);
-  const maiorFolha = comFat.length > 1 ? [...comFat].sort((a, b) => (b.pct as number) - (a.pct as number))[0] : null;
+  // folha / faturamento por empresa
+  const empresasFolha = empresasNoEscopo.map((e) => {
+    const custo = ativosMes.filter((c) => c.empresa_id === e.id).reduce((a, c) => a + custoMensalColaborador(c), 0);
+    return { empresa: e, custo, fat: e.faturamento_mensal || 0, pct: percentualFolhaSobreFaturamento(custo, e.faturamento_mensal) };
+  });
+  const folhaComPct = empresasFolha.filter((x) => x.pct !== null);
 
   // ------------------------------------------------------------
-  // Atenção — próximos 60 dias
+  // Integração, experiência, férias, contratos
   // ------------------------------------------------------------
   const prazoSaidaPainelDias = configIntegracao?.prazo_saida_painel_dias ?? 7;
   const todosProcessos = (processos ?? []) as ProcessoIntegracao[];
@@ -262,6 +243,7 @@ export default async function DashboardPage({
   const atrasadasPainel = processosNoPainel.filter((p) =>
     (etapasPorProcesso.get(p.id) ?? []).some((e) => etapaAtrasada(e.prazo, e.status))
   ).length;
+  const linhasIntegracao = montarLinhasIntegracao(processosNoPainel, todasEtapas, lista, listaEmpresas);
 
   const experienciaVencendo = ativosAgora
     .filter((c) => {
@@ -285,18 +267,11 @@ export default async function DashboardPage({
     return d >= 0 && d <= 30;
   }).length;
 
-  // 🧪 exemplos (o app ainda não guarda PDI nem avaliação de desempenho)
-  const pdiAndamentoEx = Math.max(1, Math.round(ativosAgora.length * 0.18));
-  const pdisAtrasadosEx = Math.max(0, Math.round(pdiAndamentoEx * 0.2));
-  const avaliacoesPendentesEx = Math.max(0, Math.round(ativosAgora.length * 0.1));
-
   const linhasAtencao = ([
     { chave: "etapas", rotulo: "Etapas de integração atrasadas", n: atrasadasPainel, tom: "red", href: "/onboarding" },
-    { chave: "pdis", rotulo: "PDIs atrasados", n: pdisAtrasadosEx, tom: "red", href: "/colaboradores", exemplo: true },
-    { chave: "exp", rotulo: "Experiências terminando (≤15 dias)", n: experienciaVencendo.length, tom: "orange", href: "/colaboradores" },
-    { chave: "aval", rotulo: "Avaliações de desempenho pendentes", n: avaliacoesPendentesEx, tom: "orange", href: "/colaboradores", exemplo: true },
-    { chave: "ferias", rotulo: "Férias vencendo (≤30 dias)", n: feriasVencendo, tom: "orange", href: "/ferias" },
-    { chave: "pj", rotulo: "Contratos PJ vencendo (≤60 dias)", n: contratosPJVencendo, tom: "orange", href: "/colaboradores" },
+    { chave: "exp", rotulo: "Experiências terminando (até 15 dias)", n: experienciaVencendo.length, tom: "orange", href: "/colaboradores" },
+    { chave: "ferias", rotulo: "Férias vencendo (até 30 dias)", n: feriasVencendo, tom: "orange", href: "/ferias" },
+    { chave: "pj", rotulo: "Contratos PJ vencendo (até 60 dias)", n: contratosPJVencendo, tom: "orange", href: "/colaboradores" },
   ] as LinhaAtencao[]).sort((a, b) => Number(b.n > 0) - Number(a.n > 0));
 
   // aniversariantes do mês escolhido
@@ -305,8 +280,19 @@ export default async function DashboardPage({
     .sort((a, b) => Number(a.data_nascimento!.slice(8, 10)) - Number(b.data_nascimento!.slice(8, 10)));
   const nomeEmpresaPorId = Object.fromEntries(listaEmpresas.map((e) => [e.id, e.nome]));
 
+  // próximas férias (planejadas, solicitadas ou aprovadas) de quem está no filtro
+  const colabPorId = new Map(lista.map((c) => [c.id, c]));
+  const proximasFerias = ((feriasFuturas ?? []) as Ferias[])
+    .filter(
+      (f) =>
+        !f.simulacao &&
+        (f.status === "planejada" || f.status === "solicitado" || f.status === "aprovado") &&
+        idsEscopo.has(f.colaborador_id)
+    )
+    .slice(0, 6);
+
   // ------------------------------------------------------------
-  // Colaboradores por empresa (todas, no mês escolhido)
+  // Colaboradores por empresa (cartões do topo)
   // ------------------------------------------------------------
   const ativosMesGeral = lista.filter((c) => ativoEm(c, fimMesISO, ehMesAtual));
   const contar = (arr: Colaborador[]) => ({
@@ -330,80 +316,28 @@ export default async function DashboardPage({
   const semEmpresa = ativosMesGeral.filter((c) => !c.empresa_id || !listaEmpresas.some((e) => e.id === c.empresa_id));
   if (semEmpresa.length > 0) linhasEmpresa.push({ chave: "sem", nome: "Sem empresa", ...contar(semEmpresa) });
   const totalLinha = (l: LinhaEmpresa) => l.clt + l.pj + l.estagio;
-  const maxLinha = Math.max(1, ...linhasEmpresa.map(totalLinha));
-  const totalTodas = linhasEmpresa.reduce((a, l) => a + totalLinha(l), 0);
-
-  // ------------------------------------------------------------
-  // Tempo de empresa e cargos (escopo + mês)
-  // ------------------------------------------------------------
-  const faixas = [
-    { faixa: "Menos de 1 ano", total: 0 },
-    { faixa: "1 a 3 anos", total: 0 },
-    { faixa: "3 a 5 anos", total: 0 },
-    { faixa: "Mais de 5 anos", total: 0 },
-  ];
-  const refData = ehMesAtual ? hoje : new Date(anoSel, mesSel - 1, ultimoDia);
-  for (const c of ativosMes) {
-    if (!c.data_admissao) continue;
-    const [ya, ma, da] = dia10(c.data_admissao).split("-").map(Number);
-    const anos = differenceInCalendarDays(refData, new Date(ya, ma - 1, da)) / 365.25;
-    if (anos < 1) faixas[0].total++;
-    else if (anos < 3) faixas[1].total++;
-    else if (anos < 5) faixas[2].total++;
-    else faixas[3].total++;
-  }
-  const maxFaixa = Math.max(1, ...faixas.map((f) => f.total));
-
-  const contagemCargo = new Map<string, number>();
-  for (const c of ativosMes) {
-    const k = c.cargo?.trim() || "Sem cargo";
-    contagemCargo.set(k, (contagemCargo.get(k) ?? 0) + 1);
-  }
-  const cargosOrd = [...contagemCargo.entries()].sort((a, b) => b[1] - a[1]);
-  const TOP = 6;
-  const dadosCargo =
-    cargosOrd.length > TOP
-      ? [
-          ...cargosOrd.slice(0, TOP).map(([nome, total]) => ({ nome, total })),
-          { nome: "Outros", total: cargosOrd.slice(TOP).reduce((a, [, t]) => a + t, 0) },
-        ]
-      : cargosOrd.map(([nome, total]) => ({ nome, total }));
-  const maxCargo = Math.max(1, ...dadosCargo.map((d) => d.total));
-
-  // ------------------------------------------------------------
-  // Visão por empresa
-  // ------------------------------------------------------------
-  const empresasVisao = (empresaEscolhida ? [empresaEscolhida] : listaEmpresas).map((e) => {
-    const doGrupo = lista.filter((c) => c.empresa_id === e.id);
-    const ativosEmp = doGrupo.filter((c) => ativoEm(c, fimMesISO, ehMesAtual));
-    const custo = ativosEmp.reduce((a, c) => a + custoMensalColaborador(c), 0);
-    const deslig = doGrupo.filter((c) => desligouNoMes(c, iniMesISO, fimMesISO)).length;
-    return {
-      empresa: e,
-      headcount: ativosEmp.length,
-      turnover: ativosEmp.length > 0 ? (deslig / ativosEmp.length) * 100 : 0,
-      pct: percentualFolhaSobreFaturamento(custo, e.faturamento_mensal),
-    };
-  });
-  const algumaSemPerformance = empresasVisao.some((v) => v.empresa.performance_pct == null);
-  const COLS_VISAO = ocultarFinanceiro
-    ? "1.2fr .8fr .8fr .8fr .8fr"
-    : "1.2fr .8fr .8fr .8fr .8fr 2fr";
-
-  // 🧪 evolução (exemplo)
-  const serieAbs = gerarSerieExemplo(absenteismo ?? 3, 0.6, hoje);
-  const serieTurn = gerarSerieExemplo(turnover, 0.8, hoje);
 
   const diaSemana = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long" }).format(new Date());
   const subtitulo = `${diaSemana.charAt(0).toUpperCase()}${diaSemana.slice(1)}, ${dois(b.dia)} de ${MESES_NOME[b.mes - 1].toLowerCase()} de ${b.ano} · atualizado agora`;
 
   const nPct = (v: number, t: number) => (t > 0 ? Math.round((v / t) * 100) : 0);
-  const colsKpi = ocultarFinanceiro
-    ? "lg:grid-cols-[1.2fr_1.6fr_1fr_1fr]"
-    : "lg:grid-cols-[1.2fr_1.6fr_1fr_1fr_1fr]";
-
-  const valorKpi = "font-semibold text-[#262626] tabular-nums leading-none";
   const rotuloKpi = "text-[11px] font-semibold uppercase tracking-[0.06em] text-[#737373]";
+
+  // barra CLT / PJ / Estágio reaproveitada nos cartões do topo
+  const BarraVinculo = ({ clt, pj, est, alto = 8 }: { clt: number; pj: number; est: number; alto?: number }) => {
+    const t = clt + pj + est;
+    return (
+      <div className="flex rounded-full overflow-hidden" style={{ background: COR_TRILHA, height: alto }}>
+        {t > 0 && (
+          <>
+            <span style={{ width: `${(clt / t) * 100}%`, background: COR_CLT }} />
+            <span style={{ width: `${(pj / t) * 100}%`, background: COR_PJ }} />
+            {est > 0 && <span style={{ width: `${(est / t) * 100}%`, background: COR_ESTAGIO }} />}
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-5" style={{ fontFamily: INTER }}>
@@ -418,121 +352,158 @@ export default async function DashboardPage({
           </h1>
           <p className="text-[13px] text-[#737373] mt-1">{subtitulo}</p>
         </div>
-        <FiltrosPainel
-          empresas={opcoesEmpresa}
-          empresaAtual={empresaSel}
-          meses={opcoesMes}
-          mesAtual={mesAtualSelecionado}
-        />
-      </div>
-
-      {/* Faixa de indicadores */}
-      <div className="rounded-[12px] border border-[#f1e4d6] overflow-hidden bg-[#f1e4d6]">
-        <div className={`grid grid-cols-2 ${colsKpi} gap-px`}>
-          {/* Colaboradores */}
-          <div className="bg-white px-6 py-5 col-span-2 lg:col-span-1">
-            <p className={rotuloKpi}>Colaboradores</p>
-            <p className={`${valorKpi} text-[40px] mt-2`} style={{ fontFamily: OSWALD }}>
-              {totalHead}
-            </p>
-            <p className="text-[12px] mt-2 text-[#737373]">
-              <span style={{ color: saldoMes > 0 ? TONS.green.fg : saldoMes < 0 ? TONS.red.fg : "#737373" }} className="font-semibold">
-                {saldoMes > 0 ? `+${saldoMes}` : saldoMes} no mês
-              </span>
-              {" · "}
-              {noSistema} no sistema{emFranquias > 0 ? ` · ${emFranquias} em franquias` : ""}
-            </p>
-          </div>
-
-          {/* Vínculo */}
-          <div className="bg-white px-6 py-5 col-span-2 lg:col-span-1">
-            <p className={rotuloKpi}>Vínculo</p>
-            {totalHead === 0 ? (
-              <p className="text-[13px] text-[#737373] mt-3">Sem colaboradores neste filtro.</p>
-            ) : (
-              <>
-                <div className="flex h-[10px] rounded-full overflow-hidden mt-4" style={{ background: COR_TRILHA }}>
-                  <span style={{ width: `${(cltN / totalHead) * 100}%`, background: COR_CLT }} />
-                  <span style={{ width: `${(pjN / totalHead) * 100}%`, background: COR_PJ }} />
-                  {estN > 0 && <span style={{ width: `${(estN / totalHead) * 100}%`, background: COR_ESTAGIO }} />}
-                </div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-[12px] text-[#3d3d3d] tabular-nums">
-                  <span className="inline-flex items-center gap-1.5">
-                    <i className="w-2 h-2 rounded-full" style={{ background: COR_CLT }} />
-                    CLT {cltN} · {nPct(cltN, totalHead)}%
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <i className="w-2 h-2 rounded-full" style={{ background: COR_PJ }} />
-                    PJ {pjN} · {nPct(pjN, totalHead)}%
-                  </span>
-                  {estN > 0 && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <i className="w-2 h-2 rounded-full" style={{ background: COR_ESTAGIO }} />
-                      Estágio {estN} · {nPct(estN, totalHead)}%
-                    </span>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Turnover */}
-          <div className="bg-white px-6 py-5">
-            <p className={rotuloKpi}>Turnover (mês)</p>
-            <p className={`${valorKpi} text-[28px] mt-3`}>{fmt1(turnover)}%</p>
-            <p className="text-[12px] mt-2 font-semibold tabular-nums" style={{ color: deltaTurnover === null ? "#737373" : deltaTurnover <= 0 ? TONS.green.fg : TONS.red.fg }}>
-              {deltaTurnover === null
-                ? "—"
-                : `${deltaTurnover > 0 ? "+" : ""}${fmt1(deltaTurnover)} p.p. vs mês anterior`}
-            </p>
-          </div>
-
-          {/* Absenteísmo */}
-          <div className="bg-white px-6 py-5">
-            <p className={rotuloKpi}>Absenteísmo</p>
-            <p className={`${valorKpi} text-[28px] mt-3`}>{absenteismo === null ? "—" : `${fmt1(absenteismo)}%`}</p>
-            <p className="text-[12px] mt-2 text-[#737373]">{absenteismo === null ? "não informado" : "média cadastrada"}</p>
-          </div>
-
-          {/* Folha / faturamento */}
-          {!ocultarFinanceiro && (
-            <div className="bg-white px-6 py-5 col-span-2 lg:col-span-1">
-              <p className={rotuloKpi}>Folha / faturamento</p>
-              <p className={`${valorKpi} text-[28px] mt-3`} style={{ color: folhaPct === null ? "#262626" : folhaPct <= LIMITE_SAUDAVEL_FOLHA_PCT ? COR_FOLHA : TONS.red.fg }}>
-                {folhaPct === null ? "—" : `${fmt1(folhaPct)}%`}
-              </p>
-              <p className="text-[12px] mt-2 text-[#737373]">
-                meta {LIMITE_SAUDAVEL_FOLHA_PCT}%
-                {maiorFolha ? ` · maior: ${maiorFolha.empresa.nome}` : ""}
-              </p>
-            </div>
-          )}
+        <div className="flex flex-wrap items-center gap-3">
+          <LegendaSemaforo />
+          <FiltrosPainel
+            empresas={opcoesEmpresa}
+            empresaAtual={empresaSel}
+            meses={opcoesMes}
+            mesAtual={mesAtualSelecionado}
+          />
         </div>
       </div>
 
-      {/* Desligamentos: pagamento e homologação (some se não houver ninguém) */}
-      <AvisosDesligamentoPainel />
+      {/* Cartões do topo: total + cada empresa */}
+      <div className="flex flex-wrap gap-4">
+        <Cartao className="flex-[1.5_1_280px]">
+          <p className={rotuloKpi}>Colaboradores</p>
+          <p className="mt-2 text-[40px] leading-none font-semibold text-[#262626] tabular-nums" style={{ fontFamily: OSWALD }}>
+            {totalHead}
+          </p>
+          <p className="text-[12px] mt-2 text-[#737373]">
+            <span
+              className="font-semibold"
+              style={{ color: saldoMes > 0 ? TONS.green.fg : saldoMes < 0 ? TONS.red.fg : "#737373" }}
+            >
+              {saldoMes > 0 ? `+${saldoMes}` : saldoMes} no mês
+            </span>
+            {emFranquias > 0 ? ` · ${emFranquias} em franquias` : ""}
+          </p>
+          {totalHead === 0 ? (
+            <p className="text-[13px] text-[#737373] mt-3">Sem colaboradores neste filtro.</p>
+          ) : (
+            <div className="mt-3">
+              <BarraVinculo clt={cltN} pj={pjN} est={estN} alto={10} />
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[12px] text-[#3d3d3d] tabular-nums">
+                <span className="inline-flex items-center gap-1.5">
+                  <i className="w-2 h-2 rounded-full" style={{ background: COR_CLT }} />
+                  CLT {cltN} · {nPct(cltN, totalHead)}%
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <i className="w-2 h-2 rounded-full" style={{ background: COR_PJ }} />
+                  PJ {pjN} · {nPct(pjN, totalHead)}%
+                </span>
+                {estN > 0 && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <i className="w-2 h-2 rounded-full" style={{ background: COR_ESTAGIO }} />
+                    Estágio {estN}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </Cartao>
 
-      {/* Atenção / experiência / aniversários */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr_1fr] gap-4">
+        {linhasEmpresa.map((l) => {
+          const t = totalLinha(l);
+          return (
+            <Cartao key={l.chave} className="flex-1 min-w-[170px]">
+              <p className={`${rotuloKpi} truncate`}>{l.nome}</p>
+              <p className="mt-2 text-[32px] leading-none font-semibold text-[#262626] tabular-nums" style={{ fontFamily: OSWALD }}>
+                {t}
+              </p>
+              <p className="text-[12px] mt-2 text-[#737373] tabular-nums">
+                CLT {l.clt} · PJ {l.pj}
+                {l.estagio > 0 ? ` · Est. ${l.estagio}` : ""}
+              </p>
+              <div className="mt-3">
+                <BarraVinculo clt={l.clt} pj={l.pj} est={l.estagio} />
+              </div>
+            </Cartao>
+          );
+        })}
+      </div>
+
+      {/* Clima, treinamento e custo da folha */}
+      <div className={`grid grid-cols-1 gap-4 ${ocultarFinanceiro ? "lg:grid-cols-2" : "lg:grid-cols-[1fr_1fr_2.1fr]"}`}>
         <Cartao>
-          <TituloCartao>Precisa de atenção — próximos 60 dias</TituloCartao>
-          <ul className="divide-y divide-[#f4ebe1]">
-            {linhasAtencao.map((l) => {
-              const zero = l.n === 0;
-              return (
-                <li key={l.chave} className="py-2.5" style={{ opacity: zero ? 0.6 : 1 }}>
-                  <Link href={l.href} className="flex items-center justify-between gap-3 group">
-                    <span className="text-[13px] text-[#3d3d3d] group-hover:text-[#262626] flex items-center gap-2 min-w-0">
-                      <span className="truncate">{l.rotulo}</span>
-                      {l.exemplo && <SeloExemplo />}
-                    </span>
-                    <Pilula tom={zero ? "off" : l.tom}>{l.n} ›</Pilula>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          <Gauge
+            titulo="Clima"
+            pct={climaMedio}
+            meta={META_CLIMA}
+            nota={empresasNoEscopo.length > 1 ? "média das empresas" : undefined}
+          />
+        </Cartao>
+        <Cartao>
+          <Gauge
+            titulo="Treinamento"
+            pct={treinoMedio}
+            meta={META_TREINAMENTO}
+            nota={empresasNoEscopo.length > 1 ? "média das empresas" : undefined}
+          />
+        </Cartao>
+
+        {!ocultarFinanceiro && (
+          <Cartao>
+            <TituloCartao direita={<span>meta: até {LIMITE_SAUDAVEL_FOLHA_PCT}% do faturamento</span>}>
+              Custo da folha ÷ faturamento
+            </TituloCartao>
+            {folhaComPct.length === 0 ? (
+              <Vazio>Sem faturamento cadastrado neste filtro.</Vazio>
+            ) : (
+              <div className="space-y-4">
+                {folhaComPct.map(({ empresa: e, custo, fat, pct }) => {
+                  const bom = (pct as number) <= LIMITE_SAUDAVEL_FOLHA_PCT;
+                  const cor = bom ? COR_SEM.bom : COR_SEM.critico;
+                  return (
+                    <div key={e.id}>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-[13px] font-semibold text-[#262626]">{e.nome}</span>
+                        <span className="text-[13px] font-semibold tabular-nums" style={{ color: bom ? TONS.green.fg : TONS.red.fg }}>
+                          {bom ? "✓" : "✕"} {fmt1(pct as number)}%
+                        </span>
+                      </div>
+                      <span className="relative block h-[10px] rounded-full mt-1.5" style={{ background: COR_TRILHA }}>
+                        <span
+                          className="absolute inset-y-0 left-0 rounded-full"
+                          style={{ width: `${Math.min(100, ((pct as number) / ESCALA_FOLHA) * 100)}%`, background: cor }}
+                        />
+                        <span
+                          className="absolute -top-[3px] -bottom-[3px] w-[2px] bg-black"
+                          style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / ESCALA_FOLHA) * 100}%` }}
+                          title={`Meta: ${LIMITE_SAUDAVEL_FOLHA_PCT}%`}
+                        />
+                      </span>
+                      <p className="text-[12px] text-[#737373] mt-1 tabular-nums">
+                        folha R$ {reais(custo)} · faturamento R$ {reais(fat)}
+                      </p>
+                    </div>
+                  );
+                })}
+                <p className="text-[12px] text-[#737373]">A linha preta marca a meta de {LIMITE_SAUDAVEL_FOLHA_PCT}%.</p>
+              </div>
+            )}
+          </Cartao>
+        )}
+      </div>
+
+      {/* Processo de integração */}
+      <IntegracaoPainel linhas={linhasIntegracao} />
+
+      {/* Avisos prévios e rescisões */}
+      <AvisosRescisoes
+        mesChave={mesAtualSelecionado}
+        idsColaboradores={empresaSel === "todas" ? null : Array.from(idsEscopo)}
+      />
+
+      {/* Clima por empresa, experiência e pendências */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr_.8fr] gap-4">
+        <Cartao>
+          <TituloCartao direita={<span>meta: acima de {META_CLIMA}%</span>}>Clima de cada empresa</TituloCartao>
+          <ClimaPorEmpresa
+            itens={empresasNoEscopo.map((e) => ({ nome: e.nome, pct: e.clima_pct }))}
+            meta={META_CLIMA}
+          />
         </Cartao>
 
         <Cartao>
@@ -560,11 +531,13 @@ export default async function DashboardPage({
                         {c.nome}
                       </Link>
                       <p className="text-[12px] text-[#737373] truncate">
-                        {c.cargo ? `${c.cargo} · ` : ""}termina {fim.slice(8, 10)}/{fim.slice(5, 7)}
+                        {c.cargo ? `${c.cargo} · ` : ""}termina {ddmm(fim)}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
-                      <Pilula tom={urgente ? "red" : "orange"}>{dias} dia{dias !== 1 ? "s" : ""}</Pilula>
+                      <Pilula tom={urgente ? "red" : "orange"}>
+                        {urgente ? "✕" : "▲"} {dias} dia{dias !== 1 ? "s" : ""}
+                      </Pilula>
                       <Link href="/onboarding" className={LINK_SUTIL}>
                         {urgente ? "Efetivar" : "Revisar avaliação"}
                       </Link>
@@ -577,6 +550,30 @@ export default async function DashboardPage({
         </Cartao>
 
         <Cartao>
+          <TituloCartao>Pendências</TituloCartao>
+          <ul className="divide-y divide-[#f4ebe1]">
+            {linhasAtencao.map((l) => {
+              const zero = l.n === 0;
+              return (
+                <li key={l.chave} className="py-2.5" style={{ opacity: zero ? 0.6 : 1 }}>
+                  <Link href={l.href} className="flex items-center justify-between gap-3 group">
+                    <span className="text-[13px] text-[#3d3d3d] group-hover:text-[#262626] min-w-0">
+                      <span className="block">{l.rotulo}</span>
+                    </span>
+                    <Pilula tom={zero ? "green" : l.tom}>
+                      {zero ? "✓" : ICONE_TOM[l.tom]} {l.n} ›
+                    </Pilula>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </Cartao>
+      </div>
+
+      {/* Aniversariantes e próximas férias */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Cartao>
           <TituloCartao direita={<Link href="/aniversarios" className={LINK_SUTIL}>Ver todos</Link>}>
             Aniversariantes de {rotuloMes.toLowerCase()}
           </TituloCartao>
@@ -587,7 +584,7 @@ export default async function DashboardPage({
               {aniversariantes.slice(0, 7).map((c) => (
                 <li key={c.id} className="flex items-baseline gap-3">
                   <span className="text-[13px] font-semibold tabular-nums shrink-0 w-11" style={{ color: "#93440c" }}>
-                    {c.data_nascimento!.slice(8, 10)}/{c.data_nascimento!.slice(5, 7)}
+                    {ddmm(c.data_nascimento)}
                   </span>
                   <Link href={`/colaboradores/${c.id}`} className="text-[13px] text-[#262626] truncate hover:underline min-w-0 flex-1">
                     {c.nome}
@@ -603,183 +600,40 @@ export default async function DashboardPage({
             </ul>
           )}
         </Cartao>
-      </div>
-
-      {/* Colaboradores por empresa */}
-      <Cartao>
-        <TituloCartao
-          direita={
-            <span className="inline-flex items-center gap-3">
-              <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-full" style={{ background: COR_CLT }} />CLT</span>
-              <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-full" style={{ background: COR_PJ }} />PJ</span>
-            </span>
-          }
-        >
-          Colaboradores por empresa
-        </TituloCartao>
-        {linhasEmpresa.length === 0 ? (
-          <Vazio>Nenhuma empresa cadastrada.</Vazio>
-        ) : (
-          <div className="space-y-3">
-            {linhasEmpresa.map((l) => {
-              const t = totalLinha(l);
-              return (
-                <div key={l.chave} className="grid grid-cols-[130px_1fr_90px] sm:grid-cols-[170px_1fr_110px] items-center gap-3">
-                  <span className="text-[13px] text-[#3d3d3d] truncate">{l.nome}</span>
-                  <div className="h-6 rounded-[6px] overflow-hidden flex" style={{ background: COR_TRILHA }}>
-                    {[
-                      { v: l.clt, cor: COR_CLT, texto: "#fff" },
-                      { v: l.pj, cor: COR_PJ, texto: "#262626" },
-                      { v: l.estagio, cor: COR_ESTAGIO, texto: "#262626" },
-                    ]
-                      .filter((s) => s.v > 0)
-                      .map((s, i) => (
-                        <span
-                          key={i}
-                          className="flex items-center justify-center text-[12px] font-semibold tabular-nums"
-                          style={{ width: `${(s.v / maxLinha) * 100}%`, background: s.cor, color: s.texto }}
-                        >
-                          {s.v}
-                        </span>
-                      ))}
-                  </div>
-                  <span className="text-right tabular-nums">
-                    <span className="text-[20px] font-semibold text-[#262626]" style={{ fontFamily: OSWALD }}>{t}</span>
-                    <span className="text-[12px] text-[#737373] ml-1.5">{nPct(t, totalTodas)}%</span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Cartao>
-
-      {/* Integração */}
-      <TimelineResumo
-        processos={processosNoPainel}
-        etapas={todasEtapas}
-        colaboradores={lista}
-        empresas={listaEmpresas}
-      />
-
-      {/* Visão por empresa */}
-      {empresasVisao.length > 0 && (
-        <Cartao>
-          <TituloCartao>Visão por empresa</TituloCartao>
-          <div className="overflow-x-auto">
-            <div className="min-w-[720px]">
-              <div className={`grid gap-3 border-b border-[#f4ebe1] pb-2 ${CABECALHO_TABELA}`} style={{ gridTemplateColumns: COLS_VISAO }}>
-                <div>Empresa</div>
-                <div>Headcount</div>
-                <div>Performance</div>
-                <div>Turnover</div>
-                <div>Absenteísmo</div>
-                {!ocultarFinanceiro && <div>Folha / faturamento</div>}
-              </div>
-              {empresasVisao.map(({ empresa: e, headcount, turnover: t, pct }) => (
-                <div
-                  key={e.id}
-                  className="grid gap-3 items-center py-3 border-b border-[#f4ebe1] last:border-b-0 text-[13px] text-[#3d3d3d] tabular-nums"
-                  style={{ gridTemplateColumns: COLS_VISAO }}
-                >
-                  <div className="font-semibold text-[#262626] truncate">{e.nome}</div>
-                  <div>{headcount}</div>
-                  <div>{e.performance_pct != null ? `${e.performance_pct}%` : "—"}</div>
-                  <div>{fmt1(t)}%</div>
-                  <div>{e.absenteismo_pct != null ? `${fmt1(e.absenteismo_pct)}%` : "—"}</div>
-                  {!ocultarFinanceiro && (
-                    <div className="flex items-center gap-3">
-                      {pct === null ? (
-                        <span className="text-[#737373]">—</span>
-                      ) : (
-                        <>
-                          <span
-                            className="font-semibold w-12 shrink-0"
-                            style={{ color: pct <= LIMITE_SAUDAVEL_FOLHA_PCT ? "#1f7a52" : TONS.red.fg }}
-                          >
-                            {fmt1(pct)}%
-                          </span>
-                          <span className="relative h-2 flex-1 rounded-full" style={{ background: COR_TRILHA }}>
-                            <span
-                              className="absolute inset-y-0 left-0 rounded-full"
-                              style={{
-                                width: `${Math.min(100, (pct / 20) * 100)}%`,
-                                background: pct <= LIMITE_SAUDAVEL_FOLHA_PCT ? COR_FOLHA : "#d92d20",
-                              }}
-                            />
-                            <span
-                              className="absolute -top-[3px] -bottom-[3px] w-[2px] bg-black"
-                              style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / 20) * 100}%` }}
-                              title={`Meta: ${LIMITE_SAUDAVEL_FOLHA_PCT}%`}
-                            />
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-          <p className="text-[12px] text-[#737373] mt-3">
-            {!ocultarFinanceiro && `A linha preta marca a meta de ${LIMITE_SAUDAVEL_FOLHA_PCT}% do faturamento. `}
-            {algumaSemPerformance && "Performance e absenteísmo vêm do cadastro da empresa; “—” significa que ainda não foi informado."}
-          </p>
-        </Cartao>
-      )}
-
-      {/* Tempo de empresa, cargos e evolução */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_1.3fr] gap-4">
-        <Cartao>
-          <TituloCartao>Tempo de empresa</TituloCartao>
-          <div className="space-y-3">
-            {faixas.map((f) => (
-              <div key={f.faixa}>
-                <div className="flex justify-between text-[13px] text-[#3d3d3d] mb-1">
-                  <span>{f.faixa}</span>
-                  <span className="font-semibold text-[#262626] tabular-nums">{f.total}</span>
-                </div>
-                <div className="h-[14px] rounded-[6px]" style={{ background: COR_TRILHA }}>
-                  <div className="h-full rounded-[6px]" style={{ width: `${(f.total / maxFaixa) * 100}%`, background: COR_CLT }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Cartao>
 
         <Cartao>
-          <TituloCartao>Distribuição por cargo</TituloCartao>
-          {dadosCargo.length === 0 ? (
-            <Vazio>Sem dados de cargo neste filtro.</Vazio>
+          <TituloCartao direita={<Link href="/ferias" className={LINK_SUTIL}>Ver férias</Link>}>
+            Próximas férias
+          </TituloCartao>
+          {proximasFerias.length === 0 ? (
+            <Vazio>Nenhuma férias marcada daqui para frente.</Vazio>
           ) : (
-            <div className="space-y-2.5">
-              {dadosCargo.map((d) => (
-                <div key={d.nome}>
-                  <div className="flex justify-between gap-2 text-[13px] text-[#3d3d3d] mb-1">
-                    <span className="truncate">{d.nome}</span>
-                    <span className="font-semibold text-[#262626] tabular-nums">{d.total}</span>
-                  </div>
-                  <div className="h-[6px] rounded-full" style={{ background: COR_TRILHA }}>
-                    <div className="h-full rounded-full" style={{ width: `${(d.total / maxCargo) * 100}%`, background: COR_CARGO }} />
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ul className="space-y-2.5">
+              {proximasFerias.map((f) => {
+                const c = colabPorId.get(f.colaborador_id);
+                const [ya, ma, da] = f.data_inicio.slice(0, 10).split("-").map(Number);
+                const faltam = differenceInCalendarDays(new Date(ya, ma - 1, da), hoje);
+                return (
+                  <li key={f.id} className="flex items-baseline gap-3">
+                    <span className="text-[13px] font-semibold tabular-nums shrink-0 w-[92px]" style={{ color: "#93440c" }}>
+                      {ddmm(f.data_inicio)} a {ddmm(f.data_fim)}
+                    </span>
+                    <Link
+                      href={c ? `/colaboradores/${c.id}` : "/ferias"}
+                      className="text-[13px] text-[#262626] truncate hover:underline min-w-0 flex-1"
+                    >
+                      {c?.nome ?? "Colaborador"}
+                    </Link>
+                    <span className="text-[12px] text-[#737373] whitespace-nowrap tabular-nums">
+                      {faltam === 0 ? "começa hoje" : `em ${faltam} dia${faltam === 1 ? "" : "s"}`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </Cartao>
-
-        <Cartao>
-          <TituloCartao>
-            Evolução dos indicadores <SeloExemplo />
-          </TituloCartao>
-          <EvolucaoLinhas absenteismo={serieAbs} turnover={serieTurn} />
-        </Cartao>
       </div>
-
-      <p className="text-[12px] text-[#737373]">
-        Itens com o selo EXEMPLO usam números ilustrativos — o sistema ainda não guarda esse histórico ou módulo.
-        O resto do painel usa os dados reais do cadastro.
-      </p>
     </div>
   );
 }
