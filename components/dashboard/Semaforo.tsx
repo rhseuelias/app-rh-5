@@ -1,4 +1,4 @@
-import { FS, MANROPE, P7, ST7, Icone, Selo, ROTULO_COLUNA, type K } from "./tema7";
+import { MANROPE, P7, ST7, Icone, Selo, ROTULO_COLUNA, nomeProprio, type K } from "./tema7";
 
 /** Semáforo do Painel de RH (visual do modelo 7). Toda cor vem com ícone e texto. */
 
@@ -53,7 +53,7 @@ export function Gauge({
   const cx = W / 2;
   const cy = H - 14;
   const R = 78;
-  const th = 14;
+  const th = 8;
   const pt = (f: number, rr = R) => [cx + rr * Math.cos(Math.PI * (1 - f)), cy - rr * Math.sin(Math.PI * (1 - f))];
   const f = pct === null ? 0 : Math.max(0, Math.min(1, pct / 100));
   const [x1, y1] = pt(f);
@@ -85,8 +85,8 @@ export function Gauge({
             strokeLinecap="round"
           />
         )}
-        <line x1={a1.toFixed(1)} y1={b1.toFixed(1)} x2={a2.toFixed(1)} y2={b2.toFixed(1)} stroke={P7.ink} strokeWidth="2.5" strokeLinecap="round" />
-        <text x={cx} y={cy - 4} textAnchor="middle" fontSize={FS.kpiMedio + 4} fontWeight="800" fill={P7.ink} style={{ fontFamily: MANROPE }}>
+        <line x1={a1.toFixed(1)} y1={b1.toFixed(1)} x2={a2.toFixed(1)} y2={b2.toFixed(1)} stroke={P7.ink} strokeWidth="1.5" strokeLinecap="round" />
+        <text x={cx} y={cy - 4} textAnchor="middle" fontSize={28} fontWeight="700" fill={P7.ink} style={{ fontFamily: MANROPE }}>
           {pct === null ? "—" : `${fmt0(pct)}%`}
         </text>
       </svg>
@@ -108,7 +108,11 @@ export function Gauge({
   );
 }
 
-/** Clima de cada empresa/unidade contra a meta: barras que saem da linha da meta (azul = acima, vermelho = abaixo). */
+/**
+ * Clima de cada empresa/unidade contra a meta. A linha pontilhada do meio é a meta:
+ * quem está acima sobe (azul), quem está abaixo desce (vermelho). Cada coluna mostra o valor,
+ * o nome e a diferença em pontos.
+ */
 export function ClimaPorEmpresa({
   itens,
   meta,
@@ -124,64 +128,76 @@ export function ClimaPorEmpresa({
       </p>
     );
   const ordenados = [...comValor].sort((a, b) => b.pct - a.pct);
-  const ALCANCE = 20; // pontos de cada lado da meta
-  const COL = 150;
+  const ALCANCE = 20; // pontos que cabem para cada lado da meta
+  const MEIA = 84; // altura (px) de cada lado
+  const ACIMA = "#5b9be0";
+  const ABAIXO = "#e66a69";
   return (
-    <div>
-      <div className="relative mb-1 h-[14px]">
-        <span
-          className="absolute -translate-x-1/2 text-[10.5px] font-bold"
-          style={{ left: `calc(${COL}px + (100% - ${COL}px) / 2)`, color: P7.ink }}
-        >
-          meta {meta}%
-        </span>
-      </div>
-      <div>
-        {ordenados.map((it) => {
-          const d = Math.round(it.pct - meta);
-          const larg = Math.min(50, (Math.abs(it.pct - meta) / ALCANCE) * 50);
-          const acima = d >= 0;
-          return (
-            <div key={it.nome} className="grid h-[30px] items-center" style={{ gridTemplateColumns: `${COL}px 1fr` }}>
-              <span className="truncate pr-2 text-[12.5px]" style={{ color: P7.ink }}>
-                {it.nome} · <b>{Math.round(it.pct)}%</b>
-              </span>
-              <span className="relative h-full">
-                <span className="absolute inset-y-0 left-1/2 w-0 border-l-[1.5px] border-dashed" style={{ borderColor: P7.ink }} />
-                <span
-                  className="absolute top-[7px] h-[16px]"
-                  style={{
-                    background: acima ? P7.azul : "#e34948",
-                    borderRadius: 4,
-                    ...(acima ? { left: "50%" } : { right: "50%" }),
-                    width: `${larg}%`,
-                    minWidth: d === 0 ? 3 : undefined,
-                  }}
-                  title={`${it.nome}: ${Math.abs(d)} pontos ${acima ? "acima" : "abaixo"} da meta`}
-                />
-                <span
-                  className="absolute top-[6px] text-[11.5px] font-bold"
-                  style={{
-                    color: P7.ink,
-                    ...(acima ? { left: `calc(50% + ${larg}% + 6px)` } : { left: "calc(50% + 6px)" }),
-                  }}
+    <div className="overflow-x-auto">
+      <div style={{ minWidth: ordenados.length * 64 }}>
+        <div className="relative" style={{ height: MEIA * 2 }}>
+          {/* faixas suaves: acima e abaixo da meta */}
+          <div className="absolute inset-x-0 top-0 rounded-t-[8px]" style={{ height: MEIA, background: "#f3f8fd" }} />
+          <div className="absolute inset-x-0 bottom-0 rounded-b-[8px]" style={{ height: MEIA, background: "#fdf4f4" }} />
+          <div className="absolute inset-x-0 border-t border-dashed" style={{ top: MEIA, borderColor: P7.ink, opacity: 0.55 }} />
+          <span
+            className="absolute left-2 text-[10.5px] font-medium"
+            style={{ top: MEIA + 3, color: P7.lab }}
+          >
+            meta {meta}%
+          </span>
+          <div className="absolute inset-0 flex">
+            {ordenados.map((it) => {
+              const d = Math.round(it.pct - meta);
+              const acima = d >= 0;
+              const alt = Math.max(3, Math.min(MEIA - 20, (Math.abs(it.pct - meta) / ALCANCE) * (MEIA - 20)));
+              const cor = acima ? ACIMA : ABAIXO;
+              return (
+                <div
+                  key={it.nome}
+                  className="relative min-w-0 flex-1"
+                  title={`${nomeProprio(it.nome)}: ${Math.round(it.pct)}% (${acima ? "+" : "−"}${Math.abs(d)} pontos da meta)`}
                 >
-                  {acima ? `+${d} pts` : `−${Math.abs(d)} pts`}
-                </span>
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-2 flex gap-4 text-[11.5px]" style={{ color: P7.ink }}>
-        <span>
-          <i className="mr-[6px] inline-block h-[9px] w-[9px] rounded-[3px] align-middle" style={{ background: P7.azul }} />
-          Acima da meta
-        </span>
-        <span>
-          <i className="mr-[6px] inline-block h-[9px] w-[9px] rounded-[3px] align-middle" style={{ background: "#e34948" }} />
-          Abaixo da meta
-        </span>
+                  <span
+                    className="absolute left-1/2 w-[14px] -translate-x-1/2"
+                    style={{
+                      background: cor,
+                      height: alt,
+                      opacity: 0.85,
+                      ...(acima
+                        ? { bottom: MEIA, borderRadius: "7px 7px 2px 2px" }
+                        : { top: MEIA, borderRadius: "2px 2px 7px 7px" }),
+                    }}
+                  />
+                  <span
+                    className="absolute left-0 right-0 text-center text-[12.5px] font-semibold tabular-nums"
+                    style={{
+                      color: P7.ink,
+                      ...(acima ? { bottom: MEIA + alt + 4 } : { top: MEIA + alt + 4 }),
+                    }}
+                  >
+                    {Math.round(it.pct)}%
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="mt-2 flex">
+          {ordenados.map((it) => {
+            const d = Math.round(it.pct - meta);
+            return (
+              <div key={it.nome} className="min-w-0 flex-1 px-0.5 text-center">
+                <div className="truncate text-[11.5px] font-medium" style={{ color: P7.ink }} title={nomeProprio(it.nome)}>
+                  {nomeProprio(it.nome)}
+                </div>
+                <div className="text-[11.5px] tabular-nums" style={{ color: d >= 0 ? "#2f6fb8" : "#b84343" }}>
+                  {d >= 0 ? `+${d}` : `−${Math.abs(d)}`} pts
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

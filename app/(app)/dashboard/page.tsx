@@ -383,7 +383,7 @@ export default async function DashboardPage({
   const COR_PJ = P7.laranja;
 
   // barra CLT / PJ / Estágio: segmentos com 2px de espaço, pontas arredondadas
-  const BarraVinculo = ({ clt, pj, est, alto = 8 }: { clt: number; pj: number; est: number; alto?: number }) => {
+  const BarraVinculo = ({ clt, pj, est, alto = 6 }: { clt: number; pj: number; est: number; alto?: number }) => {
     const partes = [
       { v: clt, cor: COR_CLT },
       { v: pj, cor: COR_PJ },
@@ -483,7 +483,7 @@ export default async function DashboardPage({
             vazio("Sem colaboradores neste filtro.")
           ) : (
             <div>
-              <BarraVinculo clt={cltN} pj={pjN} est={estN} alto={10} />
+              <BarraVinculo clt={cltN} pj={pjN} est={estN} alto={6} />
               <div className="mt-2 flex flex-wrap gap-x-[18px] gap-y-1 text-[11.5px]" style={{ color: P7.ink }}>
                 <span>
                   <Ponto cor={COR_CLT} />
@@ -525,8 +525,8 @@ export default async function DashboardPage({
         ))}
       </div>
 
-      {/* 2. Metas: clima e treinamento (juntos) + custo da folha */}
-      <div className={`grid grid-cols-1 gap-4 ${ocultarFinanceiro ? "" : "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]"}`}>
+      {/* 2. Metas: clima e treinamento, clima de cada unidade e custo da folha */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <Cartao7>
           <Titulo7 sub={`Meta: acima de ${META_CLIMA}%${notaMedia ? ` · ${notaMedia}` : ""}`}>Clima e treinamento</Titulo7>
           <div className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2">
@@ -535,76 +535,83 @@ export default async function DashboardPage({
           </div>
         </Cartao7>
 
-        {!ocultarFinanceiro && (
-          <Cartao7>
-            <Titulo7 sub={`A marca preta é o limite de ${LIMITE_SAUDAVEL_FOLHA_PCT}%. Verde está bem, vermelho pede atenção.`}>
-              Custo da folha sobre o faturamento
-            </Titulo7>
-            {folhaComPct.length === 0 ? (
-              vazio("Sem faturamento cadastrado neste filtro.")
-            ) : (
-              <div>
-                {folhaComPct.map(({ empresa: e, custo, fat, pct }) => {
-                  const bom = (pct as number) <= LIMITE_SAUDAVEL_FOLHA_PCT;
-                  const k: K = bom ? "good" : "bad";
-                  return (
-                    <div
-                      key={e.id}
-                      className="grid grid-cols-1 items-center gap-x-4 gap-y-1.5 border-t py-3 sm:grid-cols-[150px_minmax(0,1fr)_56px_136px]"
-                      style={{ borderColor: P7.grid }}
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-[12.5px] font-bold" style={{ color: P7.ink }}>
-                          <Ponto cor={corEmpresa(e.nome)} redondo />
-                          {e.nome}
-                        </div>
-                        <div className="mt-[2px] text-[11.5px] leading-[1.35]" style={{ color: P7.lab }}>
-                          R$ {reais(custo)} de R$ {reais(fat)}
-                        </div>
+        <Cartao7>
+          <Titulo7 sub={`Comparado com a meta de ${META_CLIMA}%`}>
+            {climaPorUnidade ? "Clima de cada unidade" : "Clima de cada empresa"}
+          </Titulo7>
+          <ClimaPorEmpresa itens={itensClima} meta={META_CLIMA} />
+        </Cartao7>
+      </div>
+
+      {!ocultarFinanceiro && (
+        <Cartao7>
+          <Titulo7 sub={`A marca preta é o limite de ${LIMITE_SAUDAVEL_FOLHA_PCT}%. Verde está bem, vermelho pede atenção.`}>
+            Custo da folha sobre o faturamento
+          </Titulo7>
+          {folhaComPct.length === 0 ? (
+            vazio("Sem faturamento cadastrado neste filtro.")
+          ) : (
+            <div>
+              {folhaComPct.map(({ empresa: e, custo, fat, pct }) => {
+                const bom = (pct as number) <= LIMITE_SAUDAVEL_FOLHA_PCT;
+                const k: K = bom ? "good" : "bad";
+                return (
+                  <div
+                    key={e.id}
+                    className="grid grid-cols-1 items-center gap-x-4 gap-y-1.5 border-t py-3 sm:grid-cols-[150px_minmax(0,1fr)_56px_136px]"
+                    style={{ borderColor: P7.grid }}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-[12.5px] font-bold" style={{ color: P7.ink }}>
+                        <Ponto cor={corEmpresa(e.nome)} redondo />
+                        {e.nome}
                       </div>
-                      <div className="relative h-[12px] rounded-[6px]" style={{ background: P7.track }}>
-                        <div
-                          className="h-[12px] rounded-[6px]"
-                          style={{ width: `${Math.min(100, ((pct as number) / ESCALA_FOLHA) * 100)}%`, background: ST7[k] }}
-                        />
-                        <div
-                          className="absolute -top-[4px] h-[20px] w-[2px]"
-                          style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / ESCALA_FOLHA) * 100}%`, background: P7.ink }}
-                          title={`Limite: ${LIMITE_SAUDAVEL_FOLHA_PCT}%`}
-                        />
-                      </div>
-                      <div className="text-[14px] font-extrabold tabular-nums sm:text-right" style={{ color: P7.ink }}>
-                        {fmt1(pct as number)}%
-                      </div>
-                      <div className="sm:text-right">
-                        <Selo k={k}>{bom ? "Dentro do limite" : "Acima do limite"}</Selo>
+                      <div className="mt-[2px] text-[11.5px] leading-[1.35]" style={{ color: P7.lab }}>
+                        R$ {reais(custo)} de R$ {reais(fat)}
                       </div>
                     </div>
-                  );
-                })}
-                <div
-                  className="hidden gap-x-4 border-t pt-1.5 text-[10.5px] sm:grid sm:grid-cols-[150px_minmax(0,1fr)_56px_136px]"
-                  style={{ color: P7.lab, borderColor: P7.grid }}
-                >
-                  <span />
-                  <div className="relative h-[14px]">
-                    <span className="absolute left-0">0%</span>
-                    <span
-                      className="absolute -translate-x-1/2 font-bold"
-                      style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / ESCALA_FOLHA) * 100}%`, color: P7.ink }}
-                    >
-                      limite {LIMITE_SAUDAVEL_FOLHA_PCT}%
-                    </span>
-                    <span className="absolute right-0">{ESCALA_FOLHA}%</span>
+                    <div className="relative h-[6px] rounded-full" style={{ background: P7.track }}>
+                      <div
+                        className="h-[6px] rounded-full"
+                        style={{ width: `${Math.min(100, ((pct as number) / ESCALA_FOLHA) * 100)}%`, background: ST7[k] }}
+                      />
+                      <div
+                        className="absolute -top-[5px] h-[16px] w-[1.5px]"
+                        style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / ESCALA_FOLHA) * 100}%`, background: P7.ink }}
+                        title={`Limite: ${LIMITE_SAUDAVEL_FOLHA_PCT}%`}
+                      />
+                    </div>
+                    <div className="text-[14px] font-extrabold tabular-nums sm:text-right" style={{ color: P7.ink }}>
+                      {fmt1(pct as number)}%
+                    </div>
+                    <div className="sm:text-right">
+                      <Selo k={k}>{bom ? "Dentro do limite" : "Acima do limite"}</Selo>
+                    </div>
                   </div>
-                  <span />
-                  <span />
+                );
+              })}
+              <div
+                className="hidden gap-x-4 border-t pt-1.5 text-[10.5px] sm:grid sm:grid-cols-[150px_minmax(0,1fr)_56px_136px]"
+                style={{ color: P7.lab, borderColor: P7.grid }}
+              >
+                <span />
+                <div className="relative h-[14px]">
+                  <span className="absolute left-0">0%</span>
+                  <span
+                    className="absolute -translate-x-1/2 font-bold"
+                    style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / ESCALA_FOLHA) * 100}%`, color: P7.ink }}
+                  >
+                    limite {LIMITE_SAUDAVEL_FOLHA_PCT}%
+                  </span>
+                  <span className="absolute right-0">{ESCALA_FOLHA}%</span>
                 </div>
+                <span />
+                <span />
               </div>
-            )}
-          </Cartao7>
-        )}
-      </div>
+            </div>
+          )}
+        </Cartao7>
+      )}
 
       {/* Crescimento por ano */}
       <ColaboradoresPorAno dados={dadosPorAno} escopo={ocultarFinanceiro || empresaSel === "franquias" ? null : empresaSel} tabelaPronta={!erroHistorico} />
@@ -612,60 +619,12 @@ export default async function DashboardPage({
       {/* 3. Processo de integração */}
       <IntegracaoPainel linhas={linhasIntegracao} hojeTexto={hojeTexto} />
 
-      {/* 4. Avisos prévios e rescisões */}
-      <AvisosRescisoes
-        mesChave={mesAtualSelecionado}
-        idsColaboradores={empresaSel === "todas" ? null : Array.from(idsEscopo)}
-      />
-
-      {/* 5. Clima por unidade, experiência e pendências */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,.9fr)]">
-        <Cartao7>
-          <Titulo7 sub={`Comparado com a meta de ${META_CLIMA}%`}>
-            {climaPorUnidade ? "Clima de cada unidade" : "Clima de cada empresa"}
-          </Titulo7>
-          <ClimaPorEmpresa itens={itensClima} meta={META_CLIMA} />
-        </Cartao7>
-
-        <Cartao7>
-          <Titulo7 sub="Em vermelho quando faltam menos de 7 dias">Experiência terminando</Titulo7>
-          {experienciaVencendo.length === 0
-            ? vazio("Nenhum caso nos próximos 15 dias.")
-            : experienciaVencendo.slice(0, 5).map((c) => {
-                const left = diasParaFimExperiencia(c.data_fim_experiencia!);
-                const urgente = left < 7;
-                const adm = c.data_admissao ? new Date(c.data_admissao) : null;
-                const fim = new Date(c.data_fim_experiencia!);
-                const total = adm ? Math.max(1, differenceInCalendarDays(fim, adm)) : 90;
-                const feitos = Math.max(0, Math.min(total, total - left));
-                const empNome = c.empresa_id ? nomeEmpresaPorId[c.empresa_id] ?? "" : "";
-                return (
-                  <div key={c.id} className="mb-3 last:mb-0">
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <Link href={`/colaboradores/${c.id}`} className="min-w-0 truncate hover:underline">
-                        <span className="text-[12.5px] font-bold" style={{ color: P7.ink }}>{nomeProprio(c.nome)}</span>{" "}
-                        <span className="text-[11.5px]" style={{ color: P7.lab }}>{empNome ? `· ${empNome}` : ""}</span>
-                      </Link>
-                      {urgente ? (
-                        <Selo k="bad">{left} {left === 1 ? "dia" : "dias"}</Selo>
-                      ) : (
-                        <span className="whitespace-nowrap text-[12.5px] font-bold" style={{ color: P7.ink }}>{left} dias</span>
-                      )}
-                    </div>
-                    <div className="h-[8px] rounded-[4px]" style={{ background: P7.track }}>
-                      <div
-                        className="h-[8px] rounded-[4px]"
-                        style={{ width: `${(feitos / total) * 100}%`, background: urgente ? ST7.bad : P7.deep }}
-                      />
-                    </div>
-                    <div className="mt-1 text-[11.5px]" style={{ color: P7.lab }}>
-                      {feitos} de {total} dias de experiência
-                    </div>
-                  </div>
-                );
-              })}
-        </Cartao7>
-
+      {/* 4. Rescisões do mês e pendências */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <AvisosRescisoes
+          mesChave={mesAtualSelecionado}
+          idsColaboradores={empresaSel === "todas" ? null : Array.from(idsEscopo)}
+        />
         <Cartao7>
           <Titulo7 sub="O que precisa de atenção agora">Pendências de hoje</Titulo7>
           <div>
@@ -685,8 +644,47 @@ export default async function DashboardPage({
         </Cartao7>
       </div>
 
-      {/* 6. Aniversariantes e próximas férias */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {/* 5. Experiência terminando, aniversariantes e férias */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Cartao7>
+          <Titulo7 sub="Em vermelho quando faltam menos de 7 dias">Experiência terminando</Titulo7>
+          {experienciaVencendo.length === 0
+            ? vazio("Nenhum caso nos próximos 15 dias.")
+            : experienciaVencendo.slice(0, 5).map((c) => {
+                const left = diasParaFimExperiencia(c.data_fim_experiencia!);
+                const urgente = left < 7;
+                const adm = c.data_admissao ? new Date(c.data_admissao) : null;
+                const fim = new Date(c.data_fim_experiencia!);
+                const total = adm ? Math.max(1, differenceInCalendarDays(fim, adm)) : 90;
+                const feitos = Math.max(0, Math.min(total, total - left));
+                const empNome = c.empresa_id ? nomeEmpresaPorId[c.empresa_id] ?? "" : "";
+                return (
+                  <div key={c.id} className="mb-3 last:mb-0">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <Link href={`/colaboradores/${c.id}`} className="min-w-0 truncate hover:underline">
+                        <span className="text-[12.5px] font-semibold" style={{ color: P7.ink }}>{nomeProprio(c.nome)}</span>{" "}
+                        <span className="text-[11.5px]" style={{ color: P7.lab }}>{empNome ? `· ${empNome}` : ""}</span>
+                      </Link>
+                      {urgente ? (
+                        <Selo k="bad">{left} {left === 1 ? "dia" : "dias"}</Selo>
+                      ) : (
+                        <span className="whitespace-nowrap text-[12.5px] font-bold" style={{ color: P7.ink }}>{left} dias</span>
+                      )}
+                    </div>
+                    <div className="h-[4px] rounded-full" style={{ background: P7.track }}>
+                      <div
+                        className="h-[4px] rounded-full"
+                        style={{ width: `${(feitos / total) * 100}%`, background: urgente ? ST7.bad : P7.deep }}
+                      />
+                    </div>
+                    <div className="mt-1 text-[11.5px]" style={{ color: P7.lab }}>
+                      {feitos} de {total} dias de experiência
+                    </div>
+                  </div>
+                );
+              })}
+        </Cartao7>
+
         <Cartao7>
           <Titulo7 direita={<Link href="/aniversarios" className={LINK7} style={LINK7_STYLE}>Ver todos</Link>}>
             Aniversariantes de {rotuloMes.toLowerCase()}

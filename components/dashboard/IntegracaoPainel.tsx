@@ -22,7 +22,7 @@ import {
 import type { LinhaIntegracao, SituacaoLinha } from "./integracao-dados";
 
 const MAX_LINHAS = 8;
-const COLUNAS = "190px 100px minmax(260px,1fr) 150px 140px 16px";
+const COLUNAS = "190px 90px minmax(240px,1fr) 170px 150px 16px";
 
 const K_DA_SITUACAO: Record<SituacaoLinha, K | null> = { atrasado: "bad", vence: "warn", prazo: null };
 
@@ -47,7 +47,7 @@ function Chevron({ aberto }: { aberto: boolean }) {
 function LinhaDoTempo({ linha }: { linha: LinhaIntegracao }) {
   const idxAtual = linha.etapas.findIndex((e) => e.estado !== "feita");
   return (
-    <div className="flex h-[22px] items-center gap-[3px]" role="img" aria-label={`${linha.nome}: ${linha.feitas} de ${linha.etapas.length} etapas concluídas`}>
+    <div className="flex h-[22px] items-center gap-[4px]" role="img" aria-label={`${linha.nome}: ${linha.feitas} de ${linha.etapas.length} etapas concluídas`}>
       {linha.etapas.map((e, i) => {
         const foco = i === idxAtual;
         const cor =
@@ -56,11 +56,9 @@ function LinhaDoTempo({ linha }: { linha: LinhaIntegracao }) {
           <span
             key={i}
             title={`Etapa ${i + 1}: ${e.nome}`}
-            className="flex flex-1 items-center justify-center text-[11.5px] font-extrabold text-white"
-            style={{ background: cor, height: foco ? 18 : 10, borderRadius: foco ? 6 : 5 }}
-          >
-            {foco ? i + 1 : ""}
-          </span>
+            className="flex-1"
+            style={{ background: cor, height: foco ? 6 : 4, borderRadius: 99 }}
+          />
         );
       })}
     </div>
@@ -144,7 +142,7 @@ export default function IntegracaoPainel({
   const visiveis = filtradas.slice(0, MAX_LINHAS);
 
   const chip = (ativo: boolean) =>
-    `inline-flex items-center gap-1.5 rounded-full px-3 py-[5px] text-[11.5px] font-bold whitespace-nowrap transition-colors ${
+    `inline-flex items-center gap-1.5 rounded-full px-3 py-[5px] text-[11.5px] font-semibold whitespace-nowrap transition-colors ${
       ativo ? "text-white" : "hover:brightness-95"
     }`;
   const chipStyle = (ativo: boolean) => ({ background: ativo ? P7.deep : P7.bg, color: ativo ? "#fff" : P7.ink, fontFamily: MANROPE });
@@ -228,7 +226,7 @@ export default function IntegracaoPainel({
                       type="button"
                       onClick={() => setAberta(expandida ? null : l.id)}
                       aria-expanded={expandida}
-                      className="grid h-[36px] w-full items-center gap-x-3 border-t text-left"
+                      className="grid h-[34px] w-full items-center gap-x-3 border-t text-left"
                       style={{
                         gridTemplateColumns: COLUNAS,
                         borderColor: P7.grid,
@@ -236,7 +234,7 @@ export default function IntegracaoPainel({
                         ...(expandida ? { background: P7.bg, borderRadius: "10px 10px 0 0", padding: "0 10px", margin: "0 -10px", width: "calc(100% + 20px)" } : {}),
                       }}
                     >
-                      <span className="truncate text-[12.5px] font-bold" style={{ color: P7.ink }}>
+                      <span className="truncate text-[12.5px] font-semibold" style={{ color: P7.ink }}>
                         <Ponto cor={corEmpresa(l.empresa)} redondo />
                         {nomeProprio(l.nome)}
                       </span>
@@ -248,12 +246,15 @@ export default function IntegracaoPainel({
                         <LinhaDoTempo linha={l} />
                       </span>
                       <span className="truncate text-[12.5px]" style={{ color: P7.ink }}>
+                        <span className="mr-1.5 tabular-nums" style={{ color: P7.lab }}>
+                          {Math.min(l.feitas + 1, l.etapas.length)}/{l.etapas.length}
+                        </span>
                         {l.etapaAtual}
                       </span>
                       <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12.5px]" style={{ color: P7.ink }}>
                         {k && <Icone k={k} />}
-                        {l.prazoData && <b>{l.prazoData}</b>}
-                        <span style={{ color: l.situacao === "atrasado" ? TXT_ATRASO : P7.sec, fontWeight: k ? 700 : 400 }}>
+                        {l.prazoData && <span className="font-semibold">{l.prazoData}</span>}
+                        <span style={{ color: l.situacao === "atrasado" ? TXT_ATRASO : P7.sec, fontWeight: k ? 600 : 400 }}>
                           {l.prazoData ? "· " : ""}
                           {l.prazoRel}
                         </span>

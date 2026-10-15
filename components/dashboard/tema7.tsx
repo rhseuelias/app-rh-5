@@ -8,12 +8,12 @@ export const MANROPE = "'Manrope', 'Inter', ui-sans-serif, system-ui, sans-serif
 export const P7 = {
   bg: "#eaf1f0",
   card: "#ffffff",
-  bd: "#d3dfdd",
+  bd: "#e1e9e7",
   ink: "#12302c",
   sec: "#3f5a56",
   lab: "#5b7470",
-  grid: "#e3ebe9",
-  track: "#e3ebe9",
+  grid: "#edf2f1",
+  track: "#edf2f1",
   deep: "#0f5c55",
   futuro: "#c3d1ce",
   azul: "#2a78d6",
@@ -46,7 +46,7 @@ export function nomeProprio(nome: string | null | undefined): string {
 
 export type K = "good" | "warn" | "bad";
 export const ST7: Record<K, string> = { good: "#0ca30c", warn: "#fab219", bad: "#d03b3b" };
-export const BG7: Record<K, string> = { good: "#e3f3e3", warn: "#fff1d0", bad: "#fbe4e4" };
+export const BG7: Record<K, string> = { good: "#eef7ee", warn: "#fff6df", bad: "#fceeee" };
 export const TXT_ATRASO = "#a52828";
 
 export const RESP_COR: Record<string, string> = {
@@ -68,7 +68,7 @@ export function corEmpresa(nome: string): string {
   return "#5b7470";
 }
 
-export function Icone({ k, size = 16 }: { k: K; size?: number }) {
+export function Icone({ k, size = 14 }: { k: K; size?: number }) {
   const c = ST7[k];
   if (k === "good")
     return (
@@ -95,7 +95,7 @@ export function Icone({ k, size = 16 }: { k: K; size?: number }) {
 export function Selo({ k, children }: { k: K; children: ReactNode }) {
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full py-[3px] pl-1.5 pr-[11px] text-[11.5px] font-semibold whitespace-nowrap"
+      className="inline-flex items-center gap-1.5 rounded-full py-[2px] pl-1.5 pr-2.5 text-[11.5px] font-medium whitespace-nowrap"
       style={{ color: P7.ink, background: BG7[k] }}
     >
       <Icone k={k} />
@@ -115,8 +115,8 @@ export function Cartao7({
 }) {
   return (
     <section
-      className={`rounded-[12px] border bg-white px-5 py-[18px] ${className}`}
-      style={{ borderColor: P7.bd, color: P7.ink, fontFamily: MANROPE, ...style }}
+      className={`rounded-[14px] border bg-white px-6 py-5 ${className}`}
+      style={{ borderColor: P7.bd, color: P7.ink, fontFamily: MANROPE, boxShadow: "0 1px 2px rgba(18,48,44,0.04)", ...style }}
     >
       {children}
     </section>
@@ -137,7 +137,7 @@ export function Titulo7({
   return (
     <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <div>
-        <div className="font-bold" style={{ fontFamily: MANROPE, fontSize: tamanho, color: P7.ink, textTransform: "none", letterSpacing: 0 }}>
+        <div className="font-semibold" style={{ fontFamily: MANROPE, fontSize: tamanho, color: P7.ink, textTransform: "none", letterSpacing: 0 }}>
           {children}
         </div>
         {sub && (
@@ -166,8 +166,8 @@ export function Ponto({ cor, redondo = false }: { cor: string; redondo?: boolean
 }
 
 export const ROTULO_COLUNA =
-  "text-[10.5px] font-bold uppercase tracking-[0.08em]";
+  "text-[10.5px] font-semibold uppercase tracking-[0.08em]";
 export const COR_ROTULO: CSSProperties = { color: P7.lab };
 
-export const LINK7 = "text-[11.5px] font-bold hover:underline";
+export const LINK7 = "text-[11.5px] font-semibold hover:underline";
 export const LINK7_STYLE: CSSProperties = { color: P7.deep };

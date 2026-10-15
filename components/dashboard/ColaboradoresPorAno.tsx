@@ -108,7 +108,7 @@ export default function ColaboradoresPorAno({
                     {t}
                   </div>
                   <div
-                    className="flex w-full max-w-[72px] flex-col-reverse overflow-hidden rounded-t-[6px]"
+                    className="flex w-full max-w-[40px] flex-col-reverse overflow-hidden rounded-t-[5px]"
                     style={{
                       height: alto,
                       background: P7.track,
@@ -121,14 +121,14 @@ export default function ColaboradoresPorAno({
                     <div style={{ height: parte(p.est), background: COR_EST }} />
                   </div>
                 </div>
-                <div className="mt-1.5 text-[12.5px] font-bold" style={{ color: P7.ink }}>
+                <div className="mt-1.5 text-[12.5px] font-semibold" style={{ color: P7.ink }}>
                   {p.ano}
                 </div>
                 <div className="text-[11.5px]" style={{ color: P7.lab }}>
                   {p.proj ? "projeção" : p.hoje ? "até hoje" : p.manual ? "ajustado" : "dezembro"}
                 </div>
                 <div
-                  className="mt-1 h-[16px] text-[11.5px] font-bold tabular-nums"
+                  className="mt-1 h-[16px] text-[11.5px] font-medium tabular-nums"
                   style={{ color: delta === null ? P7.lab : delta > 0 ? "#0b7a0b" : delta < 0 ? "#a52828" : P7.sec }}
                 >
                   {delta === null ? "—" : `${delta > 0 ? "+" : ""}${delta}${pct !== null ? ` (${pct > 0 ? "+" : ""}${pct}%)` : ""}`}
