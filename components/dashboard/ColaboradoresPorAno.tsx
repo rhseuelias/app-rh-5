@@ -125,7 +125,7 @@ export default function ColaboradoresPorAno({
                   {p.ano}
                 </div>
                 <div className="text-[11.5px]" style={{ color: P7.lab }}>
-                  {p.proj ? "projeção" : p.hoje ? "até hoje" : p.manual ? "ajustado" : "dezembro"}
+                  {p.proj ? "projeção" : p.hoje ? "até hoje" : "dezembro"}
                 </div>
                 <div
                   className="mt-1 h-[16px] text-[11.5px] font-medium tabular-nums"

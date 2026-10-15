@@ -25,6 +25,7 @@ import { souAssistente } from "@/lib/permissoes";
 import FiltrosPainel from "@/components/dashboard/FiltrosPainel";
 import IntegracaoPainel from "@/components/dashboard/IntegracaoPainel";
 import AvisosRescisoes from "@/components/dashboard/AvisosRescisoes";
+import BotaoImprimir from "@/components/dashboard/BotaoImprimir";
 import ColaboradoresPorAno, { type PontoAno } from "@/components/dashboard/ColaboradoresPorAno";
 import { montarLinhasIntegracao } from "@/components/dashboard/integracao-dados";
 import { Gauge, ClimaPorEmpresa, LegendaSemaforo } from "@/components/dashboard/Semaforo";
@@ -83,7 +84,7 @@ function hojeBrasilia() {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams?: { empresa?: string; mes?: string };
+  searchParams?: { empresa?: string; mes?: string; relatorio?: string };
 }) {
   const supabase = createClient();
 
@@ -427,38 +428,9 @@ export default async function DashboardPage({
     </p>
   );
 
-  return (
-    <div
-      className="space-y-4 rounded-[16px] p-4 md:p-6"
-      style={{ background: P7.bg, color: P7.ink, fontFamily: MANROPE }}
-    >
-      {/* Fonte Manrope (a mesma do modelo) */}
-      <style>{`@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap");`}</style>
-
-      {/* Cabeçalho */}
-      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 pb-1">
-        <div>
-          <div
-            className="font-extrabold leading-[1.1]"
-            style={{ fontFamily: MANROPE, fontSize: FS.pagina, color: P7.ink, textTransform: "none", letterSpacing: 0 }}
-          >
-            Dashboard
-          </div>
-          <div className="mt-1 text-[12.5px]" style={{ color: P7.lab }}>
-            Como estamos em relação às metas · {rotuloMes.toLowerCase()} de {anoSel}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <LegendaSemaforo />
-          <FiltrosPainel
-            empresas={opcoesEmpresa}
-            empresaAtual={empresaSel}
-            meses={opcoesMes}
-            mesAtual={mesAtualSelecionado}
-          />
-        </div>
-      </div>
-
+  const modoRelatorio = searchParams?.relatorio === "1";
+  const blocoKpi = (
+    <>
       {/* 1. Números do topo: total + cada empresa (mesma altura) */}
       <div
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:[grid-template-columns:var(--cols)]"
@@ -525,9 +497,17 @@ export default async function DashboardPage({
         ))}
       </div>
 
+    </>
+  );
+  const blocoCrescimento = (
+    <>
       {/* Crescimento por ano */}
-      <ColaboradoresPorAno dados={dadosPorAno} escopo={ocultarFinanceiro || empresaSel === "franquias" ? null : empresaSel} tabelaPronta={!erroHistorico} />
+      <ColaboradoresPorAno dados={dadosPorAno} escopo={modoRelatorio || ocultarFinanceiro || empresaSel === "franquias" ? null : empresaSel} tabelaPronta={!erroHistorico} />
 
+    </>
+  );
+  const blocoMetas = (
+    <>
       {/* 2. Metas: clima e treinamento, clima de cada unidade e custo da folha */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <Cartao7>
@@ -546,6 +526,10 @@ export default async function DashboardPage({
         </Cartao7>
       </div>
 
+    </>
+  );
+  const blocoFolha = (
+    <>
       {!ocultarFinanceiro && (
         <Cartao7>
           <Titulo7 sub={`A marca preta é o limite de ${LIMITE_SAUDAVEL_FOLHA_PCT}%. Verde está bem, vermelho pede atenção.`}>
@@ -615,6 +599,164 @@ export default async function DashboardPage({
           )}
         </Cartao7>
       )}
+
+    </>
+  );
+
+  if (modoRelatorio) {
+    const nomeEscopo =
+      empresaSel === "todas" ? "Todas as empresas" : empresaSel === "franquias" ? "Franquias" : empresaEscolhida?.nome ?? "";
+    const totAno = (p: { clt: number; pj: number; est: number }) => p.clt + p.pj + p.est;
+    const resumo: string[] = [];
+    resumo.push(
+      `${nomeEscopo}: ${totalHead} colaboradores (${cltN} CLT, ${pjN} PJ${estN > 0 ? `, ${estN} estágio` : ""}${
+        emFranquias > 0 ? `; ${emFranquias} deles em franquias` : ""
+      }). Saldo de ${rotuloMes.toLowerCase()}: ${saldoMes > 0 ? "+" : ""}${saldoMes}.`
+    );
+    if (dadosPorAno.length > 1) {
+      const a0 = dadosPorAno[0];
+      const a1 = dadosPorAno[dadosPorAno.length - 1];
+      const dif = totAno(a1) - totAno(a0);
+      const pc = totAno(a0) > 0 ? Math.round((dif / totAno(a0)) * 100) : null;
+      resumo.push(
+        `Desde ${a0.ano}, o quadro passou de ${totAno(a0)} para ${totAno(a1)} colaboradores (${dif > 0 ? "+" : ""}${dif}${
+          pc !== null ? `, ${pc > 0 ? "+" : ""}${pc}%` : ""
+        }).`
+      );
+    }
+    const metaTexto = (nome: string, v: number | null, meta: number) => {
+      if (v == null) return `${nome}: ainda não informado.`;
+      const dif = Math.round(v) - meta;
+      return `${nome}: ${Math.round(v)}% — ${dif >= 0 ? `${dif === 0 ? "na" : `${dif} pontos acima da`}` : `${-dif} pontos abaixo da`} meta de ${meta}%.`;
+    };
+    resumo.push(metaTexto("Clima organizacional", climaMedio, META_CLIMA));
+    resumo.push(metaTexto("Treinamento", treinoMedio, META_TREINAMENTO));
+    if (!ocultarFinanceiro && folhaComPct.length > 0) {
+      const acima = folhaComPct.filter((x) => (x.pct as number) > LIMITE_SAUDAVEL_FOLHA_PCT);
+      resumo.push(
+        acima.length === 0
+          ? `Custo da folha dentro do limite de ${LIMITE_SAUDAVEL_FOLHA_PCT}% do faturamento em todas as empresas.`
+          : `Custo da folha acima do limite de ${LIMITE_SAUDAVEL_FOLHA_PCT}% do faturamento: ${acima
+              .map((x) => `${x.empresa.nome} (${fmt1(x.pct as number)}%)`)
+              .join(", ")}.`
+      );
+    }
+
+    return (
+      <div
+        id="relatorio-diretoria"
+        className="space-y-4 rounded-[16px] p-4 md:p-6"
+        style={{ background: P7.bg, color: P7.ink, fontFamily: MANROPE }}
+      >
+        <style>{`@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap");
+@page { size: A4; margin: 12mm; }
+@media print {
+  body * { visibility: hidden !important; }
+  #relatorio-diretoria, #relatorio-diretoria * { visibility: visible !important; }
+  #relatorio-diretoria { position: absolute; left: 0; top: 0; width: 100%; background: #fff !important; padding: 0 !important; border-radius: 0 !important; }
+  #relatorio-diretoria .nao-imprimir { display: none !important; }
+  #relatorio-diretoria section { break-inside: avoid; box-shadow: none !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}`}</style>
+
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 pb-1">
+          <div>
+            <div className="text-[12.5px] font-semibold" style={{ color: P7.lab }}>
+              Grupo Seu Elias · Recursos Humanos
+            </div>
+            <div
+              className="font-extrabold leading-[1.1]"
+              style={{ fontFamily: MANROPE, fontSize: FS.pagina, color: P7.ink, textTransform: "none", letterSpacing: 0 }}
+            >
+              Relatório de RH para a diretoria
+            </div>
+            <div className="mt-1 text-[12.5px]" style={{ color: P7.lab }}>
+              {nomeEscopo} · {rotuloMes} de {anoSel} · emitido em {hojeTexto}
+            </div>
+          </div>
+          <div className="nao-imprimir flex flex-wrap items-center gap-3">
+            <Link
+              href={`/dashboard?${new URLSearchParams({ empresa: empresaSel, mes: mesAtualSelecionado }).toString()}`}
+              className={LINK7}
+              style={LINK7_STYLE}
+            >
+              ‹ Voltar ao dashboard
+            </Link>
+            <BotaoImprimir />
+          </div>
+        </div>
+
+        <Cartao7>
+          <Titulo7 sub="Os principais pontos do período">Resumo</Titulo7>
+          <div>
+            {resumo.map((t, i) => (
+              <div key={i} className="flex gap-3 border-t py-2 text-[12.5px] leading-[1.5]" style={{ borderColor: P7.grid }}>
+                <span className="mt-[7px] h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: P7.deep }} />
+                <span>{t}</span>
+              </div>
+            ))}
+          </div>
+        </Cartao7>
+
+        {blocoKpi}
+        {blocoCrescimento}
+        {blocoMetas}
+        {blocoFolha}
+
+        <p className="text-[11px]" style={{ color: P7.lab }}>
+          Dados do sistema de RH em {hojeTexto}. Franquias entram apenas como quantidade informada. A projeção do gráfico de
+          crescimento é uma estimativa baseada nos anos anteriores.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="space-y-4 rounded-[16px] p-4 md:p-6"
+      style={{ background: P7.bg, color: P7.ink, fontFamily: MANROPE }}
+    >
+      {/* Fonte Manrope (a mesma do modelo) */}
+      <style>{`@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap");`}</style>
+
+      {/* Cabeçalho */}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 pb-1">
+        <div>
+          <div
+            className="font-extrabold leading-[1.1]"
+            style={{ fontFamily: MANROPE, fontSize: FS.pagina, color: P7.ink, textTransform: "none", letterSpacing: 0 }}
+          >
+            Dashboard
+          </div>
+          <div className="mt-1 text-[12.5px]" style={{ color: P7.lab }}>
+            Como estamos em relação às metas · {rotuloMes.toLowerCase()} de {anoSel}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <LegendaSemaforo />
+          <FiltrosPainel
+            empresas={opcoesEmpresa}
+            empresaAtual={empresaSel}
+            meses={opcoesMes}
+            mesAtual={mesAtualSelecionado}
+          />
+          <Link
+            href={`/dashboard?${new URLSearchParams({ relatorio: "1", empresa: empresaSel, mes: mesAtualSelecionado }).toString()}`}
+            className="inline-flex items-center rounded-full border bg-white px-3.5 py-[6px] text-[11.5px] font-semibold hover:brightness-95"
+            style={{ borderColor: P7.bd, color: P7.deep }}
+          >
+            Relatório para a diretoria
+          </Link>
+        </div>
+      </div>
+
+      {blocoKpi}
+
+      {blocoCrescimento}
+
+      {blocoMetas}
+
+      {blocoFolha}
 
       {/* 3. Processo de integração */}
       <IntegracaoPainel linhas={linhasIntegracao} hojeTexto={hojeTexto} />
