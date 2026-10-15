@@ -12,8 +12,11 @@ interface Props {
   candidatoId: string;
   temCurriculo: boolean;
   nomeCurriculo: string | null;
-  cargoRotulo: string;
-  temCargo: boolean;
+  /** Cargos cadastrados em "Cargos" (para escolher a descrição usada). */
+  cargos: { id: string; cargo: string; empresa: string }[];
+  /** Cargo que combina com a vaga (escolhido automaticamente). */
+  cargoAutoId: string | null;
+  vagaRotulo: string;
   textoInicial: string | null;
   emInicial: string | null;
   /** Verdadeiro quando o currículo acabou de ser anexado: a análise começa sozinha ao abrir a aba. */
@@ -73,6 +76,7 @@ function Corpo({ linhas }: { linhas: string[] }) {
       while (i < linhas.length && ehTabela(linhas[i])) bloco.push(linhas[i++]);
       const linhasTab = bloco.filter((x) => !ehSeparador(x)).map(partirLinha);
       const [cab, ...resto] = linhasTab;
+      if (!cab) continue;
       saida.push(
         <div key={k++} className="overflow-x-auto rounded-lg border border-brand-200 my-2">
           <table className="w-full min-w-[520px] border-collapse text-sm">
@@ -182,12 +186,16 @@ function quando(em: string | null): string {
 
 const ABERTAS = new Set(["1", "4", "8"]);
 
-export default function AnaliseCurriculo({ candidatoId, temCurriculo, nomeCurriculo, cargoRotulo, temCargo, textoInicial, emInicial, autoIniciar, aoIniciou, aoGuardar }: Props) {
+export default function AnaliseCurriculo({ candidatoId, temCurriculo, nomeCurriculo, cargos, cargoAutoId, vagaRotulo, textoInicial, emInicial, autoIniciar, aoIniciou, aoGuardar }: Props) {
   const [texto, setTexto] = useState<string>(textoInicial ?? "");
   const [em, setEm] = useState<string | null>(emInicial);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [cargoId, setCargoId] = useState<string>(cargoAutoId ?? "");
+  const escolhido = cargos.find((c) => c.id === cargoId) ?? null;
+  const temCargo = !!escolhido;
+  const cargoRotulo = escolhido ? `${escolhido.cargo} · ${escolhido.empresa}` : vagaRotulo;
   const caixa = useRef<HTMLDivElement>(null);
   const rodando = useRef(false);
 
@@ -202,7 +210,7 @@ export default function AnaliseCurriculo({ candidatoId, temCurriculo, nomeCurric
       const r = await fetch("/api/analise-curriculo", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ candidatoId }),
+        body: JSON.stringify({ candidatoId, cargoId }),
       });
       const tipo = r.headers.get("content-type") ?? "";
       if (!r.ok || tipo.includes("application/json") || !r.body) {
@@ -293,8 +301,21 @@ export default function AnaliseCurriculo({ candidatoId, temCurriculo, nomeCurric
             {temCargo ? `✓ Descrição do cargo: ${cargoRotulo}` : `✗ Falta a descrição do cargo (${cargoRotulo})`}
           </span>
         </div>
+        <label className="block">
+          <span className="block text-xs font-bold uppercase tracking-wider text-ink-500 mb-1">Descrição do cargo usada na análise</span>
+          <select className="input" value={cargoId} disabled={carregando} onChange={(ev) => setCargoId(ev.target.value)}>
+            <option value="">{cargoAutoId ? "—" : `Escolha o cargo (vaga: ${vagaRotulo})`}</option>
+            {cargos.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.cargo} · {c.empresa}
+              </option>
+            ))}
+          </select>
+        </label>
         {!temCurriculo && <p className="text-sm text-ink-500">Anexe o currículo na aba “Candidato”. A análise começa sozinha.</p>}
-        {temCurriculo && !temCargo && <p className="text-sm text-ink-500">Cadastre a descrição deste cargo na tela “Cargos” e volte aqui.</p>}
+        {temCurriculo && !temCargo && (
+          <p className="text-sm text-ink-500">{cargos.length ? "Escolha acima o cargo cadastrado." : "Nenhum cargo cadastrado. Cadastre na tela “Cargos” e volte aqui."}</p>
+        )}
         {temCurriculo && temCargo && (
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" className="btn-primary !px-3 !py-1.5 text-sm" disabled={carregando} onClick={() => void analisar()}>

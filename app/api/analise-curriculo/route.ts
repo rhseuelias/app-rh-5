@@ -1,6 +1,7 @@
 import { inflateRawSync } from "zlib";
 import { createClient } from "@/lib/supabase-server";
-import { acharCargo, normalizarCargo } from "@/lib/roteiro-dados";
+import { normalizarCargo } from "@/lib/roteiro-dados";
+import { cargoParecido } from "@/lib/cargo-parecido";
 import { cargoParaTexto, PROMPT_ANALISE } from "@/lib/analise-curriculo";
 import type { CargoDesc } from "@/lib/cargos";
 
@@ -94,9 +95,11 @@ export async function POST(req: Request): Promise<Response> {
   if (!chave) return erro("A IA ainda não foi ligada (falta a chave ANTHROPIC_API_KEY na Vercel).", 503);
 
   let candidatoId = "";
+  let cargoId = "";
   try {
-    const corpo = (await req.json()) as { candidatoId?: string };
+    const corpo = (await req.json()) as { candidatoId?: string; cargoId?: string };
     candidatoId = String(corpo.candidatoId ?? "");
+    cargoId = String(corpo.cargoId ?? "");
   } catch {
     return erro("Pedido inválido.");
   }
@@ -110,9 +113,11 @@ export async function POST(req: Request): Promise<Response> {
   if (!vaga) return erro("Vaga não encontrada.", 404);
 
   const { data: lista } = await supabase.from("cargos_desc").select("*");
-  const cargo = acharCargo(((lista ?? []) as CargoDesc[]).map(normalizarCargo), vaga.cargo, vaga.empresa);
+  const cargos = ((lista ?? []) as CargoDesc[]).map(normalizarCargo);
+  // Cargo escolhido na tela; se não veio, procura o cadastrado em "Cargos" que combina com a vaga.
+  const cargo = (cargoId ? cargos.find((c) => c.id === cargoId) : null) ?? cargoParecido(cargos, vaga.cargo, vaga.empresa);
   if (!cargo) {
-    return erro(`Falta a descrição do cargo "${vaga.cargo}". Cadastre em Cargos e tente de novo.`);
+    return erro(`Falta a descrição do cargo "${vaga.cargo}". Cadastre em Cargos ou escolha outro cargo na lista e tente de novo.`);
   }
 
   const { data: arq, error: erroArq } = await supabase.storage.from("curriculos").download(cand.curriculo_path);
@@ -125,7 +130,7 @@ export async function POST(req: Request): Promise<Response> {
   const b64 = bytes.toString("base64");
 
   const conteudo: Bloco[] = [
-    { type: "text", text: `<descricao_do_cargo>\n${cargoParaTexto(cargo, vaga.empresa, vaga.unidade ?? null)}\n</descricao_do_cargo>` },
+    { type: "text", text: `<descricao_do_cargo>\n${cargoParaTexto(cargo, cargo.empresa, vaga.empresa === cargo.empresa ? vaga.unidade ?? null : null)}\n</descricao_do_cargo>` },
   ];
   if (ext === "pdf") {
     conteudo.push({ type: "text", text: "<curriculo_do_candidato> (arquivo PDF a seguir)" });

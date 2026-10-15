@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { corDaEmpresa } from "@/lib/empresa-cores";
 import RoteiroFicha from "@/components/entrevistas/RoteiroFicha";
 import AnaliseCurriculo from "@/components/entrevistas/AnaliseCurriculo";
-import { acharCargo } from "@/lib/roteiro-dados";
+import { cargoParecido } from "@/lib/cargo-parecido";
 import type { CargoDesc } from "@/lib/cargos";
 import { createClient } from "@/lib/supabase-browser";
 import { atualizarRegistro, criarRegistro, excluirRegistro, salvarAvaliacao, type RespostaEnt } from "@/lib/actions-entrevistas";
@@ -1346,8 +1346,9 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                 candidatoId={c.id}
                 temCurriculo={!!c.curriculo_path}
                 nomeCurriculo={c.curriculo_nome}
-                cargoRotulo={v ? `${v.cargo} · ${rotuloEmpresa(v)}` : "cargo"}
-                temCargo={!!v && !!acharCargo(cargos, v.cargo, v.empresa)}
+                cargos={cargos.map((x) => ({ id: x.id, cargo: x.cargo, empresa: x.empresa }))}
+                cargoAutoId={v ? cargoParecido(cargos, v.cargo, v.empresa)?.id ?? null : null}
+                vagaRotulo={v ? `${v.cargo} · ${rotuloEmpresa(v)}` : "cargo"}
                 textoInicial={c.analise_curriculo ?? null}
                 emInicial={c.analise_em ?? null}
                 autoIniciar={analiseAuto === c.id}
