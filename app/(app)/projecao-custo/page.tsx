@@ -11,10 +11,16 @@ import EmpresaForm from "@/components/EmpresaForm";
 import UnidadesForm from "@/components/UnidadesForm";
 import FranquiasBSE, { type Franquia } from "@/components/projecao/FranquiasBSE";
 import { cadastroEmpresaCompleto } from "@/lib/dados-empresa";
+import RelatorioExecutivo from "@/components/projecao/RelatorioExecutivo";
+import { souAssistente } from "@/lib/permissoes";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProjecaoCustoPage() {
+export default async function ProjecaoCustoPage({
+  searchParams,
+}: {
+  searchParams?: { relatorio?: string };
+}) {
   const supabase = createClient();
 
   const [{ data: colaboradores }, { data: empresas }, { data: unidades }, { data: franquias, error: erroFranquias }] =
@@ -29,6 +35,12 @@ export default async function ProjecaoCustoPage() {
   const listaEmpresas = (empresas ?? []) as Empresa[];
   const listaUnidades = (unidades ?? []) as Unidade[];
   const listaFranquias = (franquias ?? []) as Franquia[];
+
+  // Perfil "assistente" não vê custos: sem relatório executivo.
+  const assistente = await souAssistente();
+  if (searchParams?.relatorio === "1" && !assistente) {
+    return <RelatorioExecutivo colaboradores={listaColaboradores} empresas={listaEmpresas} />;
+  }
 
   // Se as colunas de dados cadastrais ainda não existem no banco (migration_032 não rodada),
   // avisa na tela em vez de falhar em silêncio.
@@ -61,11 +73,22 @@ export default async function ProjecaoCustoPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Projeção de Custo</h1>
-        <p className="text-slate-500 text-sm">
-          Custo de folha (remuneração + encargos + passivo trabalhista) por empresa
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Projeção de Custo</h1>
+          <p className="text-slate-500 text-sm">
+            Custo de folha (remuneração + encargos + passivo trabalhista) por empresa
+          </p>
+        </div>
+        {!assistente && (
+          <a
+            href="/projecao-custo?relatorio=1"
+            className="rounded-full px-4 py-2 text-sm font-semibold text-white"
+            style={{ background: "#0f5c55" }}
+          >
+            Relatório executivo
+          </a>
+        )}
       </div>
 
       <div className="card">
