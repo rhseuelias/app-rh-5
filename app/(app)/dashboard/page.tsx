@@ -25,6 +25,7 @@ import { souAssistente } from "@/lib/permissoes";
 import FiltrosPainel from "@/components/dashboard/FiltrosPainel";
 import IntegracaoPainel from "@/components/dashboard/IntegracaoPainel";
 import AvisosRescisoes from "@/components/dashboard/AvisosRescisoes";
+import ColaboradoresPorAno, { type PontoAno } from "@/components/dashboard/ColaboradoresPorAno";
 import { montarLinhasIntegracao } from "@/components/dashboard/integracao-dados";
 import { Gauge, ClimaPorEmpresa, LegendaSemaforo } from "@/components/dashboard/Semaforo";
 import {
@@ -200,6 +201,22 @@ export default async function DashboardPage({
   const totalHead = noSistema + emFranquias;
 
   const saldoMes = escopo.filter(admitiuNoMes).length - escopo.filter(desligouNoMes).length;
+
+  // Crescimento por ano: quantos estavam ativos no fim de cada ano (até 6 anos); o ano atual vale "hoje".
+  const anosAdmissao = escopo.map((c) => Number(dia10(c.data_admissao).slice(0, 4))).filter((y) => y > 1990);
+  const anoInicial = Math.max(Math.min(...(anosAdmissao.length > 0 ? anosAdmissao : [b.ano])), b.ano - 5);
+  const dadosPorAno: PontoAno[] = [];
+  for (let y = anoInicial; y <= b.ano; y++) {
+    const hojeAno = y === b.ano;
+    const ativosAno = escopo.filter((c) => ativoEm(c, `${y}-12-31`, hojeAno));
+    dadosPorAno.push({
+      ano: y,
+      clt: ativosAno.filter((c) => c.tipo === "CLT").length,
+      pj: ativosAno.filter((c) => c.tipo === "PJ").length,
+      est: ativosAno.filter((c) => c.tipo === "Estagio").length,
+      hoje: hojeAno,
+    });
+  }
 
   // empresas que entram nos indicadores (Franquias não têm clima/treinamento/folha cadastrados)
   const empresasNoEscopo = empresaSel === "franquias" ? [] : empresaEscolhida ? [empresaEscolhida] : listaEmpresas;
@@ -576,6 +593,9 @@ export default async function DashboardPage({
           </Cartao7>
         )}
       </div>
+
+      {/* Crescimento por ano */}
+      <ColaboradoresPorAno dados={dadosPorAno} />
 
       {/* 3. Processo de integração */}
       <IntegracaoPainel linhas={linhasIntegracao} hojeTexto={hojeTexto} />
