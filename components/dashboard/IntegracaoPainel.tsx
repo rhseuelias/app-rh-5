@@ -12,6 +12,7 @@ import {
   ST7,
   TXT_ATRASO,
   corEmpresa,
+  nomeProprio,
   ROTULO_COLUNA,
   COR_ROTULO,
   LINK7,
@@ -21,7 +22,7 @@ import {
 import type { LinhaIntegracao, SituacaoLinha } from "./integracao-dados";
 
 const MAX_LINHAS = 8;
-const COLUNAS = "200px 120px minmax(330px,1fr) 160px 150px 20px";
+const COLUNAS = "190px 100px minmax(260px,1fr) 150px 140px 16px";
 
 const K_DA_SITUACAO: Record<SituacaoLinha, K | null> = { atrasado: "bad", vence: "warn", prazo: null };
 
@@ -143,7 +144,7 @@ export default function IntegracaoPainel({
   const visiveis = filtradas.slice(0, MAX_LINHAS);
 
   const chip = (ativo: boolean) =>
-    `inline-flex items-center gap-1.5 rounded-full px-[13px] py-1.5 text-[12.5px] font-bold whitespace-nowrap transition-colors ${
+    `inline-flex items-center gap-1.5 rounded-full px-3 py-[5px] text-[11.5px] font-bold whitespace-nowrap transition-colors ${
       ativo ? "text-white" : "hover:brightness-95"
     }`;
   const chipStyle = (ativo: boolean) => ({ background: ativo ? P7.deep : P7.bg, color: ativo ? "#fff" : P7.ink, fontFamily: MANROPE });
@@ -151,16 +152,16 @@ export default function IntegracaoPainel({
   return (
     <Cartao7>
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <div className="text-[18px] font-extrabold" style={{ fontFamily: MANROPE, color: P7.ink }}>
+        <div className="text-[14px] font-bold" style={{ fontFamily: MANROPE, color: P7.ink }}>
           Processo de integração
         </div>
-        <div className="text-[12.5px]" style={{ color: P7.sec }}>
+        <div className="text-[11.5px]" style={{ color: P7.sec }}>
           <b>{emIntegracao}</b> em integração · <b>{emExperiencia}</b> em experiência · hoje é {hojeTexto}
         </div>
       </div>
 
       {linhas.length === 0 ? (
-        <p className="text-[13px]" style={{ color: P7.sec }}>
+        <p className="text-[12.5px]" style={{ color: P7.sec }}>
           Ninguém em processo de integração no momento.
         </p>
       ) : (
@@ -182,7 +183,7 @@ export default function IntegracaoPainel({
             </div>
             {empresas.length > 1 && (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[12px] font-bold" style={{ color: P7.lab }}>
+                <span className="text-[11.5px] font-bold" style={{ color: P7.lab }}>
                   Empresa
                 </span>
                 {empresas.map((e) => (
@@ -202,7 +203,7 @@ export default function IntegracaoPainel({
           </div>
 
           <div className="overflow-x-auto">
-            <div className="min-w-[1000px]">
+            <div className="min-w-[900px]">
               <div className={`mb-1.5 grid gap-x-3 ${ROTULO_COLUNA}`} style={{ gridTemplateColumns: COLUNAS, ...COR_ROTULO }}>
                 <div>Colaborador</div>
                 <div>Quem cuida</div>
@@ -213,7 +214,7 @@ export default function IntegracaoPainel({
               </div>
 
               {visiveis.length === 0 && (
-                <p className="border-t py-4 text-[13px]" style={{ borderColor: P7.grid, color: P7.sec }}>
+                <p className="border-t py-4 text-[12.5px]" style={{ borderColor: P7.grid, color: P7.sec }}>
                   Ninguém neste filtro.
                 </p>
               )}
@@ -227,7 +228,7 @@ export default function IntegracaoPainel({
                       type="button"
                       onClick={() => setAberta(expandida ? null : l.id)}
                       aria-expanded={expandida}
-                      className="grid h-[38px] w-full items-center gap-x-3 border-t text-left"
+                      className="grid h-[36px] w-full items-center gap-x-3 border-t text-left"
                       style={{
                         gridTemplateColumns: COLUNAS,
                         borderColor: P7.grid,
@@ -235,21 +236,21 @@ export default function IntegracaoPainel({
                         ...(expandida ? { background: P7.bg, borderRadius: "10px 10px 0 0", padding: "0 10px", margin: "0 -10px", width: "calc(100% + 20px)" } : {}),
                       }}
                     >
-                      <span className="truncate text-[13.5px] font-bold" style={{ color: P7.ink }}>
+                      <span className="truncate text-[12.5px] font-bold" style={{ color: P7.ink }}>
                         <Ponto cor={corEmpresa(l.empresa)} redondo />
-                        {l.nome}
+                        {nomeProprio(l.nome)}
                       </span>
-                      <span className="whitespace-nowrap text-[13px]" style={{ color: P7.ink }}>
+                      <span className="whitespace-nowrap text-[12.5px]" style={{ color: P7.ink }}>
                         <Ponto cor={RESP_COR[l.quem] ?? P7.futuro} />
                         {l.quem}
                       </span>
                       <span>
                         <LinhaDoTempo linha={l} />
                       </span>
-                      <span className="truncate text-[13px]" style={{ color: P7.ink }}>
+                      <span className="truncate text-[12.5px]" style={{ color: P7.ink }}>
                         {l.etapaAtual}
                       </span>
-                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[13px]" style={{ color: P7.ink }}>
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12.5px]" style={{ color: P7.ink }}>
                         {k && <Icone k={k} />}
                         {l.prazoData && <b>{l.prazoData}</b>}
                         <span style={{ color: l.situacao === "atrasado" ? TXT_ATRASO : P7.sec, fontWeight: k ? 700 : 400 }}>
@@ -264,12 +265,12 @@ export default function IntegracaoPainel({
 
                     {expandida && (
                       <div className="mb-1.5 overflow-x-auto" style={{ background: P7.bg, borderRadius: "0 0 10px 10px", padding: "14px 10px", margin: "0 -10px 6px" }}>
-                        <div className="min-w-[960px]">
+                        <div className="min-w-[880px]">
                           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-2.5">
-                            <div className="text-[13px]" style={{ color: P7.ink }}>
-                              <b>{l.nome}</b> · {[l.cargo, l.empresa].filter(Boolean).join(" · ")}
+                            <div className="text-[12.5px]" style={{ color: P7.ink }}>
+                              <b>{nomeProprio(l.nome)}</b> · {[l.cargo, l.empresa].filter(Boolean).join(" · ")}
                             </div>
-                            <div className="inline-flex items-center gap-1.5 text-[12.5px]" style={{ color: P7.ink }}>
+                            <div className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: P7.ink }}>
                               {l.cronometro && (
                                 <>
                                   {k && <Icone k={k} />}
@@ -308,7 +309,7 @@ export default function IntegracaoPainel({
           </div>
 
           <div
-            className="mt-1 flex flex-wrap items-center justify-between gap-2 border-t pt-[11px] text-[12px]"
+            className="mt-1 flex flex-wrap items-center justify-between gap-2 border-t pt-[11px] text-[11.5px]"
             style={{ borderColor: P7.grid, color: P7.sec }}
           >
             <span className="flex flex-wrap items-center gap-x-3.5 gap-y-1">

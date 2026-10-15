@@ -21,6 +21,29 @@ export const P7 = {
   verde: "#1baf7a",
 } as const;
 
+/** Escala de letras do painel (tudo em Manrope): poucos tamanhos, usados sempre do mesmo jeito. */
+export const FS = {
+  pagina: 26, // título "Dashboard"
+  kpi: 40, // número principal (total)
+  kpiMedio: 28, // número dos cartões das empresas e dos medidores
+  titulo: 14, // título de cada quadro
+  corpo: 12.5, // texto e linhas de tabela
+  apoio: 11.5, // legendas e textos de apoio
+  rotulo: 10.5, // cabeçalhos de coluna e rótulos em maiúsculas
+} as const;
+
+const PARTICULAS = new Set(["de", "da", "do", "das", "dos", "e", "di", "du"]);
+/** "JOÃO DA SILVA" -> "João da Silva" (os nomes vêm do cadastro em maiúsculas). */
+export function nomeProprio(nome: string | null | undefined): string {
+  if (!nome) return "";
+  return nome
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((p, i) => (i > 0 && PARTICULAS.has(p) ? p : p.charAt(0).toUpperCase() + p.slice(1)))
+    .join(" ");
+}
+
 export type K = "good" | "warn" | "bad";
 export const ST7: Record<K, string> = { good: "#0ca30c", warn: "#fab219", bad: "#d03b3b" };
 export const BG7: Record<K, string> = { good: "#e3f3e3", warn: "#fff1d0", bad: "#fbe4e4" };
@@ -72,7 +95,7 @@ export function Icone({ k, size = 16 }: { k: K; size?: number }) {
 export function Selo({ k, children }: { k: K; children: ReactNode }) {
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full py-[3px] pl-1.5 pr-[11px] text-[12px] font-semibold whitespace-nowrap"
+      className="inline-flex items-center gap-1.5 rounded-full py-[3px] pl-1.5 pr-[11px] text-[11.5px] font-semibold whitespace-nowrap"
       style={{ color: P7.ink, background: BG7[k] }}
     >
       <Icone k={k} />
@@ -92,7 +115,7 @@ export function Cartao7({
 }) {
   return (
     <section
-      className={`rounded-[16px] border bg-white px-6 py-[22px] ${className}`}
+      className={`rounded-[12px] border bg-white px-5 py-[18px] ${className}`}
       style={{ borderColor: P7.bd, color: P7.ink, fontFamily: MANROPE, ...style }}
     >
       {children}
@@ -104,7 +127,7 @@ export function Titulo7({
   children,
   sub,
   direita,
-  tamanho = 16,
+  tamanho = FS.titulo,
 }: {
   children: ReactNode;
   sub?: ReactNode;
@@ -112,19 +135,19 @@ export function Titulo7({
   tamanho?: number;
 }) {
   return (
-    <div className="mb-3.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+    <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <div>
-        <div className="font-extrabold" style={{ fontFamily: MANROPE, fontSize: tamanho, color: P7.ink, textTransform: "none", letterSpacing: 0 }}>
+        <div className="font-bold" style={{ fontFamily: MANROPE, fontSize: tamanho, color: P7.ink, textTransform: "none", letterSpacing: 0 }}>
           {children}
         </div>
         {sub && (
-          <div className="mt-[3px] text-[12.5px]" style={{ color: P7.lab }}>
+          <div className="mt-[2px] text-[11.5px]" style={{ color: P7.lab }}>
             {sub}
           </div>
         )}
       </div>
       {direita && (
-        <div className="text-[12.5px]" style={{ color: P7.sec }}>
+        <div className="text-[11.5px]" style={{ color: P7.sec }}>
           {direita}
         </div>
       )}
@@ -143,8 +166,8 @@ export function Ponto({ cor, redondo = false }: { cor: string; redondo?: boolean
 }
 
 export const ROTULO_COLUNA =
-  "text-[11px] font-bold uppercase tracking-[0.07em]";
+  "text-[10.5px] font-bold uppercase tracking-[0.08em]";
 export const COR_ROTULO: CSSProperties = { color: P7.lab };
 
-export const LINK7 = "text-[12.5px] font-bold hover:underline";
+export const LINK7 = "text-[11.5px] font-bold hover:underline";
 export const LINK7_STYLE: CSSProperties = { color: P7.deep };

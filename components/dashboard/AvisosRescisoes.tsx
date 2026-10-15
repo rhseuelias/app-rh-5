@@ -20,6 +20,7 @@ import {
   MANROPE,
   P7,
   corEmpresa,
+  nomeProprio,
   ROTULO_COLUNA,
   COR_ROTULO,
   type K,
@@ -41,16 +42,16 @@ const K_DO_TOM: Record<TomDeslig, K | null> = {
   neutro: null,
 };
 
-const COLS_AVISO = "150px 96px minmax(80px,1fr) 56px 84px";
-const COLS_RESCISAO = "150px 110px 74px minmax(120px,1fr)";
+const COLS_AVISO = "minmax(110px,1.5fr) 80px minmax(50px,1fr) 46px 62px";
+const COLS_RESCISAO = "minmax(110px,1.4fr) 80px 46px minmax(112px,1.3fr)";
 
 function Cabecalho({ titulo, direita }: { titulo: string; direita: ReactNode }) {
   return (
     <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4">
-      <div className="text-[16px] font-extrabold" style={{ fontFamily: MANROPE, color: P7.ink }}>
+      <div className="text-[14px] font-bold" style={{ fontFamily: MANROPE, color: P7.ink }}>
         {titulo}
       </div>
-      <div className="text-[12px]" style={{ color: P7.sec }}>
+      <div className="text-[11.5px]" style={{ color: P7.sec }}>
         {direita}
       </div>
     </div>
@@ -92,7 +93,7 @@ export default async function AvisosRescisoes({
   const colabPorId = new Map(
     ((colabs ?? []) as { id: string; nome: string; empresa_id: string | null }[]).map((c) => [c.id, c])
   );
-  const nome = (d: Desligamento) => colabPorId.get(d.colaborador_id)?.nome ?? "Colaborador";
+  const nome = (d: Desligamento) => nomeProprio(colabPorId.get(d.colaborador_id)?.nome) || "Colaborador";
   const corDe = (d: Desligamento) => {
     const eid = colabPorId.get(d.colaborador_id)?.empresa_id;
     return corEmpresa(eid ? empresaPorId.get(eid) ?? "" : "");
@@ -117,8 +118,8 @@ export default async function AvisosRescisoes({
   const pagas = rescisoes.length - aPagar;
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <Cartao7 style={{ padding: "20px 24px" }}>
+    <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
+      <Cartao7 className="flex flex-col">
         <Cabecalho
           titulo="Avisos prévios"
           direita={
@@ -127,9 +128,9 @@ export default async function AvisosRescisoes({
             </>
           }
         />
-        <div className="overflow-x-auto">
-          <div className="min-w-[500px]">
-            <div className={`mb-1 grid gap-x-2.5 text-[10.5px] font-bold uppercase tracking-[0.07em]`} style={{ gridTemplateColumns: COLS_AVISO, ...COR_ROTULO }}>
+        <div className="flex-1">
+          <div>
+            <div className={`mb-1 grid gap-x-2.5 text-[10.5px] font-bold uppercase tracking-[0.08em]`} style={{ gridTemplateColumns: COLS_AVISO, ...COR_ROTULO }}>
               <div>Colaborador</div>
               <div>Tipo</div>
               <div>Cumprido</div>
@@ -137,7 +138,7 @@ export default async function AvisosRescisoes({
               <div>Faltam</div>
             </div>
             {avisos.length === 0 && (
-              <p className="border-t py-3 text-[13px]" style={{ borderColor: P7.grid, color: P7.sec }}>
+              <p className="border-t py-3 text-[12.5px]" style={{ borderColor: P7.grid, color: P7.sec }}>
                 Ninguém cumprindo aviso prévio agora.
               </p>
             )}
@@ -155,7 +156,7 @@ export default async function AvisosRescisoes({
                     <Ponto cor={corDe(d)} redondo />
                     {nome(d)}
                   </span>
-                  <span className="truncate text-[12px]" style={{ color: P7.sec }}>{TIPO_CURTO[d.tipo_aviso]}</span>
+                  <span className="truncate text-[11.5px]" style={{ color: P7.sec }}>{TIPO_CURTO[d.tipo_aviso]}</span>
                   <span
                     className="block h-2 rounded-full"
                     style={{ background: P7.futuro }}
@@ -167,8 +168,8 @@ export default async function AvisosRescisoes({
                   >
                     <span className="block h-2 rounded-full" style={{ width: `${pct}%`, background: P7.deep }} />
                   </span>
-                  <span className="text-[12px]" style={{ color: P7.ink }}>{brCurto(d.ultimo_dia)}</span>
-                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[12px] font-bold" style={{ color: P7.ink }}>
+                  <span className="text-[11.5px]" style={{ color: P7.ink }}>{brCurto(d.ultimo_dia)}</span>
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11.5px] font-bold" style={{ color: P7.ink }}>
                     {urgente && <Icone k="warn" size={14} />}
                     {prog!.faltam} {prog!.faltam === 1 ? "dia" : "dias"}
                   </span>
@@ -177,12 +178,12 @@ export default async function AvisosRescisoes({
             })}
           </div>
         </div>
-        <div className="border-t pt-[9px] text-[11.5px]" style={{ borderColor: P7.grid, color: P7.sec }}>
+        <div className="mt-2 border-t pt-[9px] text-[11.5px]" style={{ borderColor: P7.grid, color: P7.sec }}>
           O aviso indenizado não tem contagem: vai direto para as rescisões.
         </div>
       </Cartao7>
 
-      <Cartao7 style={{ padding: "20px 24px" }}>
+      <Cartao7 className="flex flex-col">
         <Cabecalho
           titulo="Rescisões do mês"
           direita={
@@ -191,16 +192,16 @@ export default async function AvisosRescisoes({
             </>
           }
         />
-        <div className="overflow-x-auto">
-          <div className="min-w-[460px]">
-            <div className="mb-1 grid gap-x-2.5 text-[10.5px] font-bold uppercase tracking-[0.07em]" style={{ gridTemplateColumns: COLS_RESCISAO, ...COR_ROTULO }}>
+        <div className="flex-1">
+          <div>
+            <div className="mb-1 grid gap-x-2.5 text-[10.5px] font-bold uppercase tracking-[0.08em]" style={{ gridTemplateColumns: COLS_RESCISAO, ...COR_ROTULO }}>
               <div>Colaborador</div>
               <div>Tipo</div>
               <div>Pagar até</div>
               <div>Situação</div>
             </div>
             {rescisoes.length === 0 && (
-              <p className="border-t py-3 text-[13px]" style={{ borderColor: P7.grid, color: P7.sec }}>
+              <p className="border-t py-3 text-[12.5px]" style={{ borderColor: P7.grid, color: P7.sec }}>
                 Nenhuma rescisão neste mês.
               </p>
             )}
@@ -217,13 +218,13 @@ export default async function AvisosRescisoes({
                     <Ponto cor={corDe(d)} redondo />
                     {nome(d)}
                   </span>
-                  <span className="truncate text-[12px]" style={{ color: P7.sec }}>{TIPO_CURTO[d.tipo_aviso]}</span>
-                  <span className="text-[12px] font-bold" style={{ color: P7.ink }}>{brCurto(d.prazo_pagamento)}</span>
+                  <span className="truncate text-[11.5px]" style={{ color: P7.sec }}>{TIPO_CURTO[d.tipo_aviso]}</span>
+                  <span className="text-[11.5px] font-bold" style={{ color: P7.ink }}>{brCurto(d.prazo_pagamento)}</span>
                   <span>
                     {k ? (
                       <Selo k={k}>{sit.rotulo}</Selo>
                     ) : (
-                      <span className="pl-1.5 text-[12px]" style={{ color: P7.sec }}>{sit.rotulo}</span>
+                      <span className="pl-1.5 text-[11.5px]" style={{ color: P7.sec }}>{sit.rotulo}</span>
                     )}
                   </span>
                 </Link>
@@ -231,7 +232,7 @@ export default async function AvisosRescisoes({
             })}
           </div>
         </div>
-        <div className="border-t pt-[9px] text-[11.5px]" style={{ borderColor: P7.grid, color: P7.sec }}>
+        <div className="mt-2 border-t pt-[9px] text-[11.5px]" style={{ borderColor: P7.grid, color: P7.sec }}>
           Prazo: até {PRAZO_PAGAMENTO_DIAS} dias corridos depois do último dia de trabalho.
         </div>
       </Cartao7>
