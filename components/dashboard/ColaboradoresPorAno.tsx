@@ -8,6 +8,8 @@ export interface PontoAno {
   clt: number;
   pj: number;
   est: number;
+  /** colaboradores de franquias (só quantidade) */
+  fr: number;
   /** true = ano atual (valor de hoje) */
   hoje?: boolean;
   /** true = número digitado à mão (no lugar do automático) */
@@ -17,6 +19,7 @@ export interface PontoAno {
 const COR_CLT = P7.azul;
 const COR_PJ = P7.laranja;
 const COR_EST = "#9fb5b1";
+const COR_FR = "#eda100";
 const ALTURA = 150;
 
 export default function ColaboradoresPorAno({
@@ -29,7 +32,9 @@ export default function ColaboradoresPorAno({
   escopo: string | null;
   tabelaPronta?: boolean;
 }) {
-  const total = (p: PontoAno) => p.clt + p.pj + p.est;
+  const total = (p: PontoAno) => p.clt + p.pj + p.est + p.fr;
+  // Sem histórico das franquias (ano automático), compara só o que o sistema conhece, para não mostrar um salto falso.
+  const comparavel = (a: PontoAno, b: PontoAno) => a.manual || b.manual || a.fr > 0 && b.fr > 0 ? [total(a), total(b)] : [total(a) - a.fr, total(b) - b.fr];
   const maximo = Math.max(1, ...dados.map(total));
 
   if (dados.length === 0 || maximo <= 1)
@@ -39,11 +44,17 @@ export default function ColaboradoresPorAno({
         <p className="text-[12.5px]" style={{ color: P7.sec }}>
           Ainda não há datas de admissão suficientes para montar o gráfico.
         </p>
+        {escopo && (
+          <EditorAnosAnteriores
+            escopo={escopo}
+            tabelaPronta={tabelaPronta}
+            anos={dados.filter((p) => !p.hoje).map<AnoEditavel>((p) => ({ ano: p.ano, clt: p.clt, pj: p.pj, est: p.est, fr: p.fr, manual: !!p.manual }))}
+          />
+        )}
       </Cartao7>
     );
 
-  const primeiro = total(dados[0]);
-  const ultimo = total(dados[dados.length - 1]);
+  const [ultimo, primeiro] = comparavel(dados[dados.length - 1], dados[0]);
   const saldo = ultimo - primeiro;
   const pctTotal = primeiro > 0 ? Math.round((saldo / primeiro) * 100) : null;
   const corSaldo = saldo > 0 ? "#0b7a0b" : saldo < 0 ? "#a52828" : P7.sec;
@@ -51,7 +62,7 @@ export default function ColaboradoresPorAno({
   return (
     <Cartao7>
       <Titulo7
-        sub="Colaboradores do sistema no fim de cada ano (franquias não entram, porque não há histórico delas)"
+        sub="Colaboradores no fim de cada ano, com as franquias. Para os anos anteriores, informe as franquias em Editar anos anteriores."
         direita={
           <span>
             Desde {dados[0].ano}:{" "}
@@ -69,9 +80,9 @@ export default function ColaboradoresPorAno({
         <div className="flex min-w-[420px] items-end gap-3 pt-1">
           {dados.map((p, i) => {
             const t = total(p);
-            const ant = i > 0 ? total(dados[i - 1]) : null;
-            const delta = ant === null ? null : t - ant;
-            const pct = ant && ant > 0 ? Math.round(((t - ant) / ant) * 100) : null;
+            const [atual, ant] = i > 0 ? comparavel(p, dados[i - 1]) : [t, null];
+            const delta = ant === null ? null : atual - ant;
+            const pct = ant && ant > 0 ? Math.round(((atual - ant) / ant) * 100) : null;
             const alto = Math.max(2, (t / maximo) * ALTURA);
             const parte = (v: number) => (t > 0 ? `${(v / t) * 100}%` : "0%");
             return (
@@ -83,11 +94,12 @@ export default function ColaboradoresPorAno({
                   <div
                     className="flex w-full max-w-[72px] flex-col-reverse overflow-hidden rounded-t-[6px]"
                     style={{ height: alto, background: P7.track }}
-                    title={`${p.ano}: ${p.clt} CLT · ${p.pj} PJ${p.est > 0 ? ` · ${p.est} estágio` : ""}`}
+                    title={`${p.ano}: ${p.clt} CLT · ${p.pj} PJ${p.est > 0 ? ` · ${p.est} estágio` : ""}${p.fr > 0 ? ` · ${p.fr} franquias` : ""}`}
                   >
                     <div style={{ height: parte(p.clt), background: COR_CLT }} />
                     <div style={{ height: parte(p.pj), background: COR_PJ }} />
                     <div style={{ height: parte(p.est), background: COR_EST }} />
+                    <div style={{ height: parte(p.fr), background: COR_FR }} />
                   </div>
                 </div>
                 <div className="mt-1.5 text-[12.5px] font-bold" style={{ color: P7.ink }}>
@@ -112,7 +124,8 @@ export default function ColaboradoresPorAno({
         <span><Ponto cor={COR_CLT} />CLT</span>
         <span><Ponto cor={COR_PJ} />PJ</span>
         <span><Ponto cor={COR_EST} />Estágio</span>
-        <span style={{ color: P7.sec }}>O número embaixo de cada ano é o aumento em relação ao ano anterior.</span>
+        <span><Ponto cor={COR_FR} />Franquias</span>
+        <span style={{ color: P7.sec }}>O número embaixo de cada ano é o aumento em relação ao ano anterior (sem franquias quando o ano anterior não tem esse dado).</span>
       </div>
 
       {escopo && (
@@ -121,7 +134,7 @@ export default function ColaboradoresPorAno({
           tabelaPronta={tabelaPronta}
           anos={dados
             .filter((p) => !p.hoje)
-            .map<AnoEditavel>((p) => ({ ano: p.ano, clt: p.clt, pj: p.pj, est: p.est, manual: !!p.manual }))}
+            .map<AnoEditavel>((p) => ({ ano: p.ano, clt: p.clt, pj: p.pj, est: p.est, fr: p.fr, manual: !!p.manual }))}
         />
       )}
     </Cartao7>

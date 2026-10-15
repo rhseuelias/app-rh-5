@@ -10,9 +10,13 @@ create table if not exists historico_colaboradores (
   clt integer not null default 0,
   pj integer not null default 0,
   estagio integer not null default 0,
+  franquias integer not null default 0,
   atualizado_em timestamptz not null default now(),
   unique (escopo, ano)
 );
+
+-- (se a tabela já existia sem a coluna de franquias, ela é adicionada aqui)
+alter table historico_colaboradores add column if not exists franquias integer not null default 0;
 
 alter table historico_colaboradores enable row level security;
 

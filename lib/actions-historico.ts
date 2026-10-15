@@ -25,16 +25,18 @@ export async function salvarHistoricoColaboradores(formData: FormData): Promise<
     const clt = inteiro(formData.get(`clt_${ano}`));
     const pj = inteiro(formData.get(`pj_${ano}`));
     const estagio = inteiro(formData.get(`est_${ano}`));
+    const franquias = inteiro(formData.get(`fr_${ano}`));
     const jaManual = formData.get(`manual_${ano}`) === "1";
     const mudou =
       clt !== inteiro(formData.get(`orig_clt_${ano}`)) ||
       pj !== inteiro(formData.get(`orig_pj_${ano}`)) ||
-      estagio !== inteiro(formData.get(`orig_est_${ano}`));
+      estagio !== inteiro(formData.get(`orig_est_${ano}`)) ||
+      franquias !== inteiro(formData.get(`orig_fr_${ano}`));
     if (!jaManual && !mudou) continue;
 
     await supabase
       .from("historico_colaboradores")
-      .upsert({ escopo, ano, clt, pj, estagio, atualizado_em: new Date().toISOString() }, { onConflict: "escopo,ano" });
+      .upsert({ escopo, ano, clt, pj, estagio, franquias, atualizado_em: new Date().toISOString() }, { onConflict: "escopo,ano" });
   }
 
   revalidatePath("/dashboard");
