@@ -110,6 +110,7 @@ export default async function DashboardPage({
     { data: feriasFuturas },
     { data: unidades },
     { data: outrasEmpresasRaw },
+    { data: historicoRaw, error: erroHistorico },
   ] = await Promise.all([
     supabase.from("colaboradores").select("*"),
     supabase.from("empresas").select("*"),
@@ -121,6 +122,7 @@ export default async function DashboardPage({
     supabase.from("ferias").select("*").gte("data_inicio", hojeISO).order("data_inicio", { ascending: true }).limit(80),
     supabase.from("unidades").select("*"),
     supabase.from("colaborador_outras_empresas").select("*"),
+    supabase.from("historico_colaboradores").select("*"),
   ]);
 
   const lista = (colaboradores ?? []) as Colaborador[];
@@ -203,11 +205,20 @@ export default async function DashboardPage({
   const saldoMes = escopo.filter(admitiuNoMes).length - escopo.filter(desligouNoMes).length;
 
   // Crescimento por ano: quantos estavam ativos no fim de cada ano (até 6 anos); o ano atual vale "hoje".
+  // Anos anteriores podem ser corrigidos à mão (tabela historico_colaboradores).
+  const historico = ((historicoRaw ?? []) as { escopo: string; ano: number; clt: number; pj: number; estagio: number }[]).filter(
+    (h) => h.escopo === empresaSel
+  );
   const anosAdmissao = escopo.map((c) => Number(dia10(c.data_admissao).slice(0, 4))).filter((y) => y > 1990);
-  const anoInicial = Math.max(Math.min(...(anosAdmissao.length > 0 ? anosAdmissao : [b.ano])), b.ano - 5);
+  const anoInicial = Math.max(Math.min(...(anosAdmissao.length > 0 ? anosAdmissao : [b.ano]), ...historico.map((h) => h.ano)), b.ano - 5);
   const dadosPorAno: PontoAno[] = [];
   for (let y = anoInicial; y <= b.ano; y++) {
     const hojeAno = y === b.ano;
+    const ajuste = hojeAno ? undefined : historico.find((h) => h.ano === y);
+    if (ajuste) {
+      dadosPorAno.push({ ano: y, clt: ajuste.clt, pj: ajuste.pj, est: ajuste.estagio, manual: true });
+      continue;
+    }
     const ativosAno = escopo.filter((c) => ativoEm(c, `${y}-12-31`, hojeAno));
     dadosPorAno.push({
       ano: y,
@@ -595,7 +606,7 @@ export default async function DashboardPage({
       </div>
 
       {/* Crescimento por ano */}
-      <ColaboradoresPorAno dados={dadosPorAno} />
+      <ColaboradoresPorAno dados={dadosPorAno} escopo={ocultarFinanceiro || empresaSel === "franquias" ? null : empresaSel} tabelaPronta={!erroHistorico} />
 
       {/* 3. Processo de integração */}
       <IntegracaoPainel linhas={linhasIntegracao} hojeTexto={hojeTexto} />
