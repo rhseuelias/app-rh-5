@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { corDaEmpresa } from "@/lib/empresa-cores";
 import RoteiroFicha from "@/components/entrevistas/RoteiroFicha";
+import AnaliseCurriculo from "@/components/entrevistas/AnaliseCurriculo";
+import { acharCargo } from "@/lib/roteiro-dados";
 import type { CargoDesc } from "@/lib/cargos";
 import { createClient } from "@/lib/supabase-browser";
 import { atualizarRegistro, criarRegistro, excluirRegistro, salvarAvaliacao, type RespostaEnt } from "@/lib/actions-entrevistas";
@@ -39,7 +41,7 @@ import {
 } from "@/lib/entrevistas";
 
 type Visao = "vagas" | "agenda" | "funil" | "candidatos";
-type AbaFicha = "entrevista" | "avaliacao" | "candidato";
+type AbaFicha = "entrevista" | "avaliacao" | "candidato" | "analise";
 type Modal = null | { tipo: "vaga" } | { tipo: "candidato"; vagaId?: string } | { tipo: "entrevista"; candidatoId?: string };
 
 interface Props {
@@ -555,6 +557,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
   const [filtroEtapa, setFiltroEtapa] = useState("Todas");
   const [ficha, setFicha] = useState<{ candId: string; entId?: string } | null>(null);
   const [aba, setAba] = useState<AbaFicha>("entrevista");
+  const [analiseAuto, setAnaliseAuto] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [confirmaVaga, setConfirmaVaga] = useState<string | null>(null);
   const [pendentes, setPendentes] = useState(0);
@@ -698,9 +701,12 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
           await apagarCurriculo(up.path);
           return r;
         }
-        setCands((p) => p.map((x) => (x.id === c.id ? { ...x, curriculo_path: up.path, curriculo_nome: up.nome } : x)));
+        setCands((p) => p.map((x) => (x.id === c.id ? { ...x, curriculo_path: up.path, curriculo_nome: up.nome, analise_curriculo: null, analise_em: null } : x)));
         if (c.curriculo_path) await apagarCurriculo(c.curriculo_path);
-        setAviso("Currículo anexado");
+        setAviso("Currículo anexado. Começando a análise…");
+        // A análise do currículo começa sozinha: abre a aba e dispara.
+        setAnaliseAuto(c.id);
+        setAba("analise");
         return r;
       })()
     );
@@ -710,7 +716,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
     const r = await executar(atualizarRegistro("candidatos", c.id, { curriculo_path: null, curriculo_nome: null }));
     if (!r.ok) return;
     await apagarCurriculo(c.curriculo_path);
-    setCands((p) => p.map((x) => (x.id === c.id ? { ...x, curriculo_path: null, curriculo_nome: null } : x)));
+    setCands((p) => p.map((x) => (x.id === c.id ? { ...x, curriculo_path: null, curriculo_nome: null, analise_curriculo: null, analise_em: null } : x)));
     setAviso("Currículo removido");
   }
   async function verCurriculo(c: CandidatoSel) {
@@ -1127,6 +1133,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
       ["entrevista", "Entrevista"],
       ["avaliacao", "Avaliação"],
       ["candidato", "Candidato"],
+      ["analise", "Análise do currículo"],
     ];
     return (
       <>
@@ -1148,7 +1155,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
               <Nota valor={mediaNotas(av.notas)} />
             </div>
           </div>
-          <div role="tablist" className="flex gap-1 px-4 bg-white border-b border-brand-200">
+          <div role="tablist" className="flex gap-1 px-4 bg-white border-b border-brand-200 overflow-x-auto">
             {abas.map(([k, nome]) => (
               <button
                 key={k}
@@ -1156,7 +1163,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                 role="tab"
                 aria-selected={aba === k}
                 onClick={() => setAba(k)}
-                className={`px-3 py-2.5 font-display uppercase tracking-wide text-base font-semibold border-b-4 -mb-px ${aba === k ? "border-brand-400 text-ink-900" : "border-transparent text-ink-500"}`}
+                className={`px-3 py-2.5 whitespace-nowrap font-display uppercase tracking-wide text-base font-semibold border-b-4 -mb-px ${aba === k ? "border-brand-400 text-ink-900" : "border-transparent text-ink-500"}`}
               >
                 {nome}
               </button>
@@ -1333,6 +1340,21 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
               </>
             )}
 
+            {aba === "analise" && (
+              <AnaliseCurriculo
+                key={c.id}
+                candidatoId={c.id}
+                temCurriculo={!!c.curriculo_path}
+                nomeCurriculo={c.curriculo_nome}
+                cargoRotulo={v ? `${v.cargo} · ${rotuloEmpresa(v)}` : "cargo"}
+                temCargo={!!v && !!acharCargo(cargos, v.cargo, v.empresa)}
+                textoInicial={c.analise_curriculo ?? null}
+                emInicial={c.analise_em ?? null}
+                autoIniciar={analiseAuto === c.id}
+                aoIniciou={() => setAnaliseAuto(null)}
+                aoGuardar={(texto, em) => setCands((p) => p.map((x) => (x.id === c.id ? { ...x, analise_curriculo: texto, analise_em: em } : x)))}
+              />
+            )}
             {aba === "candidato" && (
               <div key={c.id} className="space-y-4">
                 <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
@@ -1392,6 +1414,9 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                           }}
                         />
                       </label>
+                      <button type="button" className="btn-secondary !px-3 !py-1.5 text-sm" onClick={() => setAba("analise")}>
+                        Análise do currículo
+                      </button>
                       <button type="button" className="text-sm text-red-700 hover:underline" onClick={() => removerCurriculo(c)}>
                         Remover
                       </button>

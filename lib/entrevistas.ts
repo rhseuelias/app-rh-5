@@ -60,6 +60,9 @@ export interface CandidatoSel {
   link_curriculo: string | null;
   curriculo_path: string | null;
   curriculo_nome: string | null;
+  /** Análise do currículo feita pela IA (migration 038). */
+  analise_curriculo?: string | null;
+  analise_em?: string | null;
   pontos_fortes: string | null;
   pontos_atencao: string | null;
   proxima_acao: string | null;
