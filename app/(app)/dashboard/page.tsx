@@ -525,6 +525,9 @@ export default async function DashboardPage({
         ))}
       </div>
 
+      {/* Crescimento por ano */}
+      <ColaboradoresPorAno dados={dadosPorAno} escopo={ocultarFinanceiro || empresaSel === "franquias" ? null : empresaSel} tabelaPronta={!erroHistorico} />
+
       {/* 2. Metas: clima e treinamento, clima de cada unidade e custo da folha */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <Cartao7>
@@ -612,9 +615,6 @@ export default async function DashboardPage({
           )}
         </Cartao7>
       )}
-
-      {/* Crescimento por ano */}
-      <ColaboradoresPorAno dados={dadosPorAno} escopo={ocultarFinanceiro || empresaSel === "franquias" ? null : empresaSel} tabelaPronta={!erroHistorico} />
 
       {/* 3. Processo de integração */}
       <IntegracaoPainel linhas={linhasIntegracao} hojeTexto={hojeTexto} />

@@ -130,15 +130,20 @@ export function ClimaPorEmpresa({
   const ordenados = [...comValor].sort((a, b) => b.pct - a.pct);
   const ALCANCE = 20; // pontos que cabem para cada lado da meta
   const MEIA = 84; // altura (px) de cada lado
-  const ACIMA = "#5b9be0";
-  const ABAIXO = "#e66a69";
+  // Mesmas três situações do semáforo: dentro da meta (verde), até 10 pontos abaixo (âmbar) e crítico (vermelho).
+  // "forte" fica na base da coluna (junto da linha da meta) e "suave" na ponta, para dar leveza.
+  const TOM: Record<Sem, { forte: string; suave: string; texto: string; rotulo: string }> = {
+    bom: { forte: "#2f9e78", suave: "#a6dcc6", texto: "#1d7556", rotulo: "Dentro da meta" },
+    atencao: { forte: "#e9a21f", suave: "#f6d9a0", texto: "#946300", rotulo: "Até 10 pontos abaixo" },
+    critico: { forte: "#df5d5b", suave: "#f1b0ae", texto: "#ad3b3a", rotulo: "Mais de 10 pontos abaixo" },
+  };
   return (
     <div className="overflow-x-auto">
       <div style={{ minWidth: ordenados.length * 64 }}>
         <div className="relative" style={{ height: MEIA * 2 }}>
           {/* faixas suaves: acima e abaixo da meta */}
-          <div className="absolute inset-x-0 top-0 rounded-t-[8px]" style={{ height: MEIA, background: "#f3f8fd" }} />
-          <div className="absolute inset-x-0 bottom-0 rounded-b-[8px]" style={{ height: MEIA, background: "#fdf4f4" }} />
+          <div className="absolute inset-x-0 top-0 rounded-t-[8px]" style={{ height: MEIA, background: "#f3faf6" }} />
+          <div className="absolute inset-x-0 bottom-0 rounded-b-[8px]" style={{ height: MEIA, background: "#fdf8f3" }} />
           <div className="absolute inset-x-0 border-t border-dashed" style={{ top: MEIA, borderColor: P7.ink, opacity: 0.55 }} />
           <span
             className="absolute left-2 text-[10.5px] font-medium"
@@ -151,7 +156,7 @@ export function ClimaPorEmpresa({
               const d = Math.round(it.pct - meta);
               const acima = d >= 0;
               const alt = Math.max(3, Math.min(MEIA - 20, (Math.abs(it.pct - meta) / ALCANCE) * (MEIA - 20)));
-              const cor = acima ? ACIMA : ABAIXO;
+              const tom = TOM[semPorMeta(it.pct, meta)];
               return (
                 <div
                   key={it.nome}
@@ -161,12 +166,10 @@ export function ClimaPorEmpresa({
                   <span
                     className="absolute left-1/2 w-[14px] -translate-x-1/2"
                     style={{
-                      background: cor,
                       height: alt,
-                      opacity: 0.85,
                       ...(acima
-                        ? { bottom: MEIA, borderRadius: "7px 7px 2px 2px" }
-                        : { top: MEIA, borderRadius: "2px 2px 7px 7px" }),
+                        ? { bottom: MEIA, borderRadius: "7px 7px 2px 2px", background: `linear-gradient(to top, ${tom.forte}, ${tom.suave})` }
+                        : { top: MEIA, borderRadius: "2px 2px 7px 7px", background: `linear-gradient(to bottom, ${tom.forte}, ${tom.suave})` }),
                     }}
                   />
                   <span
@@ -186,17 +189,26 @@ export function ClimaPorEmpresa({
         <div className="mt-2 flex">
           {ordenados.map((it) => {
             const d = Math.round(it.pct - meta);
+            const tom = TOM[semPorMeta(it.pct, meta)];
             return (
               <div key={it.nome} className="min-w-0 flex-1 px-0.5 text-center">
                 <div className="truncate text-[11.5px] font-medium" style={{ color: P7.ink }} title={nomeProprio(it.nome)}>
                   {nomeProprio(it.nome)}
                 </div>
-                <div className="text-[11.5px] tabular-nums" style={{ color: d >= 0 ? "#2f6fb8" : "#b84343" }}>
+                <div className="text-[11.5px] tabular-nums" style={{ color: tom.texto }}>
                   {d >= 0 ? `+${d}` : `−${Math.abs(d)}`} pts
                 </div>
               </div>
             );
           })}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px]" style={{ color: P7.sec }}>
+          {(["bom", "atencao", "critico"] as Sem[]).map((k) => (
+            <span key={k}>
+              <i className="mr-[6px] inline-block h-[8px] w-[8px] rounded-full align-middle" style={{ background: TOM[k].forte }} />
+              {TOM[k].rotulo}
+            </span>
+          ))}
         </div>
       </div>
     </div>
