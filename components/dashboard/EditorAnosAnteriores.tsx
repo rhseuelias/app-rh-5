@@ -8,11 +8,10 @@ export interface AnoEditavel {
   clt: number;
   pj: number;
   est: number;
-  fr: number;
   manual: boolean;
 }
 
-const COLUNAS = "60px 1fr 1fr 1fr 1fr 150px";
+const COLUNAS = "70px 1fr 1fr 1fr 150px";
 
 /** Formulário para corrigir os números dos anos anteriores do gráfico. */
 export default function EditorAnosAnteriores({
@@ -40,16 +39,15 @@ export default function EditorAnosAnteriores({
       <form action={salvarHistoricoColaboradores} className="mt-3" style={{ fontFamily: MANROPE }}>
         <input type="hidden" name="escopo" value={escopo} />
         <p className="mb-2 text-[11.5px]" style={{ color: P7.sec }}>
-          Digite quantos colaboradores havia no fim de cada ano, incluindo as franquias. O número que você digitar vale no lugar do automático. Sem histórico das franquias, elas só aparecem no ano atual.
+          Digite quantos colaboradores havia no fim de cada ano, incluindo as franquias (some-as no CLT e no PJ). O número que você digitar vale no lugar do automático. O app só sabe as franquias de hoje, então nos anos anteriores elas entram só se você digitar.
         </p>
         <div className="overflow-x-auto">
-          <div className="min-w-[640px]">
+          <div className="min-w-[560px]">
             <div className={`mb-1 grid gap-x-3 ${ROTULO_COLUNA}`} style={{ gridTemplateColumns: COLUNAS, color: P7.lab }}>
               <div>Ano</div>
               <div>CLT</div>
               <div>PJ</div>
               <div>Estágio</div>
-              <div>Franquias</div>
               <div />
             </div>
             {anos.map((a) => (
@@ -63,14 +61,12 @@ export default function EditorAnosAnteriores({
                 <input type="hidden" name={`orig_clt_${a.ano}`} value={a.clt} />
                 <input type="hidden" name={`orig_pj_${a.ano}`} value={a.pj} />
                 <input type="hidden" name={`orig_est_${a.ano}`} value={a.est} />
-                <input type="hidden" name={`orig_fr_${a.ano}`} value={a.fr} />
                 <div className="text-[12.5px] font-bold" style={{ color: P7.ink }}>
                   {a.ano}
                 </div>
                 <input type="number" min={0} name={`clt_${a.ano}`} defaultValue={a.clt} className={campo} style={{ borderColor: P7.bd }} aria-label={`CLT em ${a.ano}`} />
                 <input type="number" min={0} name={`pj_${a.ano}`} defaultValue={a.pj} className={campo} style={{ borderColor: P7.bd }} aria-label={`PJ em ${a.ano}`} />
                 <input type="number" min={0} name={`est_${a.ano}`} defaultValue={a.est} className={campo} style={{ borderColor: P7.bd }} aria-label={`Estágio em ${a.ano}`} />
-                <input type="number" min={0} name={`fr_${a.ano}`} defaultValue={a.fr} className={campo} style={{ borderColor: P7.bd }} aria-label={`Franquias em ${a.ano}`} />
                 <label className="flex items-center gap-1.5 text-[11.5px]" style={{ color: a.manual ? P7.ink : P7.lab }}>
                   {a.manual ? (
                     <>

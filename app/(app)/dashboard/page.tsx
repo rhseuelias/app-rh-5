@@ -206,7 +206,7 @@ export default async function DashboardPage({
 
   // Crescimento por ano: quantos estavam ativos no fim de cada ano (até 6 anos); o ano atual vale "hoje".
   // Anos anteriores podem ser corrigidos à mão (tabela historico_colaboradores).
-  const historico = ((historicoRaw ?? []) as { escopo: string; ano: number; clt: number; pj: number; estagio: number; franquias?: number }[]).filter(
+  const historico = ((historicoRaw ?? []) as { escopo: string; ano: number; clt: number; pj: number; estagio: number }[]).filter(
     (h) => h.escopo === empresaSel
   );
   const anosAdmissao = escopo.map((c) => Number(dia10(c.data_admissao).slice(0, 4))).filter((y) => y > 1990);
@@ -216,16 +216,16 @@ export default async function DashboardPage({
     const hojeAno = y === b.ano;
     const ajuste = hojeAno ? undefined : historico.find((h) => h.ano === y);
     if (ajuste) {
-      dadosPorAno.push({ ano: y, clt: ajuste.clt, pj: ajuste.pj, est: ajuste.estagio, fr: ajuste.franquias ?? 0, manual: true });
+      dadosPorAno.push({ ano: y, clt: ajuste.clt, pj: ajuste.pj, est: ajuste.estagio, manual: true });
       continue;
     }
     const ativosAno = escopo.filter((c) => ativoEm(c, `${y}-12-31`, hojeAno));
     dadosPorAno.push({
       ano: y,
-      clt: ativosAno.filter((c) => c.tipo === "CLT").length,
-      pj: ativosAno.filter((c) => c.tipo === "PJ").length,
+      // no ano atual as franquias somam no CLT e no PJ (igual ao total do topo)
+      clt: ativosAno.filter((c) => c.tipo === "CLT").length + (hojeAno && incluiFranquias ? franqClt : 0),
+      pj: ativosAno.filter((c) => c.tipo === "PJ").length + (hojeAno && incluiFranquias ? franqPj : 0),
       est: ativosAno.filter((c) => c.tipo === "Estagio").length,
-      fr: hojeAno && incluiFranquias ? franqTotal : 0,
       hoje: hojeAno,
     });
   }
