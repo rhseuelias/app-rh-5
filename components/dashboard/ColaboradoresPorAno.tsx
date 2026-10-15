@@ -12,6 +12,8 @@ export interface PontoAno {
   hoje?: boolean;
   /** true = número digitado à mão (no lugar do automático) */
   manual?: boolean;
+  /** true = projeção do próximo ano (estimativa, não é dado real) */
+  proj?: boolean;
 }
 
 const COR_CLT = P7.azul;
@@ -30,7 +32,25 @@ export default function ColaboradoresPorAno({
   tabelaPronta?: boolean;
 }) {
   const total = (p: PontoAno) => p.clt + p.pj + p.est;
-  const maximo = Math.max(1, ...dados.map(total));
+
+  // Projeção do próximo ano: soma ao total de hoje a média dos aumentos dos últimos (até) 3 anos.
+  // A faixa vai do menor ao maior aumento desses anos. O CLT/PJ/Estágio segue a mesma proporção de hoje.
+  const ult = dados[dados.length - 1];
+  const variacoes = dados.slice(1).map((p, i) => total(p) - total(dados[i])).slice(-3);
+  let projecao: PontoAno | null = null;
+  let faixa: [number, number] = [0, 0];
+  let mediaAumento = 0;
+  const base = ult ? total(ult) : 0;
+  if (ult && variacoes.length >= 1 && base > 0) {
+    mediaAumento = Math.round(variacoes.reduce((a, v) => a + v, 0) / variacoes.length);
+    const alvo = Math.max(0, base + mediaAumento);
+    const clt = Math.round((alvo * ult.clt) / base);
+    const pj = Math.round((alvo * ult.pj) / base);
+    projecao = { ano: ult.ano + 1, clt, pj, est: Math.max(0, alvo - clt - pj), proj: true };
+    faixa = [Math.max(0, base + Math.min(...variacoes)), Math.max(0, base + Math.max(...variacoes))];
+  }
+  const serie = projecao ? [...dados, projecao] : dados;
+  const maximo = Math.max(1, ...serie.map(total), faixa[1]);
 
   if (dados.length === 0 || maximo <= 1)
     return (
@@ -74,9 +94,9 @@ export default function ColaboradoresPorAno({
 
       <div className="overflow-x-auto">
         <div className="flex min-w-[420px] items-end gap-3 pt-1">
-          {dados.map((p, i) => {
+          {serie.map((p, i) => {
             const t = total(p);
-            const ant = i > 0 ? total(dados[i - 1]) : null;
+            const ant = i > 0 ? total(serie[i - 1]) : null;
             const delta = ant === null ? null : t - ant;
             const pct = ant && ant > 0 ? Math.round(((t - ant) / ant) * 100) : null;
             const alto = Math.max(2, (t / maximo) * ALTURA);
@@ -89,7 +109,11 @@ export default function ColaboradoresPorAno({
                   </div>
                   <div
                     className="flex w-full max-w-[72px] flex-col-reverse overflow-hidden rounded-t-[6px]"
-                    style={{ height: alto, background: P7.track }}
+                    style={{
+                      height: alto,
+                      background: P7.track,
+                      ...(p.proj ? { opacity: 0.5, outline: `2px dashed ${P7.deep}`, outlineOffset: -2 } : {}),
+                    }}
                     title={`${p.ano}: ${p.clt} CLT · ${p.pj} PJ${p.est > 0 ? ` · ${p.est} estágio` : ""}`}
                   >
                     <div style={{ height: parte(p.clt), background: COR_CLT }} />
@@ -101,7 +125,7 @@ export default function ColaboradoresPorAno({
                   {p.ano}
                 </div>
                 <div className="text-[11.5px]" style={{ color: P7.lab }}>
-                  {p.hoje ? "até hoje" : p.manual ? "ajustado" : "dezembro"}
+                  {p.proj ? "projeção" : p.hoje ? "até hoje" : p.manual ? "ajustado" : "dezembro"}
                 </div>
                 <div
                   className="mt-1 h-[16px] text-[11.5px] font-bold tabular-nums"
@@ -119,8 +143,23 @@ export default function ColaboradoresPorAno({
         <span><Ponto cor={COR_CLT} />CLT</span>
         <span><Ponto cor={COR_PJ} />PJ</span>
         <span><Ponto cor={COR_EST} />Estágio</span>
+        {projecao && (
+          <span>
+            <span aria-hidden="true" className="mr-[7px] inline-block h-[10px] w-[10px] align-middle" style={{ borderRadius: 3, border: `2px dashed ${P7.deep}`, opacity: 0.6 }} />
+            Projeção
+          </span>
+        )}
         <span style={{ color: P7.sec }}>O número embaixo de cada ano é o aumento em relação ao ano anterior.</span>
       </div>
+
+      {projecao && (
+        <p className="mt-2 text-[11.5px] leading-[1.5]" style={{ color: P7.sec }}>
+          <b style={{ color: P7.ink }}>Projeção para {projecao.ano}:</b> cerca de <b>{total(projecao)}</b> colaboradores
+          (média dos aumentos dos últimos {variacoes.length} {variacoes.length === 1 ? "ano" : "anos"}:{" "}
+          {mediaAumento > 0 ? "+" : ""}
+          {mediaAumento} por ano). Entre {faixa[0]} e {faixa[1]}, se o ritmo seguir entre o menor e o maior aumento recente. É uma estimativa, não uma garantia.
+        </p>
+      )}
 
       {escopo && (
         <EditorAnosAnteriores
