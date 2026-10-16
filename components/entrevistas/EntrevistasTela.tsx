@@ -787,18 +787,27 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
   /* ------------------------------------------------------------------ */
   function VisaoVagas() {
     const deHoje = entsFiltradas.filter((e) => e.data === hoje && e.status !== "Cancelada").sort((a, b) => a.hora.localeCompare(b.hora));
+    const CURTO = ["Inscrito", "Triagem", "RH", "Técnica", "Gestor", "Final", "Proposta", "Admitido"];
+    const colunas = `minmax(210px,1.5fr) 92px repeat(${ETAPAS.length}, minmax(66px,1fr)) minmax(150px,1fr) 76px`;
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         {deHoje.length > 0 && (
-          <section className="rounded-2xl bg-ink-900 text-white p-4 space-y-3">
-            <h3 className="text-base text-brand-300 uppercase">
+          <section className="rounded-xl bg-ink-900 text-white px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <h3 className="text-sm text-brand-300 uppercase">
               Hoje · {deHoje.length} {deHoje.length > 1 ? "entrevistas" : "entrevista"}
             </h3>
-            <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(270px,1fr))] text-ink-900">
-              {deHoje.map((e) => (
-                <CartaoEntrevista key={e.id} e={e} />
-              ))}
-            </div>
+            {deHoje.map((e) => {
+              const c = candPor.get(e.candidato_id);
+              const v = c ? vagaPor.get(c.vaga_id) : undefined;
+              if (!c || !v) return null;
+              return (
+                <button key={e.id} type="button" onClick={() => abrirFicha(c.id, e.id)} className="inline-flex items-center gap-2 text-sm hover:underline">
+                  <b className="font-display tabular-nums text-base">{e.hora}</b>
+                  <span className="font-semibold">{c.nome}</span>
+                  <span className="text-brand-200">· {rotuloEtapaEntrevista(e.etapa)} · {v.cargo}</span>
+                </button>
+              );
+            })}
           </section>
         )}
         {vagasFiltradas.length === 0 && (
@@ -809,115 +818,112 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
             </button>
           </div>
         )}
-        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
-          {vagasFiltradas.map((v) => {
-            const cs = cands.filter((c) => c.vaga_id === v.id);
-            const dias = diasEntre(v.data_abertura, hoje);
-            const total = v.posicoes ?? 1;
-            const preenchidas = cs.filter((c) => c.etapa === "Admitido").length;
-            const cheia = preenchidas >= total;
-            const ativos = cs.filter((c) => c.etapa !== "Admitido" && !encerrado(c.etapa));
-            const candIds = new Set(cs.map((c) => c.id));
-            const prox = ents
-              .filter((e) => candIds.has(e.candidato_id) && e.status === "Agendada" && e.data >= hoje)
-              .sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora))[0];
-            const candProx = prox ? cs.find((c) => c.id === prox.candidato_id) : undefined;
-            return (
-              <section key={v.id} className="card !p-3 space-y-2 min-w-0">
-                <div className="flex items-center justify-between gap-2 text-xs text-ink-500">
-                  <span className="flex items-center gap-1.5 min-w-0 text-base font-semibold text-ink-800">
-                    <Ponto empresa={v.empresa} />
-                    <span className="truncate">{rotuloEmpresa(v)}</span>
-                  </span>
-                  <span className={dias > 30 ? "text-red-700 font-bold" : ""}>{dias} dias</span>
-                </div>
-                <h3 className="text-base leading-tight uppercase break-words">{v.cargo}</h3>
-                <div className="flex items-center justify-between gap-2 text-sm">
-                  <span className={`inline-flex items-center gap-1.5 tabular-nums ${cheia ? "text-green-700" : ""}`} title={`${preenchidas} de ${total} posições preenchidas`}>
-                    <span className="inline-flex gap-0.5">
-                      {Array.from({ length: Math.min(total, 12) }).map((_, i) => (
-                        <i key={i} className={`inline-block w-2.5 h-2.5 rounded-full border-[1.5px] ${i < preenchidas ? (cheia ? "bg-green-600 border-green-600" : "bg-brand-500 border-brand-500") : "border-brand-500"}`} />
-                      ))}
-                    </span>
-                    <b>{preenchidas}/{total}</b>
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-ink-500">
-                    <button type="button" aria-label="Menos uma posição" className="w-6 h-6 rounded border border-brand-200 leading-none" onClick={() => patchVaga(v.id, { posicoes: Math.max(1, total - 1) })}>−</button>
-                    <button type="button" aria-label="Mais uma posição" className="w-6 h-6 rounded border border-brand-200 leading-none" onClick={() => patchVaga(v.id, { posicoes: Math.min(50, total + 1) })}>+</button>
-                  </span>
-                </div>
-                <div className="flex gap-0.5" aria-label="Candidatos por etapa">
-                  {ETAPAS.map((et) => {
-                    const n = cs.filter((c) => c.etapa === et).length;
-                    return (
-                      <i
-                        key={et}
-                        title={`${et}: ${n}`}
-                        className="flex-1 h-1.5 rounded-sm"
-                        style={{ background: n ? (et === "Etapa técnica" ? ESTILO_ETAPA["Etapa técnica"].cor : "#c9763a") : "#ecdccd" }}
-                      />
-                    );
-                  })}
-                </div>
-                {cs.length > 0 && (
-                  <p className="text-[11px] leading-tight text-ink-500">
-                    {ETAPAS.map((et) => ({ et, n: cs.filter((c) => c.etapa === et).length }))
-                      .filter((x) => x.n > 0)
-                      .map((x) => `${rotuloEtapaEntrevista(x.et)} ${x.n}`)
-                      .join(" · ")}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-1">
-                  {ativos.length === 0 && <span className="text-xs text-ink-500">Sem candidatos em andamento</span>}
-                  {ativos.map((c) => {
-                    const est = ESTILO_ETAPA[c.etapa];
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        title={`${c.nome} · ${rotuloEtapaEntrevista(c.etapa)}`}
-                        onClick={() => abrirFicha(c.id)}
-                        className="inline-flex items-center gap-1 rounded-full border border-brand-200 pl-0.5 pr-2 py-0.5 text-xs hover:bg-brand-50"
-                      >
-                        <em className="not-italic w-4 h-4 rounded-full grid place-items-center text-[9px] font-bold" style={{ background: est?.bg ?? "#fdf0e3", color: est?.cor ?? "#a85822" }}>
-                          {c.nome.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase()}
-                        </em>
-                        {c.nome.split(" ")[0]}
+        {vagasFiltradas.length > 0 && (
+          <div className="rounded-xl border border-brand-200 bg-white overflow-x-auto">
+            <div className="min-w-[1120px]">
+              <div className="grid items-center gap-x-1.5 px-3 py-2 border-b border-brand-200 text-[11px] font-bold uppercase tracking-wider text-ink-500" style={{ gridTemplateColumns: colunas }}>
+                <span>Vaga</span>
+                <span>Posições</span>
+                {CURTO.map((n) => (
+                  <span key={n} className="pl-1.5">{n}</span>
+                ))}
+                <span className="pl-2">Próxima entrevista</span>
+                <span />
+              </div>
+              {vagasFiltradas.map((v) => {
+                const cs = cands.filter((c) => c.vaga_id === v.id);
+                const dias = diasEntre(v.data_abertura, hoje);
+                const total = v.posicoes ?? 1;
+                const preenchidas = cs.filter((c) => c.etapa === "Admitido").length;
+                const cheia = preenchidas >= total;
+                const candIds = new Set(cs.map((c) => c.id));
+                const prox = ents
+                  .filter((e) => candIds.has(e.candidato_id) && e.status === "Agendada" && e.data >= hoje)
+                  .sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora))[0];
+                const candProx = prox ? cs.find((c) => c.id === prox.candidato_id) : undefined;
+                return (
+                  <div key={v.id} className="grid items-stretch gap-x-1.5 px-3 border-b border-brand-100 last:border-b-0" style={{ gridTemplateColumns: colunas }}>
+                    <div className="min-w-0 py-2 flex flex-col justify-center">
+                      <span className="flex items-center gap-2 min-w-0">
+                        <Ponto empresa={v.empresa} />
+                        <span className="truncate font-bold uppercase text-sm" title={v.cargo}>{v.cargo}</span>
+                        <span className="shrink-0 rounded border border-brand-200 px-1 text-[10px] font-bold uppercase tracking-wider text-ink-500">{rotuloEmpresa(v)}</span>
+                      </span>
+                      <span className={`pl-4 text-xs ${dias > 30 ? "text-red-700 font-bold" : "text-ink-500"}`}>
+                        Aberta há {dias} dias{v.gestor ? ` · gestor ${v.gestor}` : ""}{v.status !== "Aberta" ? ` · ${v.status}` : ""}
+                      </span>
+                    </div>
+                    <div className="py-2 flex items-center gap-1.5 tabular-nums text-sm" title={`${preenchidas} de ${total} posições preenchidas`}>
+                      <span className="inline-flex gap-0.5">
+                        {Array.from({ length: Math.min(total, 6) }).map((_, i) => (
+                          <i key={i} className={`inline-block w-2.5 h-2.5 rounded-full border-[1.5px] ${i < preenchidas ? (cheia ? "bg-green-600 border-green-600" : "bg-brand-500 border-brand-500") : "border-brand-500"}`} />
+                        ))}
+                      </span>
+                      <b className={cheia ? "text-green-700" : ""}>{preenchidas}/{total}</b>
+                    </div>
+                    {ETAPAS.map((et) => {
+                      const lista = cs.filter((c) => c.etapa === et);
+                      const est = ESTILO_ETAPA[et];
+                      return (
+                        <div key={et} className="min-w-0 py-2 pl-1.5 border-l border-brand-100 flex flex-col justify-center items-start gap-1">
+                          {lista.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              title={c.nome}
+                              onClick={() => abrirFicha(c.id)}
+                              className="max-w-full truncate rounded-full px-2 py-0.5 text-[11px] font-bold hover:underline"
+                              style={{ background: est?.bg ?? "#f9e8d2", color: est?.cor ?? "#703914" }}
+                            >
+                              {c.nome.split(" ")[0]}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })}
+                    <div className="min-w-0 py-2 pl-2 flex items-center text-xs text-ink-500">
+                      {prox && candProx ? (
+                        <span className="truncate">
+                          <b className="text-ink-800">{candProx.nome.split(" ")[0]}</b> · {prox.data === hoje ? "hoje" : fmtCurta(prox.data)} {prox.hora}
+                        </span>
+                      ) : (
+                        "Nenhuma marcada"
+                      )}
+                    </div>
+                    <div className="py-2 flex items-center justify-end gap-1.5">
+                      <button type="button" aria-label="Adicionar candidato" title="Adicionar candidato" className="w-8 h-8 rounded-lg border border-brand-200 text-lg leading-none hover:bg-brand-50" onClick={() => setModal({ tipo: "candidato", vagaId: v.id })}>
+                        +
                       </button>
-                    );
-                  })}
-                </div>
-                <div className="border-t border-dashed border-brand-200 pt-2 flex items-center justify-between gap-2 text-xs">
-                  <span className="min-w-0 truncate text-ink-500">
-                    {prox && candProx ? (
-                      <>
-                        Próxima: <b className="text-ink-800">{candProx.nome.split(" ")[0]}</b> · {rotuloEtapaEntrevista(prox.etapa)} · {prox.data === hoje ? "hoje" : fmtCurta(prox.data)} {prox.hora}
-                      </>
-                    ) : (
-                      "Nenhuma entrevista marcada"
-                    )}
-                  </span>
-                  <button type="button" className="font-semibold text-brand-500 hover:underline shrink-0" onClick={() => setModal({ tipo: "candidato", vagaId: v.id })}>
-                    + Candidato
-                  </button>
-                </div>
-                <div className="flex items-center justify-between gap-2 text-xs text-ink-500">
-                  <select aria-label="Situação da vaga" className="input !w-auto !py-1 !text-xs" value={v.status} onChange={(e) => patchVaga(v.id, { status: e.target.value })}>
-                    {STATUS_VAGA.map((s) => (
-                      <option key={s}>{s}</option>
-                    ))}
-                  </select>
-                  {v.gestor && <span className="truncate">Gestor: {v.gestor}</span>}
-                </div>
-                <div className="text-right">
-                  <button type="button" className="text-xs text-ink-500 hover:text-red-700 hover:underline" onClick={() => setConfirmaVaga(v.id)}>
-                    Excluir vaga
-                  </button>
-                </div>
-              </section>
-            );
-          })}
-        </div>
+                      <details className="relative">
+                        <summary aria-label="Mais ações da vaga" className="list-none cursor-pointer w-8 h-8 rounded-lg border border-brand-200 grid place-items-center text-lg leading-none hover:bg-brand-50">⋯</summary>
+                        <div className="absolute right-0 top-9 z-20 w-56 rounded-xl border border-brand-200 bg-white p-3 shadow-card space-y-3 text-sm">
+                          <label className="block space-y-1">
+                            <span className="text-xs font-bold uppercase tracking-wider text-ink-500">Situação da vaga</span>
+                            <select aria-label="Situação da vaga" className="input !py-1 !text-sm" value={v.status} onChange={(e) => patchVaga(v.id, { status: e.target.value })}>
+                              {STATUS_VAGA.map((s) => (
+                                <option key={s}>{s}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-ink-500">Posições</span>
+                            <span className="inline-flex items-center gap-1">
+                              <button type="button" aria-label="Menos uma posição" className="w-7 h-7 rounded border border-brand-200 leading-none" onClick={() => patchVaga(v.id, { posicoes: Math.max(1, total - 1) })}>−</button>
+                              <button type="button" aria-label="Mais uma posição" className="w-7 h-7 rounded border border-brand-200 leading-none" onClick={() => patchVaga(v.id, { posicoes: Math.min(50, total + 1) })}>+</button>
+                            </span>
+                          </div>
+                          <button type="button" className="text-sm font-semibold text-red-700 hover:underline" onClick={() => setConfirmaVaga(v.id)}>
+                            Excluir vaga
+                          </button>
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1584,7 +1590,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
           [admitidos, "admitidos", false],
           [atrasadas, "ações atrasadas", atrasadas > 0],
         ].map(([n, rotulo, alerta]) => (
-          <span key={rotulo as string} className={(n as number) === 0 && !alerta ? "text-ink-400" : ""}>
+          <span key={rotulo as string} className={(n as number) === 0 && !alerta ? "text-ink-500" : ""}>
             <b className={`tabular-nums ${alerta ? "text-red-700" : "text-ink-900"}`}>{n as number}</b> {rotulo as string}
           </span>
         ))}
