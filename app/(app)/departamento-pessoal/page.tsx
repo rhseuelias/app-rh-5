@@ -44,6 +44,17 @@ export default function DepartamentoPessoalPage() {
             Lançamento e controle de recarga por unidade: BHBUS, SEMPARAR, ÓTIMO e CAJU, com total, saldo e carga de cada cartão.
           </span>
         </Link>
+
+        <Link
+          href="/departamento-pessoal/adiantamentos"
+          className="card hover:border-brand-300 transition-colors flex flex-col gap-2"
+        >
+          <span className="text-2xl">💵</span>
+          <span className="text-lg font-bold text-slate-900">Adiantamentos</span>
+          <span className="text-sm text-slate-500">
+            Marque quem recebe adiantamento. A lista se repete todo mês, e o relatório mostra BSE, BABOON e BDU.
+          </span>
+        </Link>
       </div>
     </div>
   );
