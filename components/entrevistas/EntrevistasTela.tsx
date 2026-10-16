@@ -741,6 +741,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
     }, 0);
   const agendadas = entsFiltradas.filter((e) => e.status === "Agendada" && e.data >= hoje).length;
   const admitidos = candsFiltrados.filter((c) => c.etapa === "Admitido").length;
+  const semRegistro = entsFiltradas.filter((e) => e.status === "Agendada" && e.data < hoje).length;
   const atrasadas = candsFiltrados.filter((c) => !encerrado(c.etapa) && c.proxima_data && c.proxima_data < hoje).length;
 
   /* ------------------------------------------------------------------ */
@@ -759,7 +760,10 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
         style={est ? { borderLeft: `6px solid ${est.cor}` } : undefined}
         className={`text-left bg-white rounded-xl border p-3.5 flex gap-3 hover:border-brand-400 transition-colors ${atrasada ? "border-red-500" : "border-brand-200"}`}
       >
-        <span className="font-display text-2xl font-semibold leading-tight tabular-nums">{e.hora}</span>
+        <span className="font-display text-2xl font-semibold leading-tight tabular-nums">
+          {atrasada && <small className="block text-xs font-bold text-red-700">{fmtCurta(e.data)}</small>}
+          {e.hora}
+        </span>
         <span className="min-w-0 space-y-1">
           <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-bold" style={est ? { background: est.bg, color: est.cor } : undefined}>
             {rotuloEtapaEntrevista(e.etapa)}
@@ -855,6 +859,14 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                     );
                   })}
                 </div>
+                {cs.length > 0 && (
+                  <p className="text-[11px] leading-tight text-ink-500">
+                    {ETAPAS.map((et) => ({ et, n: cs.filter((c) => c.etapa === et).length }))
+                      .filter((x) => x.n > 0)
+                      .map((x) => `${rotuloEtapaEntrevista(x.et)} ${x.n}`)
+                      .join(" · ")}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-1">
                   {ativos.length === 0 && <span className="text-xs text-ink-500">Sem candidatos em andamento</span>}
                   {ativos.map((c) => {
@@ -898,7 +910,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                   {v.gestor && <span className="truncate">Gestor: {v.gestor}</span>}
                 </div>
                 <div className="text-right">
-                  <button type="button" className="text-xs font-semibold text-red-700 hover:underline" onClick={() => setConfirmaVaga(v.id)}>
+                  <button type="button" className="text-xs text-ink-500 hover:text-red-700 hover:underline" onClick={() => setConfirmaVaga(v.id)}>
                     Excluir vaga
                   </button>
                 </div>
@@ -1511,19 +1523,19 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-ink-500">Recrutamento e Seleção</p>
-          <h1 className="text-4xl leading-tight">Entrevistas</h1>
+          <h1 className="text-3xl leading-tight">Entrevistas</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-ink-500" aria-live="polite">
             {pendentes > 0 ? "Salvando…" : "Tudo salvo"}
           </span>
-          <button type="button" className="btn-secondary" onClick={() => setModal({ tipo: "vaga" })}>
+          <button type="button" className="btn-secondary !px-3 !py-1.5 text-sm" onClick={() => setModal({ tipo: "vaga" })}>
             + Vaga
           </button>
-          <button type="button" className="btn-secondary" onClick={() => setModal({ tipo: "candidato" })}>
+          <button type="button" className="btn-secondary !px-3 !py-1.5 text-sm" onClick={() => setModal({ tipo: "candidato" })}>
             + Candidato
           </button>
-          <button type="button" className="btn-cta" onClick={() => setModal({ tipo: "entrevista" })}>
+          <button type="button" className="btn-cta !py-1.5 text-sm" onClick={() => setModal({ tipo: "entrevista" })}>
             + Agendar entrevista
           </button>
         </div>
@@ -1548,7 +1560,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
               setEmpresa(e);
               setUnidade("Todas");
             }}
-            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 font-semibold ${empresa === e ? "bg-ink-900 text-white border-ink-900" : "bg-white border-brand-200"}`}
+            className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1 text-sm font-semibold ${empresa === e ? "bg-ink-900 text-white border-ink-900" : "bg-white border-brand-200"}`}
           >
             {e !== "Todas" && <Ponto empresa={e} />}
             {e === "Todas" ? "Todas as empresas" : e}
@@ -1564,21 +1576,19 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
         )}
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] overflow-hidden rounded-2xl border border-brand-200 bg-white">
+      <p className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-ink-600" aria-label="Resumo">
         {[
-          [abertas, "Vagas abertas", false],
-          [candsFiltrados.length, "Candidatos", false],
-          [agendadas, "Entrevistas agendadas", false],
-          [admitidos, "Admitidos", false],
-          [atrasadas, "Ações atrasadas", atrasadas > 0],
+          [abertas, "posições abertas", false],
+          [candsFiltrados.length, "candidatos", false],
+          [agendadas, "entrevistas marcadas", false],
+          [admitidos, "admitidos", false],
+          [atrasadas, "ações atrasadas", atrasadas > 0],
         ].map(([n, rotulo, alerta]) => (
-          <div key={rotulo as string} className="px-4 py-3 border-r border-brand-100 last:border-r-0 max-sm:border-r-0 max-sm:border-b">
-            <b className={`block font-display text-4xl leading-tight font-semibold tabular-nums ${alerta ? "text-red-700" : ""}`}>{n as number}</b>
-            <span className="text-sm text-ink-500">{rotulo as string}</span>
-          </div>
+          <span key={rotulo as string} className={(n as number) === 0 && !alerta ? "text-ink-400" : ""}>
+            <b className={`tabular-nums ${alerta ? "text-red-700" : "text-ink-900"}`}>{n as number}</b> {rotulo as string}
+          </span>
         ))}
-      </div>
-
+      </p>
       <div role="tablist" className="flex flex-wrap gap-1 border-b-2 border-brand-200">
         {abasVisao.map(([k, nome]) => (
           <button
@@ -1587,9 +1597,14 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
             role="tab"
             aria-selected={visao === k}
             onClick={() => setVisao(k)}
-            className={`px-4 py-2.5 font-display uppercase tracking-wide text-lg font-semibold border-b-4 -mb-0.5 ${visao === k ? "border-brand-400 text-ink-900" : "border-transparent text-ink-500"}`}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 font-display uppercase tracking-wide text-base font-semibold border-b-4 -mb-0.5 ${visao === k ? "border-brand-400 text-ink-900" : "border-transparent text-ink-500"}`}
           >
             {nome}
+            {k === "agenda" && semRegistro > 0 && (
+              <span className="rounded-full bg-red-50 px-2 text-xs font-bold leading-5 text-red-700" title={`${semRegistro} entrevistas esperam registro`}>
+                ! {semRegistro}
+              </span>
+            )}
           </button>
         ))}
       </div>
