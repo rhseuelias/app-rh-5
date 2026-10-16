@@ -970,17 +970,24 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
   function VisaoFunil() {
     return (
       <div className="space-y-3">
-        <div className="grid grid-flow-col auto-cols-[minmax(230px,1fr)] gap-3 overflow-x-auto pb-3 items-start">
+        <div className="flex gap-3 overflow-x-auto pb-3 items-start">
           {ETAPAS.map((et) => {
             const lista = candsFiltrados.filter((c) => c.etapa === et);
             const quente = et.startsWith("Entrevista") || et === "Etapa técnica";
+            if (lista.length === 0) {
+              return (
+                <section key={et} className="shrink-0 w-[92px] rounded-2xl border border-dashed border-brand-300 bg-brand-50 px-1.5 py-3 flex flex-col items-center gap-1.5 text-center" aria-label={`${et}: vazio`}>
+                  <h3 className="text-[11px] leading-tight uppercase tracking-wider text-ink-500 break-words">{et}</h3>
+                  <span className="font-display text-lg tabular-nums text-ink-500">0</span>
+                </section>
+              );
+            }
             return (
-              <section key={et} className={`rounded-2xl border p-3 space-y-2.5 min-h-[150px] ${quente ? "bg-brand-100 border-brand-300" : "bg-brand-50 border-brand-200"}`}>
+              <section key={et} className={`flex-1 min-w-[230px] rounded-2xl border p-3 space-y-2.5 ${quente ? "bg-brand-100 border-brand-300" : "bg-brand-50 border-brand-200"}`}>
                 <header className="flex items-baseline justify-between gap-2">
                   <h3 className="text-sm uppercase tracking-wider">{et}</h3>
                   <span className="font-display text-xl tabular-nums">{lista.length}</span>
                 </header>
-                {lista.length === 0 && <div className="rounded-lg border border-dashed border-brand-300 p-2.5 text-sm text-ink-500">Vazio</div>}
                 {lista.map((c) => {
                   const v = vagaPor.get(c.vaga_id);
                   const atrasada = c.proxima_data && c.proxima_data < hoje;
@@ -1017,7 +1024,7 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
           })}
         </div>
         <p className="text-sm text-ink-500">
-          Encerrados: {ENCERRADOS.map((x) => `${x} (${candsFiltrados.filter((c) => c.etapa === x).length})`).join(" · ")}. Veja na aba Candidatos.
+          Etapas vazias ficam recolhidas. Encerrados: {ENCERRADOS.map((x) => `${x} (${candsFiltrados.filter((c) => c.etapa === x).length})`).join(" · ")}. Veja na aba Candidatos.
         </p>
       </div>
     );
