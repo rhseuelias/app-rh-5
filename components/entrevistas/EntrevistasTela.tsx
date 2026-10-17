@@ -120,6 +120,13 @@ function tomRec(r: string | null): "ok" | "aviso" | "ruim" | "neutro" {
   return r === "Avançar" ? "ok" : r === "Manter em avaliação" ? "aviso" : r === "Não avançar" ? "ruim" : "neutro";
 }
 
+/** Cores de quem tem recomendação final: Avançar = verde, Não avançar = vermelho (as outras ficam como estão). */
+function corRec(r: string | null): { bg: string; fg: string; borda: string; simbolo: string } | null {
+  if (r === "Avançar") return { bg: "#dcfce7", fg: "#166534", borda: "#16a34a", simbolo: "✓" };
+  if (r === "Não avançar") return { bg: "#fee2e2", fg: "#991b1b", borda: "#dc2626", simbolo: "✕" };
+  return null;
+}
+
 function Nota({ valor }: { valor: number | null }) {
   if (valor === null) return <span className="text-xs text-ink-500">Sem nota</span>;
   return <span className="font-display text-sm font-semibold bg-ink-900 text-white rounded-md px-2 py-0.5 tabular-nums">{valor.toFixed(1)}</span>;
@@ -605,6 +612,16 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
 
   const notaDe = (candId: string) => mediaNotas(avals[candId]?.notas);
 
+  /** Recomendação do candidato: a da avaliação final; se não houver, a da entrevista mais recente que tem uma. */
+  const recDe = (candId: string): string | null => {
+    const final = avals[candId]?.recomendacao ?? null;
+    if (final) return final;
+    const ultima = ents
+      .filter((e) => e.candidato_id === candId && e.recomendacao)
+      .sort((a, b) => (b.data + b.hora).localeCompare(a.data + a.hora))[0];
+    return ultima?.recomendacao ?? null;
+  };
+
   /* ---------- gravação ---------- */
   async function executar(p: Promise<RespostaEnt>): Promise<RespostaEnt> {
     setPendentes((n) => n + 1);
@@ -775,6 +792,11 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
           </span>
           <span className="flex flex-wrap items-center gap-2 text-sm text-ink-500">
             <Etiqueta tom={tomStatus(e.status)}>{e.status}</Etiqueta>
+            {corRec(e.recomendacao) && (
+              <Etiqueta tom={tomRec(e.recomendacao)}>
+                {corRec(e.recomendacao)?.simbolo} {e.recomendacao}
+              </Etiqueta>
+            )}
             {e.tipo} · {e.entrevistador || "—"}
           </span>
         </span>
@@ -866,18 +888,27 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                       const est = ESTILO_ETAPA[et];
                       return (
                         <div key={et} className="min-w-0 py-2 pl-1.5 border-l border-brand-100 flex flex-col justify-center items-start gap-1">
-                          {lista.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              title={c.nome}
-                              onClick={() => abrirFicha(c.id)}
-                              className="max-w-full truncate rounded-full px-2 py-0.5 text-[11px] font-bold hover:underline"
-                              style={{ background: est?.bg ?? "#f9e8d2", color: est?.cor ?? "#703914" }}
-                            >
-                              {c.nome.split(" ")[0]}
-                            </button>
-                          ))}
+                          {lista.map((c) => {
+                            const rec = recDe(c.id);
+                            const k = corRec(rec);
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                title={rec ? `${c.nome} · ${rec}` : c.nome}
+                                onClick={() => abrirFicha(c.id)}
+                                className="max-w-full truncate rounded-full px-2 py-0.5 text-[11px] font-bold hover:underline"
+                                style={{
+                                  background: k?.bg ?? est?.bg ?? "#f9e8d2",
+                                  color: k?.fg ?? est?.cor ?? "#703914",
+                                  boxShadow: k ? `inset 0 0 0 1.5px ${k.borda}` : undefined,
+                                }}
+                              >
+                                {k ? `${k.simbolo} ` : ""}
+                                {c.nome.split(" ")[0]}
+                              </button>
+                            );
+                          })}
                         </div>
                       );
                     })}
@@ -1009,11 +1040,23 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                 {lista.map((c) => {
                   const v = vagaPor.get(c.vaga_id);
                   const atrasada = c.proxima_data && c.proxima_data < hoje;
+                  const rec = recDe(c.id);
+                  const k = corRec(rec);
                   return (
-                    <article key={c.id} className="bg-white rounded-xl border border-brand-200 p-3 space-y-1.5">
+                    <article
+                      key={c.id}
+                      className={`rounded-xl border p-3 space-y-1.5 ${rec === "Avançar" ? "bg-green-50 border-green-600" : rec === "Não avançar" ? "bg-red-50 border-red-600" : "bg-white border-brand-200"}`}
+                    >
                       <button type="button" className="text-left font-bold leading-tight hover:underline break-words" onClick={() => abrirFicha(c.id)}>
                         {c.nome}
                       </button>
+                      {k && (
+                        <span className="block">
+                          <Etiqueta tom={tomRec(rec)}>
+                            {k.simbolo} {rec}
+                          </Etiqueta>
+                        </span>
+                      )}
                       {v && (
                         <span className="flex items-center gap-1.5 text-sm text-ink-500">
                           <Ponto empresa={v.empresa} />
@@ -1098,8 +1141,10 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
               {lista.map((c) => {
                 const v = vagaPor.get(c.vaga_id);
                 const atrasada = !encerrado(c.etapa) && c.proxima_data && c.proxima_data < hoje;
+                const rec = recDe(c.id);
+                const k = corRec(rec);
                 return (
-                  <tr key={c.id} className="border-b border-brand-100 last:border-0">
+                  <tr key={c.id} className={`border-b border-brand-100 last:border-0 ${rec === "Avançar" ? "bg-green-50" : rec === "Não avançar" ? "bg-red-50" : ""}`}>
                     <td className="px-3.5 py-3">
                       <button type="button" className="font-bold text-left hover:underline" onClick={() => abrirFicha(c.id)}>
                         {c.nome}
@@ -1114,8 +1159,13 @@ export default function EntrevistasTela({ vagasIniciais, candidatosIniciais, ent
                         </span>
                       )}
                     </td>
-                    <td className="px-3.5 py-3">
+                    <td className="px-3.5 py-3 space-x-1.5 whitespace-nowrap">
                       <Etiqueta>{c.etapa}</Etiqueta>
+                      {k && (
+                        <Etiqueta tom={tomRec(rec)}>
+                          {k.simbolo} {rec}
+                        </Etiqueta>
+                      )}
                     </td>
                     <td className="px-3.5 py-3">
                       <Nota valor={notaDe(c.id)} />
