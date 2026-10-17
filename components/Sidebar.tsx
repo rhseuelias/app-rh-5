@@ -18,6 +18,7 @@ type IconeNome =
   | "custo"
   | "relatorio"
   | "backup"
+  | "config"
   | "sair";
 
 // Ícones de linha simples (sem biblioteca externa)
@@ -132,6 +133,20 @@ function Icone({ nome }: { nome: IconeNome }) {
           <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
       );
+    case "config":
+      return (
+        <svg {...props}>
+          <line x1="4" y1="21" x2="4" y2="14" />
+          <line x1="4" y1="10" x2="4" y2="3" />
+          <line x1="12" y1="21" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12" y2="3" />
+          <line x1="20" y1="21" x2="20" y2="16" />
+          <line x1="20" y1="12" x2="20" y2="3" />
+          <line x1="1" y1="14" x2="7" y2="14" />
+          <line x1="9" y1="8" x2="15" y2="8" />
+          <line x1="17" y1="16" x2="23" y2="16" />
+        </svg>
+      );
     case "sair":
       return (
         <svg {...props}>
@@ -143,26 +158,131 @@ function Icone({ nome }: { nome: IconeNome }) {
   }
 }
 
-const ITENS: { href: string; label: string; icon: IconeNome }[] = [
-  { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
-  { href: "/colaboradores", label: "Colaboradores", icon: "colaboradores" },
-  { href: "/onboarding", label: "Painel de Integração", icon: "integracao" },
-  { href: "/entrevistas", label: "Entrevistas", icon: "entrevistas" },
-  { href: "/cargos", label: "Descrição de Cargos", icon: "relatorio" },
-  { href: "/calendario", label: "Calendário Geral", icon: "calendario" },
-  { href: "/ferias", label: "Férias", icon: "ferias" },
-  { href: "/previsao-ferias", label: "Previsão de Férias", icon: "relatorio" },
-  { href: "/departamento-pessoal", label: "Departamento Pessoal", icon: "departamento" },
-  { href: "/aniversarios", label: "Aniversários", icon: "aniversarios" },
-  { href: "/projecao-custo", label: "Projeção de Custo", icon: "custo" },
-  { href: "/relatorio-salarios", label: "Relatório de Salários", icon: "relatorio" },
+type Item = { href: string; label: string; icon: IconeNome };
+type Grupo = { id: string; nome: string; restrito?: boolean; itens: Item[] };
+
+// Menu em 6 blocos. Blocos "restrito" não aparecem para o perfil "assistente" (ex.: Francielle):
+// Departamento Pessoal, Gestão e Custos e Configurações.
+const GRUPOS: Grupo[] = [
+  {
+    id: "inicio",
+    nome: "Início",
+    itens: [
+      { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
+      { href: "/calendario", label: "Calendário Geral", icon: "calendario" },
+      { href: "/aniversarios", label: "Aniversários", icon: "aniversarios" },
+    ],
+  },
+  {
+    id: "recrutamento",
+    nome: "Recrutamento",
+    itens: [
+      { href: "/entrevistas", label: "Entrevistas", icon: "entrevistas" },
+      { href: "/cargos", label: "Descrição de Cargos", icon: "relatorio" },
+    ],
+  },
+  {
+    id: "pessoas",
+    nome: "Pessoas",
+    itens: [
+      { href: "/colaboradores", label: "Colaboradores", icon: "colaboradores" },
+      { href: "/onboarding", label: "Painel de Integração", icon: "integracao" },
+      { href: "/ferias", label: "Férias", icon: "ferias" },
+      { href: "/ferias/simulacao", label: "Simulação de Férias", icon: "ferias" },
+      { href: "/previsao-ferias", label: "Previsão de Férias", icon: "relatorio" },
+    ],
+  },
+  {
+    id: "departamento",
+    nome: "Departamento Pessoal",
+    restrito: true,
+    itens: [
+      { href: "/departamento-pessoal/lancamentos", label: "Lançamentos da Folha", icon: "relatorio" },
+      { href: "/departamento-pessoal/vale-transporte", label: "Vale Transporte", icon: "departamento" },
+      { href: "/departamento-pessoal/beneficios", label: "Controle de Benefícios", icon: "aniversarios" },
+      { href: "/departamento-pessoal/adiantamentos", label: "Adiantamentos", icon: "custo" },
+    ],
+  },
+  {
+    id: "gestao",
+    nome: "Gestão e Custos",
+    restrito: true,
+    itens: [
+      { href: "/projecao-custo", label: "Projeção de Custo", icon: "custo" },
+      { href: "/relatorio-salarios", label: "Relatório de Salários", icon: "relatorio" },
+    ],
+  },
+  {
+    id: "configuracoes",
+    nome: "Configurações",
+    restrito: true,
+    itens: [
+      { href: "/configuracoes/integracao", label: "Etapas da Integração", icon: "config" },
+      { href: "/configuracoes/calendario", label: "Calendário", icon: "config" },
+      { href: "/configuracoes/contrato-pj", label: "Contrato PJ", icon: "config" },
+    ],
+  },
 ];
+
+function Seta({ aberta }: { aberta: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={`shrink-0 transition-transform ${aberta ? "rotate-90" : ""}`}
+    >
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
+}
 
 export default function Sidebar({ papel }: { papel?: string | null }) {
   const pathname = usePathname();
-  // perfil "assistente" (ex.: Francielle) não vê Projeção de Custo, Departamento Pessoal nem Relatório de Salários
-  const ESCONDIDOS_ASSISTENTE = ["/projecao-custo", "/departamento-pessoal", "/relatorio-salarios"];
-  const itens = papel === "assistente" ? ITENS.filter((i) => !ESCONDIDOS_ASSISTENTE.includes(i.href)) : ITENS;
+  // perfil "assistente" (ex.: Francielle) não vê os blocos restritos
+  const grupos = papel === "assistente" ? GRUPOS.filter((g) => !g.restrito) : GRUPOS;
+
+  // item ativo = o endereço mais específico que bate com a tela atual
+  // (assim "Férias" não fica marcado junto com "Simulação de Férias")
+  const ativoHref =
+    grupos
+      .flatMap((g) => g.itens)
+      .filter((i) => pathname === i.href || pathname?.startsWith(i.href + "/"))
+      .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
+  const grupoAtivoId = grupos.find((g) => g.itens.some((i) => i.href === ativoHref))?.id ?? null;
+
+  // blocos abertos/fechados: a escolha fica guardada neste navegador
+  const [abertos, setAbertos] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    try {
+      const salvo = localStorage.getItem("menu-grupos");
+      if (salvo) setAbertos(JSON.parse(salvo));
+    } catch {
+      /* sem armazenamento: segue com o padrão */
+    }
+  }, []);
+  // ao entrar numa tela, o bloco dela abre sozinho
+  useEffect(() => {
+    if (!grupoAtivoId) return;
+    setAbertos((a) => (a[grupoAtivoId] === undefined ? { ...a, [grupoAtivoId]: true } : a));
+  }, [grupoAtivoId]);
+  function alternarGrupo(id: string) {
+    setAbertos((a) => {
+      const novo = { ...a, [id]: !(a[id] ?? id === grupoAtivoId) };
+      try {
+        localStorage.setItem("menu-grupos", JSON.stringify(novo));
+      } catch {
+        /* ignora */
+      }
+      return novo;
+    });
+  }
 
   // menu recolhível: a escolha fica guardada neste navegador
   const [recolhido, setRecolhido] = useState(false);
@@ -223,27 +343,58 @@ export default function Sidebar({ papel }: { papel?: string | null }) {
           </div>
         )}
       </div>
-      <nav className={`flex-1 py-4 space-y-1.5 overflow-y-auto ${recolhido ? "px-2" : "px-3"}`}>
-        {itens.map((item) => {
-          const ativo = pathname?.startsWith(item.href);
+
+      <nav className={`flex-1 py-3 overflow-y-auto ${recolhido ? "px-2" : "px-3"}`}>
+        {grupos.map((g, idx) => {
+          const aberto = abertos[g.id] ?? g.id === grupoAtivoId;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={recolhido ? item.label : undefined}
-              aria-label={recolhido ? item.label : undefined}
-              className={`flex items-center rounded-[9px] text-sm font-medium transition-colors ${
-                recolhido ? "justify-center py-2.5" : "gap-3 px-3.5 py-2.5"
-              } ${ativo ? "bg-[#A85822] text-white" : "text-[#d9d2ca] hover:bg-white/[.06]"}`}
-            >
-              <span className="shrink-0">
-                <Icone nome={item.icon} />
-              </span>
-              {!recolhido && item.label}
-            </Link>
+            <div key={g.id} className={idx > 0 ? "mt-1 pt-1 border-t border-white/10" : ""}>
+              {!recolhido && (
+                <button
+                  type="button"
+                  onClick={() => alternarGrupo(g.id)}
+                  aria-expanded={aberto}
+                  className="w-full flex items-center justify-between gap-2 rounded-[9px] px-3.5 py-3 font-display uppercase tracking-[0.09em] text-[15px] text-[#f1ebe3] hover:bg-white/[.06] transition-colors"
+                >
+                  <span>{g.nome}</span>
+                  <span className="text-[#a39a91]">
+                    <Seta aberta={aberto} />
+                  </span>
+                </button>
+              )}
+              {(recolhido || aberto) && (
+                <div className={`space-y-0.5 ${recolhido ? "py-1" : "pb-2"}`}>
+                  {g.itens.map((item) => {
+                    const ativo = item.href === ativoHref;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        title={recolhido ? item.label : undefined}
+                        aria-label={recolhido ? item.label : undefined}
+                        aria-current={ativo ? "page" : undefined}
+                        className={`flex items-center rounded-[9px] text-[15px] transition-colors ${
+                          recolhido ? "justify-center py-2.5" : "gap-3 pl-5 pr-3.5 py-2.5"
+                        } ${
+                          ativo
+                            ? "bg-[#F4A988] text-[#2A1A12] font-bold"
+                            : "text-[#d9d2ca] font-medium hover:bg-white/[.06]"
+                        }`}
+                      >
+                        <span className="shrink-0">
+                          <Icone nome={item.icon} />
+                        </span>
+                        {!recolhido && item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
       </nav>
+
       <div className={`pb-1 pt-3 border-t border-white/10 ${recolhido ? "px-2" : "px-3"}`}>
         <a
           href="/api/backup"
