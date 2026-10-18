@@ -138,6 +138,11 @@ export async function salvarColaborador(formData: FormData) {
     comissao_quimica_pct: numOrNull(formData, "comissao_quimica_pct"),
     observacoes: str(formData, "observacoes"),
 
+    // Sexo (Feminino / Masculino) — só altera quando o formulário manda o campo
+    ...(formData.has("sexo")
+      ? { sexo: ["Feminino", "Masculino"].includes(String(formData.get("sexo"))) ? String(formData.get("sexo")) : null }
+      : {}),
+
     // Ficha de Admissão — dados pessoais extras
     rg: str(formData, "rg"),
     endereco: str(formData, "endereco"),
@@ -186,7 +191,9 @@ export async function salvarColaborador(formData: FormData) {
         for (const campo of CAMPOS_CONTRATO_REMUNERACAO_CLT) delete dados[campo];
       }
     }
-    await supabase.from("colaboradores").update(dados).eq("id", id);
+    const { error: erroAtualizar } = await supabase.from("colaboradores").update(dados).eq("id", id);
+    // antes o erro era ignorado e o app dizia que salvou mesmo sem gravar
+    if (erroAtualizar) throw new Error(`Não foi possível salvar o cadastro: ${erroAtualizar.message}`);
     await sincronizarDependentes(supabase, id, str(formData, "dependentes_json"));
   } else {
     const { data, error } = await supabase
