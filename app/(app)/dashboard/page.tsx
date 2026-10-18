@@ -28,7 +28,10 @@ import AvisosRescisoes from "@/components/dashboard/AvisosRescisoes";
 import BotaoImprimir from "@/components/dashboard/BotaoImprimir";
 import ColaboradoresPorAno, { type PontoAno } from "@/components/dashboard/ColaboradoresPorAno";
 import { montarLinhasIntegracao } from "@/components/dashboard/integracao-dados";
-import { Gauge, ClimaPorEmpresa, LegendaSemaforo } from "@/components/dashboard/Semaforo";
+import { LegendaSemaforo } from "@/components/dashboard/Semaforo";
+import ClimaTreinamento from "@/components/dashboard/ClimaTreinamento";
+import FolhaModelo4 from "@/components/dashboard/FolhaModelo4";
+import SexoPictograma from "@/components/dashboard/SexoPictograma";
 import {
   Cartao7,
   Icone,
@@ -508,23 +511,17 @@ export default async function DashboardPage({
   );
   const blocoMetas = (
     <>
-      {/* 2. Metas: clima e treinamento, clima de cada unidade e custo da folha */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-        <Cartao7>
-          <Titulo7 sub={`Meta: acima de ${META_CLIMA}%${notaMedia ? ` · ${notaMedia}` : ""}`}>Clima e treinamento</Titulo7>
-          <div className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2">
-            <Gauge titulo="Clima organizacional" pct={climaMedio} meta={META_CLIMA} />
-            <Gauge titulo="Treinamento" pct={treinoMedio} meta={META_TREINAMENTO} />
-          </div>
-        </Cartao7>
-
-        <Cartao7>
-          <Titulo7 sub={`Comparado com a meta de ${META_CLIMA}%`}>
-            {climaPorUnidade ? "Clima de cada unidade" : "Clima de cada empresa"}
-          </Titulo7>
-          <ClimaPorEmpresa itens={itensClima} meta={META_CLIMA} />
-        </Cartao7>
-      </div>
+      {/* 2. Metas: clima e treinamento (quadrados) */}
+      <Cartao7>
+        <Titulo7 sub={`Meta: acima de ${META_CLIMA}%${notaMedia ? ` · ${notaMedia}` : ""}`}>Clima e treinamento</Titulo7>
+        <ClimaTreinamento
+          climaMedio={climaMedio}
+          treinoMedio={treinoMedio}
+          metaClima={META_CLIMA}
+          metaTreinamento={META_TREINAMENTO}
+          itens={itensClima}
+        />
+      </Cartao7>
 
     </>
   );
@@ -532,70 +529,24 @@ export default async function DashboardPage({
     <>
       {!ocultarFinanceiro && (
         <Cartao7>
-          <Titulo7 sub={`A marca preta é o limite de ${LIMITE_SAUDAVEL_FOLHA_PCT}%. Verde está bem, vermelho pede atenção.`}>
+          <Titulo7 sub={`Da maior para a menor. A linha preta é o limite saudável de ${LIMITE_SAUDAVEL_FOLHA_PCT}%; ao lado, quanto falta para chegar nele.`}>
             Custo da folha sobre o faturamento
           </Titulo7>
           {folhaComPct.length === 0 ? (
             vazio("Sem faturamento cadastrado neste filtro.")
           ) : (
-            <div>
-              {folhaComPct.map(({ empresa: e, custo, fat, pct }) => {
-                const bom = (pct as number) <= LIMITE_SAUDAVEL_FOLHA_PCT;
-                const k: K = bom ? "good" : "bad";
-                return (
-                  <div
-                    key={e.id}
-                    className="grid grid-cols-1 items-center gap-x-4 gap-y-1.5 border-t py-3 sm:grid-cols-[150px_minmax(0,1fr)_56px_136px]"
-                    style={{ borderColor: P7.grid }}
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-[12.5px] font-bold" style={{ color: P7.ink }}>
-                        <Ponto cor={corEmpresa(e.nome)} redondo />
-                        {e.nome}
-                      </div>
-                      <div className="mt-[2px] text-[11.5px] leading-[1.35]" style={{ color: P7.lab }}>
-                        R$ {reais(custo)} de R$ {reais(fat)}
-                      </div>
-                    </div>
-                    <div className="relative h-[6px] rounded-full" style={{ background: P7.track }}>
-                      <div
-                        className="h-[6px] rounded-full"
-                        style={{ width: `${Math.min(100, ((pct as number) / ESCALA_FOLHA) * 100)}%`, background: ST7[k] }}
-                      />
-                      <div
-                        className="absolute -top-[5px] h-[16px] w-[1.5px]"
-                        style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / ESCALA_FOLHA) * 100}%`, background: P7.ink }}
-                        title={`Limite: ${LIMITE_SAUDAVEL_FOLHA_PCT}%`}
-                      />
-                    </div>
-                    <div className="text-[14px] font-extrabold tabular-nums sm:text-right" style={{ color: P7.ink }}>
-                      {fmt1(pct as number)}%
-                    </div>
-                    <div className="sm:text-right">
-                      <Selo k={k}>{bom ? "Dentro do limite" : "Acima do limite"}</Selo>
-                    </div>
-                  </div>
-                );
-              })}
-              <div
-                className="hidden gap-x-4 border-t pt-1.5 text-[10.5px] sm:grid sm:grid-cols-[150px_minmax(0,1fr)_56px_136px]"
-                style={{ color: P7.lab, borderColor: P7.grid }}
-              >
-                <span />
-                <div className="relative h-[14px]">
-                  <span className="absolute left-0">0%</span>
-                  <span
-                    className="absolute -translate-x-1/2 font-bold"
-                    style={{ left: `${(LIMITE_SAUDAVEL_FOLHA_PCT / ESCALA_FOLHA) * 100}%`, color: P7.ink }}
-                  >
-                    limite {LIMITE_SAUDAVEL_FOLHA_PCT}%
-                  </span>
-                  <span className="absolute right-0">{ESCALA_FOLHA}%</span>
-                </div>
-                <span />
-                <span />
-              </div>
-            </div>
+            <FolhaModelo4
+              itens={folhaComPct.map(({ empresa: e, custo, fat, pct }) => ({
+                id: e.id,
+                nome: e.nome,
+                cor: corEmpresa(e.nome),
+                custo,
+                fat,
+                pct: pct as number,
+              }))}
+              limite={LIMITE_SAUDAVEL_FOLHA_PCT}
+              escala={ESCALA_FOLHA}
+            />
           )}
         </Cartao7>
       )}
@@ -793,21 +744,7 @@ export default async function DashboardPage({
           const fem = ativosMes.filter((c) => c.sexo === "Feminino").length;
           const mas = ativosMes.filter((c) => c.sexo === "Masculino").length;
           const sem = ativosMes.length - fem - mas;
-          return (
-            <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
-              <span className="text-[13px]" style={{ color: P7.ink }}>
-                <b className="text-[28px] font-extrabold tabular-nums">{fem}</b> Feminino · {nPct(fem, fem + mas)}%
-              </span>
-              <span className="text-[13px]" style={{ color: P7.ink }}>
-                <b className="text-[28px] font-extrabold tabular-nums">{mas}</b> Masculino · {nPct(mas, fem + mas)}%
-              </span>
-              {sem > 0 && (
-                <span className="text-[12px]" style={{ color: P7.sec }}>
-                  {sem} sem sexo informado
-                </span>
-              )}
-            </div>
-          );
+          return <SexoPictograma fem={fem} mas={mas} sem={sem} />;
         })()}
       </Cartao7>
 

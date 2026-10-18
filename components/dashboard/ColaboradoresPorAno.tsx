@@ -19,7 +19,36 @@ export interface PontoAno {
 const COR_CLT = P7.azul;
 const COR_PJ = P7.laranja;
 const COR_EST = "#9fb5b1";
-const ALTURA = 150;
+
+/** Linha do total ao longo dos anos. O trecho pontilhado e o círculo vazio são a projeção. */
+function Sparkline({ serie, total }: { serie: PontoAno[]; total: (p: PontoAno) => number }) {
+  if (serie.length < 2) return null;
+  const W = 880;
+  const H = 90;
+  const vals = serie.map(total);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = Math.max(1, max - min);
+  const xs = (i: number) => 12 + ((W - 24) * i) / (serie.length - 1);
+  const ys = (v: number) => H - 14 - ((H - 30) * (v - min)) / span;
+  const temProj = !!serie[serie.length - 1].proj;
+  const nReais = temProj ? serie.length - 1 : serie.length;
+  const reais = vals.slice(0, nReais).map((v, i) => `${xs(i).toFixed(1)},${ys(v).toFixed(1)}`).join(" ");
+  const iU = nReais - 1;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="mb-3 block w-full" role="img" aria-label="Linha do total de colaboradores por ano">
+      <polyline points={reais} fill="none" stroke={P7.deep} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      {temProj && (
+        <line
+          x1={xs(iU)} y1={ys(vals[iU])} x2={xs(iU + 1)} y2={ys(vals[iU + 1])}
+          stroke={P7.deep} strokeWidth="2.5" strokeDasharray="2 6" strokeLinecap="round"
+        />
+      )}
+      <circle cx={xs(iU)} cy={ys(vals[iU])} r="5.5" fill={P7.deep} stroke="#fff" strokeWidth="2" />
+      {temProj && <circle cx={xs(iU + 1)} cy={ys(vals[iU + 1])} r="5.5" fill="#fff" stroke={P7.deep} strokeWidth="2" />}
+    </svg>
+  );
+}
 
 export default function ColaboradoresPorAno({
   dados,
@@ -92,54 +121,54 @@ export default function ColaboradoresPorAno({
         Crescimento de colaboradores por ano
       </Titulo7>
 
-      <div className="overflow-x-auto">
-        <div className="flex min-w-[420px] items-end gap-3 pt-1">
-          {serie.map((p, i) => {
-            const t = total(p);
-            const ant = i > 0 ? total(serie[i - 1]) : null;
-            const delta = ant === null ? null : t - ant;
-            const pct = ant && ant > 0 ? Math.round(((t - ant) / ant) * 100) : null;
-            const alto = Math.max(2, (t / maximo) * ALTURA);
-            const parte = (v: number) => (t > 0 ? `${(v / t) * 100}%` : "0%");
-            return (
-              <div key={p.ano} className="flex min-w-0 flex-1 flex-col items-center justify-end">
-                <div className="flex w-full flex-col items-center justify-end" style={{ height: ALTURA + 28 }}>
-                  <div className="mb-1 font-extrabold tabular-nums leading-none" style={{ fontFamily: MANROPE, fontSize: FS.titulo, color: P7.ink }}>
-                    {t}
-                  </div>
-                  <div
-                    className="flex w-full max-w-[40px] flex-col-reverse overflow-hidden rounded-t-[5px]"
-                    style={{
-                      height: alto,
-                      background: P7.track,
-                      ...(p.proj ? { opacity: 0.5, outline: `2px dashed ${P7.deep}`, outlineOffset: -2 } : {}),
-                    }}
-                    title={`${p.ano}: ${p.clt} CLT · ${p.pj} PJ${p.est > 0 ? ` · ${p.est} estágio` : ""}`}
-                  >
-                    <div style={{ height: parte(p.clt), background: COR_CLT }} />
-                    <div style={{ height: parte(p.pj), background: COR_PJ }} />
-                    <div style={{ height: parte(p.est), background: COR_EST }} />
-                  </div>
-                </div>
-                <div className="mt-1.5 text-[12.5px] font-semibold" style={{ color: P7.ink }}>
-                  {p.ano}
-                </div>
-                <div className="text-[11.5px]" style={{ color: P7.lab }}>
-                  {p.proj ? "projeção" : p.hoje ? "até hoje" : "dezembro"}
-                </div>
-                <div
-                  className="mt-1 h-[16px] text-[11.5px] font-medium tabular-nums"
-                  style={{ color: delta === null ? P7.lab : delta > 0 ? "#0b7a0b" : delta < 0 ? "#a52828" : P7.sec }}
-                >
-                  {delta === null ? "—" : `${delta > 0 ? "+" : ""}${delta}${pct !== null ? ` (${pct > 0 ? "+" : ""}${pct}%)` : ""}`}
-                </div>
+      <Sparkline serie={serie} total={total} />
+
+      <div className="grid gap-[10px]" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(122px, 1fr))" }}>
+        {serie.map((p, i) => {
+          const t = total(p);
+          const ant = i > 0 ? total(serie[i - 1]) : null;
+          const delta = ant === null ? null : t - ant;
+          const pct = ant && ant > 0 ? Math.round(((t - ant) / ant) * 100) : null;
+          const corDelta = delta === null ? P7.lab : delta > 0 ? "#0b7a0b" : delta < 0 ? "#a52828" : P7.sec;
+          return (
+            <div
+              key={p.ano}
+              className="rounded-[12px] px-3 pb-[10px] pt-3"
+              style={{
+                background: p.proj ? "#ffffff" : "#f4f8f7",
+                border: p.proj ? "2px dashed #c4d2cf" : "2px solid transparent",
+                fontFamily: MANROPE,
+                color: P7.ink,
+              }}
+              title={`${p.ano}${p.proj ? " (projeção)" : ""}: ${p.clt} CLT · ${p.pj} PJ${p.est > 0 ? ` · ${p.est} estágio` : ""} = ${t}`}
+            >
+              <div className="text-[12.5px] font-bold" style={{ color: P7.lab }}>
+                {p.ano}
+                {p.proj ? " · projeção" : p.hoje ? " · hoje" : ""}
               </div>
-            );
-          })}
-        </div>
+              <div className="text-[32px] font-extrabold leading-[1.15] tabular-nums">{t}</div>
+              <div className="my-1.5 flex h-[8px] gap-[2px]">
+                {p.clt > 0 && <span className="block rounded-[2px]" style={{ flex: p.clt, background: COR_CLT }} />}
+                {p.pj > 0 && <span className="block rounded-[2px]" style={{ flex: p.pj, background: COR_PJ }} />}
+                {p.est > 0 && <span className="block rounded-[2px]" style={{ flex: p.est, background: COR_EST }} />}
+              </div>
+              <div className="text-[12.5px]" style={{ color: P7.sec }}>
+                <b style={{ color: COR_CLT }}>{p.clt}</b> CLT · <b style={{ color: COR_PJ }}>{p.pj}</b> PJ
+                {p.est > 0 && (
+                  <>
+                    {" "}· <b>{p.est}</b> Est.
+                  </>
+                )}
+              </div>
+              <div className="mt-0.5 text-[12.5px] font-bold tabular-nums" style={{ color: corDelta }}>
+                {delta === null ? "início" : `${delta > 0 ? "+" : ""}${delta}${pct !== null ? ` · ${pct > 0 ? "+" : ""}${pct}%` : ""}`}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t pt-[9px] text-[11.5px]" style={{ borderColor: P7.grid, color: P7.ink }}>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t pt-[9px] text-[12.5px]" style={{ borderColor: P7.grid, color: P7.ink }}>
         <span><Ponto cor={COR_CLT} />CLT</span>
         <span><Ponto cor={COR_PJ} />PJ</span>
         <span><Ponto cor={COR_EST} />Estágio</span>
@@ -149,7 +178,7 @@ export default function ColaboradoresPorAno({
             Projeção
           </span>
         )}
-        <span style={{ color: P7.sec }}>O número embaixo de cada ano é o aumento em relação ao ano anterior.</span>
+        <span style={{ color: P7.sec }}>O número colorido embaixo de cada ano é o aumento em relação ao ano anterior.</span>
       </div>
 
       {projecao && (
