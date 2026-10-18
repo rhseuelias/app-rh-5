@@ -445,9 +445,11 @@ export default async function DashboardPage({
       {/* 1. Números do topo: total + cada empresa (mesma altura) */}
       <div
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:[grid-template-columns:var(--cols)]"
-        style={{ "--cols": `1.5fr repeat(${Math.max(linhasEmpresa.length, 1)}, minmax(0, 1fr)) 1.25fr` } as CSSProperties}
+        style={{ "--cols": `2.7fr repeat(${Math.max(linhasEmpresa.length, 1)}, minmax(0, 1fr))` } as CSSProperties}
       >
-        <Cartao7 className="flex flex-col justify-between gap-4 sm:col-span-2 lg:col-span-1">
+        <Cartao7 className="sm:col-span-2 lg:col-span-1">
+          <div className="grid h-full grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
+          <div className="flex min-w-0 flex-col justify-between gap-4">
           <div>
             <div className={ROTULO_COLUNA} style={{ color: P7.lab }}>
               Total de colaboradores
@@ -485,6 +487,14 @@ export default async function DashboardPage({
               </div>
             </div>
           )}
+          </div>
+          <div className="flex min-w-0 flex-col gap-2 md:border-l md:pl-6" style={{ borderColor: P7.grid }}>
+            <div className={ROTULO_COLUNA} style={{ color: P7.lab }}>
+              Feminino e masculino
+            </div>
+            <SexoPictograma fem={sexoFem} mas={sexoMas} sem={sexoSem} compacto />
+          </div>
+          </div>
         </Cartao7>
 
         {linhasEmpresa.map((l) => (
@@ -506,13 +516,6 @@ export default async function DashboardPage({
             </div>
           </Cartao7>
         ))}
-
-        <Cartao7 className="flex flex-col gap-2 sm:col-span-2 lg:col-span-1">
-          <div className={ROTULO_COLUNA} style={{ color: P7.lab }}>
-            Feminino e masculino
-          </div>
-          <SexoPictograma fem={sexoFem} mas={sexoMas} sem={sexoSem} compacto />
-        </Cartao7>
       </div>
 
     </>
