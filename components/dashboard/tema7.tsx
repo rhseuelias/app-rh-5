@@ -171,3 +171,45 @@ export const COR_ROTULO: CSSProperties = { color: P7.lab };
 
 export const LINK7 = "text-[11.5px] font-semibold hover:underline";
 export const LINK7_STYLE: CSSProperties = { color: P7.deep };
+
+/** "KETHLEN RIBEIRO MOREIRA" -> "KM" (primeira e última palavra). */
+export function iniciais(nome: string | null | undefined): string {
+  const p = (nome ?? "").trim().split(/\s+/).filter((x) => x && !PARTICULAS.has(x.toLowerCase()));
+  if (p.length === 0) return "?";
+  if (p.length === 1) return p[0].slice(0, 2).toUpperCase();
+  return (p[0].charAt(0) + p[p.length - 1].charAt(0)).toUpperCase();
+}
+
+/** Bolinha com as iniciais, na cor da empresa. */
+export function Avatar({ nome, cor, tamanho = 34 }: { nome: string | null | undefined; cor: string; tamanho?: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex shrink-0 items-center justify-center rounded-full font-extrabold text-white"
+      style={{ width: tamanho, height: tamanho, background: cor, fontSize: Math.round(tamanho * 0.38) }}
+    >
+      {iniciais(nome)}
+    </span>
+  );
+}
+
+export type Tom7 = "bad" | "warn" | "good" | "neutro";
+const PILULA: Record<Tom7, { bg: string; cor: string }> = {
+  bad: { bg: "#fbe3e2", cor: TXT_ATRASO },
+  warn: { bg: "#fff1cc", cor: "#7a5200" },
+  good: { bg: "#dcece9", cor: "#0a4a44" },
+  neutro: { bg: "#edf2f1", cor: "#3f5a56" },
+};
+
+/** Etiqueta arredondada colorida (vermelho, amarelo, verde ou cinza). */
+export function Pilula({ tom, children }: { tom: Tom7; children: ReactNode }) {
+  const p = PILULA[tom];
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-[3px] text-[11.5px] font-bold"
+      style={{ background: p.bg, color: p.cor }}
+    >
+      {children}
+    </span>
+  );
+}

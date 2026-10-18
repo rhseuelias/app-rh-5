@@ -25,6 +25,7 @@ import { souAssistente } from "@/lib/permissoes";
 import FiltrosPainel from "@/components/dashboard/FiltrosPainel";
 import IntegracaoPainel from "@/components/dashboard/IntegracaoPainel";
 import AvisosRescisoes from "@/components/dashboard/AvisosRescisoes";
+import AlertasTopo from "@/components/dashboard/AlertasTopo";
 import BotaoImprimir from "@/components/dashboard/BotaoImprimir";
 import ColaboradoresPorAno, { type PontoAno } from "@/components/dashboard/ColaboradoresPorAno";
 import { montarLinhasIntegracao } from "@/components/dashboard/integracao-dados";
@@ -33,7 +34,9 @@ import ClimaTreinamento from "@/components/dashboard/ClimaTreinamento";
 import FolhaModelo4 from "@/components/dashboard/FolhaModelo4";
 import SexoPictograma from "@/components/dashboard/SexoPictograma";
 import {
+  Avatar,
   Cartao7,
+  Pilula,
   Icone,
   Ponto,
   Selo,
@@ -727,132 +730,131 @@ export default async function DashboardPage({
 
       {blocoFolha}
 
-      {/* 3. Processo de integração */}
+      {/* 3. Alertas do dia: quatro quadrados com o semáforo */}
+      <AlertasTopo
+        etapasAtrasadas={atrasadasPainel}
+        experiencia={experienciaVencendo.length}
+        experienciaUrgente={expUrgente}
+        feriasEPJ={feriasVencendo + contratosPJVencendo}
+        idsColaboradores={empresaSel === "todas" ? null : Array.from(idsEscopo)}
+      />
+
+      {/* 4. Processo de integração (um cartão por pessoa) */}
       <IntegracaoPainel linhas={linhasIntegracao} hojeTexto={hojeTexto} />
 
-      {/* 4. Rescisões do mês e pendências */}
+      {/* 5. Rescisões e férias (esquerda) · experiência e aniversariantes (direita) */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <AvisosRescisoes
-          mesChave={mesAtualSelecionado}
-          idsColaboradores={empresaSel === "todas" ? null : Array.from(idsEscopo)}
-        />
-        <Cartao7>
-          <Titulo7 sub="O que precisa de atenção agora">Pendências de hoje</Titulo7>
-          <div>
-            {pendencias.map((p) => (
-              <Link
-                key={p.chave}
-                href={p.href}
-                className="grid h-[44px] grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-x-3 border-t hover:bg-[#f4f8f7]"
-                style={{ borderColor: P7.grid }}
-              >
-                <Icone k={p.k} />
-                <span className="text-[12.5px] leading-[1.3]" style={{ color: P7.ink }}>{p.texto}</span>
-                <span className="text-[14px] font-extrabold tabular-nums" style={{ color: P7.ink }}>{p.n}</span>
-              </Link>
-            ))}
-          </div>
-        </Cartao7>
-      </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          <AvisosRescisoes
+            mesChave={mesAtualSelecionado}
+            idsColaboradores={empresaSel === "todas" ? null : Array.from(idsEscopo)}
+          />
 
-      {/* Sexo dos colaboradores */}
-      <Cartao7>
-        <Titulo7 sub="Colaboradores ativos no filtro atual">Feminino e Masculino</Titulo7>
-        <SexoPictograma fem={sexoFem} mas={sexoMas} sem={sexoSem} />
-      </Cartao7>
-
-      {/* 5. Experiência terminando, aniversariantes e férias */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Cartao7>
-          <Titulo7 sub="Em vermelho quando faltam menos de 7 dias">Experiência terminando</Titulo7>
-          {experienciaVencendo.length === 0
-            ? vazio("Nenhum caso nos próximos 15 dias.")
-            : experienciaVencendo.slice(0, 5).map((c) => {
-                const left = diasParaFimExperiencia(c.data_fim_experiencia!);
-                const urgente = left < 7;
-                const adm = c.data_admissao ? new Date(c.data_admissao) : null;
-                const fim = new Date(c.data_fim_experiencia!);
-                const total = adm ? Math.max(1, differenceInCalendarDays(fim, adm)) : 90;
-                const feitos = Math.max(0, Math.min(total, total - left));
-                const empNome = c.empresa_id ? nomeEmpresaPorId[c.empresa_id] ?? "" : "";
-                return (
-                  <div key={c.id} className="mb-3 last:mb-0">
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <Link href={`/colaboradores/${c.id}`} className="min-w-0 truncate hover:underline">
-                        <span className="text-[12.5px] font-semibold" style={{ color: P7.ink }}>{nomeProprio(c.nome)}</span>{" "}
-                        <span className="text-[11.5px]" style={{ color: P7.lab }}>{empNome ? `· ${empNome}` : ""}</span>
-                      </Link>
-                      {urgente ? (
-                        <Selo k="bad">{left} {left === 1 ? "dia" : "dias"}</Selo>
-                      ) : (
-                        <span className="whitespace-nowrap text-[12.5px] font-bold" style={{ color: P7.ink }}>{left} dias</span>
-                      )}
-                    </div>
-                    <div className="h-[4px] rounded-full" style={{ background: P7.track }}>
-                      <div
-                        className="h-[4px] rounded-full"
-                        style={{ width: `${(feitos / total) * 100}%`, background: urgente ? ST7.bad : P7.deep }}
-                      />
-                    </div>
-                    <div className="mt-1 text-[11.5px]" style={{ color: P7.lab }}>
-                      {feitos} de {total} dias de experiência
-                    </div>
-                  </div>
-                );
-              })}
-        </Cartao7>
-
-        <Cartao7>
-          <Titulo7 direita={<Link href="/aniversarios" className={LINK7} style={LINK7_STYLE}>Ver todos</Link>}>
-            Aniversariantes de {rotuloMes.toLowerCase()}
-          </Titulo7>
-          {aniversariantes.length === 0
-            ? vazio("Nenhum aniversariante neste mês.")
-            : lista7(
-                aniversariantes.slice(0, 7).map((c) => ({
-                  chave: c.id,
-                  esq: (
-                    <Link href={`/colaboradores/${c.id}`} className="min-w-0 truncate hover:underline">
-                      {nomeProprio(c.nome)}
-                      {c.empresa_id && nomeEmpresaPorId[c.empresa_id] ? (
-                        <span className="text-[11.5px]" style={{ color: P7.lab }}> · {nomeEmpresaPorId[c.empresa_id]}</span>
-                      ) : null}
-                    </Link>
-                  ),
-                  dir: <b className="tabular-nums">{ddmm(c.data_nascimento)}</b>,
-                }))
-              )}
-          {aniversariantes.length > 7 && (
-            <p className="mt-2 text-[11.5px]" style={{ color: P7.lab }}>+ {aniversariantes.length - 7} neste mês</p>
-          )}
-        </Cartao7>
-
-        <Cartao7>
-          <Titulo7 sub="Começam daqui para frente" direita={<Link href="/ferias" className={LINK7} style={LINK7_STYLE}>Ver férias</Link>}>
-            Próximas férias
-          </Titulo7>
-          {proximasFerias.length === 0
-            ? vazio("Nenhuma férias marcada daqui para frente.")
-            : lista7(
-                proximasFerias.map((f) => {
+          <Cartao7>
+            <Titulo7 sub="Começam daqui para frente" direita={<Link href="/ferias" className={LINK7} style={LINK7_STYLE}>Ver férias</Link>}>
+              Próximas férias
+            </Titulo7>
+            {proximasFerias.length === 0
+              ? vazio("Nenhuma férias marcada daqui para frente.")
+              : proximasFerias.map((f) => {
                   const c = colabPorId.get(f.colaborador_id);
                   const [ya, ma, da] = f.data_inicio.slice(0, 10).split("-").map(Number);
                   const faltam = differenceInCalendarDays(new Date(ya, ma - 1, da), hoje);
-                  return {
-                    chave: f.id,
-                    esq: (
-                      <Link href={c ? `/colaboradores/${c.id}` : "/ferias"} className="min-w-0 truncate hover:underline">
-                        {c ? nomeProprio(c.nome) : "Colaborador"}
-                        <span className="text-[11.5px]" style={{ color: P7.lab }}>
-                          {" "}· {faltam === 0 ? "começa hoje" : `em ${faltam} dia${faltam === 1 ? "" : "s"}`}
+                  return (
+                    <Link
+                      key={f.id}
+                      href={c ? `/colaboradores/${c.id}` : "/ferias"}
+                      className="flex items-center gap-3 border-t py-2.5 hover:bg-[#f4f8f7]"
+                      style={{ borderColor: P7.grid }}
+                    >
+                      <span
+                        className="shrink-0 rounded-[12px] px-3.5 py-2 text-center"
+                        style={{ background: "#dcece9", color: "#0a4a44" }}
+                      >
+                        <span className="block text-[17px] font-extrabold leading-none tabular-nums">{ddmm(f.data_inicio)}</span>
+                        <span className="mt-1 block text-[10.5px] font-bold tabular-nums">até {ddmm(f.data_fim)}</span>
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] font-bold" style={{ color: P7.ink }}>
+                          {c ? nomeProprio(c.nome) : "Colaborador"}
                         </span>
-                      </Link>
-                    ),
-                    dir: <b className="tabular-nums whitespace-nowrap">{ddmm(f.data_inicio)} a {ddmm(f.data_fim)}</b>,
-                  };
-                })
-              )}
-        </Cartao7>
+                        <span className="block text-[11.5px]" style={{ color: P7.lab }}>
+                          {faltam === 0 ? "começa hoje" : `começa em ${faltam} dia${faltam === 1 ? "" : "s"}`}
+                        </span>
+                      </span>
+                    </Link>
+                  );
+                })}
+          </Cartao7>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          <Cartao7>
+            <Titulo7 sub="Em vermelho quando faltam menos de 7 dias">Experiência terminando</Titulo7>
+            {experienciaVencendo.length === 0
+              ? vazio("Nenhum caso nos próximos 15 dias.")
+              : experienciaVencendo.slice(0, 5).map((c) => {
+                  const left = diasParaFimExperiencia(c.data_fim_experiencia!);
+                  const urgente = left < 7;
+                  const adm = c.data_admissao ? new Date(c.data_admissao) : null;
+                  const fim = new Date(c.data_fim_experiencia!);
+                  const total = adm ? Math.max(1, differenceInCalendarDays(fim, adm)) : 90;
+                  const feitos = Math.max(0, Math.min(total, total - left));
+                  const empNome = c.empresa_id ? nomeEmpresaPorId[c.empresa_id] ?? "" : "";
+                  return (
+                    <div key={c.id} className="mb-4 last:mb-0">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <Link href={`/colaboradores/${c.id}`} className="min-w-0 truncate hover:underline">
+                          <span className="text-[12.5px] font-bold" style={{ color: P7.ink }}>{nomeProprio(c.nome)}</span>{" "}
+                          <span className="text-[11.5px]" style={{ color: P7.lab }}>{empNome ? `· ${empNome}` : ""}</span>
+                        </Link>
+                        <Pilula tom={urgente ? "bad" : "warn"}>{left} {left === 1 ? "dia" : "dias"}</Pilula>
+                      </div>
+                      <div className="h-[9px] rounded-full" style={{ background: P7.track }}>
+                        <div
+                          className="h-[9px] rounded-full"
+                          style={{ width: `${(feitos / total) * 100}%`, background: urgente ? ST7.bad : P7.deep }}
+                        />
+                      </div>
+                      <div className="mt-1 text-[11.5px]" style={{ color: P7.lab }}>
+                        {feitos} de {total} dias de experiência
+                      </div>
+                    </div>
+                  );
+                })}
+          </Cartao7>
+
+          <Cartao7>
+            <Titulo7 direita={<Link href="/aniversarios" className={LINK7} style={LINK7_STYLE}>Ver todos</Link>}>
+              Aniversariantes de {rotuloMes.toLowerCase()}
+            </Titulo7>
+            {aniversariantes.length === 0
+              ? vazio("Nenhum aniversariante neste mês.")
+              : aniversariantes.slice(0, 5).map((c) => {
+                  const empNome = c.empresa_id ? nomeEmpresaPorId[c.empresa_id] ?? "" : "";
+                  return (
+                    <Link
+                      key={c.id}
+                      href={`/colaboradores/${c.id}`}
+                      className="flex items-center gap-3 border-t py-[7px] hover:bg-[#f4f8f7]"
+                      style={{ borderColor: P7.grid }}
+                    >
+                      <Avatar nome={c.nome} cor={corEmpresa(empNome)} tamanho={28} />
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-bold" style={{ color: P7.ink }}>
+                        {nomeProprio(c.nome)}
+                        {empNome ? (
+                          <span className="text-[11.5px] font-medium" style={{ color: P7.lab }}> · {empNome}</span>
+                        ) : null}
+                      </span>
+                      <b className="text-[12.5px] tabular-nums" style={{ color: P7.ink }}>{ddmm(c.data_nascimento)}</b>
+                    </Link>
+                  );
+                })}
+            {aniversariantes.length > 5 && (
+              <p className="mt-2 text-[11.5px]" style={{ color: P7.lab }}>+ {aniversariantes.length - 5} neste mês</p>
+            )}
+          </Cartao7>
+        </div>
       </div>
     </div>
   );

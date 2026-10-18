@@ -11,17 +11,15 @@ import {
   type Tom as TomDeslig,
 } from "@/lib/desligamento";
 import {
+  Avatar,
   Cartao7,
-  Icone,
-  Ponto,
+  Pilula,
   Titulo7,
   MANROPE,
   P7,
   corEmpresa,
   nomeProprio,
-  ROTULO_COLUNA,
-  COR_ROTULO,
-  type K,
+  type Tom7,
 } from "./tema7";
 
 const TIPO_CURTO: Record<TipoAviso, string> = {
@@ -32,15 +30,13 @@ const TIPO_CURTO: Record<TipoAviso, string> = {
   pedido_sem_cumprir: "Pedido, sem cumprir",
 };
 
-const K_DO_TOM: Record<TomDeslig, K | null> = {
+const TOM_PILULA: Record<TomDeslig, Tom7> = {
   atrasado: "bad",
   atencao: "warn",
   ok: "good",
   feito: "good",
-  neutro: null,
+  neutro: "neutro",
 };
-
-const COLS_RESCISAO = "minmax(140px,1.6fr) 100px 56px minmax(140px,1.3fr)";
 
 /**
  * Quadro "Rescisões do mês" (pagamento das verbas). Usa a tabela `desligamentos`.
@@ -94,54 +90,43 @@ export default async function AvisosRescisoes({
   const pagas = rescisoes.length - aPagar;
 
   return (
-    <Cartao7 className="flex flex-col">
-      <Titulo7
-        sub={`Prazo: até ${PRAZO_PAGAMENTO_DIAS} dias corridos depois do último dia de trabalho`}
-        direita={
-          <>
-            <b>{aPagar}</b> a pagar · <b>{pagas}</b> {pagas === 1 ? "paga" : "pagas"}
-          </>
-        }
-      >
-        Rescisões do mês
-      </Titulo7>
-      <div className="flex-1 overflow-x-auto">
-        <div className="min-w-[460px]">
-          <div className={`mb-1 grid gap-x-3 ${ROTULO_COLUNA}`} style={{ gridTemplateColumns: COLS_RESCISAO, ...COR_ROTULO }}>
-            <div>Colaborador</div>
-            <div>Tipo</div>
-            <div>Pagar até</div>
-            <div>Situação</div>
-          </div>
+    <div id="rescisoes">
+      <Cartao7 className="flex flex-col">
+        <Titulo7
+          sub={`Prazo: até ${PRAZO_PAGAMENTO_DIAS} dias corridos depois do último dia de trabalho`}
+          direita={
+            <>
+              <b>{aPagar}</b> a pagar · <b>{pagas}</b> {pagas === 1 ? "paga" : "pagas"}
+            </>
+          }
+        >
+          Rescisões do mês
+        </Titulo7>
+        <div>
           {rescisoes.length === 0 && (
             <p className="border-t py-3 text-[12.5px]" style={{ borderColor: P7.grid, color: P7.sec }}>
               Nenhuma rescisão neste mês.
             </p>
           )}
-          {rescisoes.slice(0, 7).map(({ d, sit }) => {
-            const k = K_DO_TOM[sit.tom];
-            return (
-              <Link
-                key={d.colaborador_id}
-                href={`/colaboradores/${d.colaborador_id}#desligamento`}
-                className="grid h-[34px] items-center gap-x-3 border-t hover:bg-[#f4f8f7]"
-                style={{ gridTemplateColumns: COLS_RESCISAO, borderColor: P7.grid, fontFamily: MANROPE }}
-              >
-                <span className="truncate text-[12.5px] font-semibold" style={{ color: P7.ink }}>
-                  <Ponto cor={corDe(d)} redondo />
-                  {nome(d)}
-                </span>
-                <span className="truncate text-[11.5px]" style={{ color: P7.sec }}>{TIPO_CURTO[d.tipo_aviso]}</span>
-                <span className="text-[11.5px] font-semibold tabular-nums" style={{ color: P7.ink }}>{brCurto(d.prazo_pagamento)}</span>
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11.5px]" style={{ color: P7.ink }}>
-                  {k && <Icone k={k} />}
-                  {sit.rotulo}
-                </span>
-              </Link>
-            );
-          })}
+          {rescisoes.slice(0, 7).map(({ d, sit }) => (
+            <Link
+              key={d.colaborador_id}
+              href={`/colaboradores/${d.colaborador_id}#desligamento`}
+              className="flex items-center gap-3 border-t py-[9px] hover:bg-[#f4f8f7]"
+              style={{ borderColor: P7.grid, fontFamily: MANROPE }}
+            >
+              <Avatar nome={nome(d)} cor={corDe(d)} tamanho={30} />
+              <span className="min-w-0 flex-1 truncate text-[12.5px] font-bold" style={{ color: P7.ink }}>
+                {nome(d)}
+              </span>
+              <span className="hidden text-[11.5px] sm:inline" style={{ color: P7.sec }}>{TIPO_CURTO[d.tipo_aviso]}</span>
+              <Pilula tom={TOM_PILULA[sit.tom]}>
+                {sit.tom === "feito" ? sit.rotulo : `${brCurto(d.prazo_pagamento)} · ${sit.rotulo}`}
+              </Pilula>
+            </Link>
+          ))}
         </div>
-      </div>
-    </Cartao7>
+      </Cartao7>
+    </div>
   );
 }
