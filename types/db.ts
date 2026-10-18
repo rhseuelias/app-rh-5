@@ -167,6 +167,7 @@ export interface Colaborador {
   endereco: string | null;
   estado_civil: EstadoCivil | null;
   raca_cor: string | null;
+  sexo?: "Feminino" | "Masculino" | null;
   grau_instrucao: GrauInstrucao | null;
 
   // dados funcionais extras

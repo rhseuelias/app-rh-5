@@ -786,6 +786,31 @@ export default async function DashboardPage({
         </Cartao7>
       </div>
 
+      {/* Sexo dos colaboradores */}
+      <Cartao7>
+        <Titulo7 sub="Colaboradores ativos no filtro atual">Feminino e Masculino</Titulo7>
+        {(() => {
+          const fem = ativosMes.filter((c) => c.sexo === "Feminino").length;
+          const mas = ativosMes.filter((c) => c.sexo === "Masculino").length;
+          const sem = ativosMes.length - fem - mas;
+          return (
+            <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+              <span className="text-[13px]" style={{ color: P7.ink }}>
+                <b className="text-[28px] font-extrabold tabular-nums">{fem}</b> Feminino · {nPct(fem, fem + mas)}%
+              </span>
+              <span className="text-[13px]" style={{ color: P7.ink }}>
+                <b className="text-[28px] font-extrabold tabular-nums">{mas}</b> Masculino · {nPct(mas, fem + mas)}%
+              </span>
+              {sem > 0 && (
+                <span className="text-[12px]" style={{ color: P7.sec }}>
+                  {sem} sem sexo informado
+                </span>
+              )}
+            </div>
+          );
+        })()}
+      </Cartao7>
+
       {/* 5. Experiência terminando, aniversariantes e férias */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Cartao7>

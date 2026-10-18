@@ -221,6 +221,14 @@ export default function ColaboradorForm({
             </select>
           </div>
           <div>
+            <label className="label">Sexo</label>
+            <select name="sexo" className="input" defaultValue={colaborador?.sexo ?? ""}>
+              <option value="">—</option>
+              <option value="Feminino">Feminino</option>
+              <option value="Masculino">Masculino</option>
+            </select>
+          </div>
+          <div>
             <label className="label">Raça/Cor</label>
             <input name="raca_cor" className="input" defaultValue={colaborador?.raca_cor ?? ""} />
           </div>
