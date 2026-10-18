@@ -14,7 +14,7 @@ function dataHora(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
 }
 
-export default async function RelatorioAdiantamentosPage({ searchParams }: { searchParams: { competencia?: string; empresa?: string } }) {
+export default async function RelatorioAdiantamentosPage({ searchParams }: { searchParams: { competencia?: string; empresa?: string; modo?: string } }) {
   const competencia = /^\d{4}-(0[1-9]|1[0-2])$/.test(searchParams.competencia ?? "")
     ? (searchParams.competencia as string)
     : competenciaAtualSP();
@@ -86,8 +86,9 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
   const valorTotal = resumo.reduce((s, r) => s + r.total, 0);
   const semValorTotal = resumo.reduce((s, r) => s + r.semValor, 0);
 
-  const href = (comp: string, emp: string = filtro) =>
-    `/departamento-pessoal/adiantamentos/relatorio?competencia=${comp}${emp !== "todas" ? `&empresa=${encodeURIComponent(emp)}` : ""}`;
+  const soNomes = searchParams.modo === "nomes";
+  const href = (comp: string, emp: string = filtro, nomes: boolean = soNomes) =>
+    `/departamento-pessoal/adiantamentos/relatorio?competencia=${comp}${emp !== "todas" ? `&empresa=${encodeURIComponent(emp)}` : ""}${nomes ? "&modo=nomes" : ""}`;
   const tituloEmpresa = filtro === "todas" ? "Todas as empresas" : filtro;
 
   return (
@@ -150,9 +151,27 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
         </div>
       )}
 
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <span className="text-sm font-semibold text-stone-600">Mostrar:</span>
+        {[
+          { nomes: false, rotulo: "Completo (cargo, matrícula, %, valor)" },
+          { nomes: true, rotulo: "Só nomes" },
+        ].map((o) => (
+          <Link
+            key={o.rotulo}
+            href={href(competencia, filtro, o.nomes)}
+            aria-current={soNomes === o.nomes ? "true" : undefined}
+            className={`rounded-full border px-4 py-1.5 text-sm font-semibold no-underline ${soNomes === o.nomes ? "bg-ink-900 text-white border-ink-900" : "bg-white border-brand-200"}`}
+          >
+            {o.rotulo}
+          </Link>
+        ))}
+      </div>
+
       <div className="hidden print:block">
         <p className="font-display text-2xl font-semibold uppercase">
           Relatório de adiantamentos · {rotuloCompetencia(competencia)} · {tituloEmpresa}
+          {soNomes ? " · Só nomes" : ""}
         </p>
       </div>
 
@@ -186,17 +205,22 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
             <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-brand-200 bg-brand-50 px-4 py-3">
               <h2 className="text-xl font-semibold">{empresa}</h2>
               <p className="text-sm text-stone-600">
-                {r.quantidade} {r.quantidade === 1 ? "colaborador" : "colaboradores"} · total {moedaVT(r.total)}
+                {r.quantidade} {r.quantidade === 1 ? "colaborador" : "colaboradores"}
+                {soNomes ? "" : ` · total ${moedaVT(r.total)}`}
               </p>
             </header>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-brand-200 text-left text-xs uppercase tracking-wider text-stone-500">
                   <th className="px-4 py-2">Colaborador</th>
-                  <th className="px-4 py-2">Cargo</th>
-                  <th className="px-4 py-2">Matrícula</th>
-                  <th className="px-4 py-2 text-right">%</th>
-                  <th className="px-4 py-2 text-right">Valor</th>
+                  {!soNomes && (
+                    <>
+                      <th className="px-4 py-2">Cargo</th>
+                      <th className="px-4 py-2">Matrícula</th>
+                      <th className="px-4 py-2 text-right">%</th>
+                      <th className="px-4 py-2 text-right">Valor</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -205,17 +229,21 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
                   return (
                     <Fragment key={un}>
                       <tr className="bg-stone-50">
-                        <td colSpan={5} className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-stone-600">
+                        <td colSpan={soNomes ? 1 : 5} className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-stone-600">
                           {un} · {linhas.length}
                         </td>
                       </tr>
                       {linhas.map((l) => (
                         <tr key={l.id + l.nome} className="border-b border-brand-100 last:border-b-0">
                           <td className="px-4 py-2 font-semibold uppercase">{l.nome}</td>
-                          <td className="px-4 py-2 uppercase text-stone-600">{l.cargo || "—"}</td>
-                          <td className="px-4 py-2 text-stone-600">{l.matricula || "—"}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">{l.pct ? `${l.pct}%` : "—"}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">{l.valor === null ? "—" : moedaVT(l.valor)}</td>
+                          {!soNomes && (
+                            <>
+                              <td className="px-4 py-2 uppercase text-stone-600">{l.cargo || "—"}</td>
+                              <td className="px-4 py-2 text-stone-600">{l.matricula || "—"}</td>
+                              <td className="px-4 py-2 text-right tabular-nums">{l.pct ? `${l.pct}%` : "—"}</td>
+                              <td className="px-4 py-2 text-right tabular-nums">{l.valor === null ? "—" : moedaVT(l.valor)}</td>
+                            </>
+                          )}
                         </tr>
                       ))}
                     </Fragment>
@@ -227,7 +255,13 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
         );
       })}
 
-      {quantidadeTotal > 0 && (
+      {quantidadeTotal > 0 && soNomes && (
+        <p className="text-sm text-stone-600">
+          Total {filtro === "todas" ? "geral" : `de ${filtro}`}: <b>{quantidadeTotal}</b> {quantidadeTotal === 1 ? "colaborador" : "colaboradores"}.
+        </p>
+      )}
+
+      {quantidadeTotal > 0 && !soNomes && (
         <p className="text-sm text-stone-600">
           Total {filtro === "todas" ? "geral" : `de ${filtro}`}: <b>{moedaVT(valorTotal)}</b> para {quantidadeTotal} {quantidadeTotal === 1 ? "colaborador" : "colaboradores"}.
           {semValorTotal > 0 &&
