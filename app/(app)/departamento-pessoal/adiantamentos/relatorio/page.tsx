@@ -3,31 +3,28 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, Unidade } from "@/types/db";
 import { rotuloCompetencia } from "@/lib/beneficios-calculos";
-import { competenciaAtualSP, deslocarCompetencia, empresaVT, EMPRESAS_VT, grupoVT, moedaVT } from "@/lib/vale-transporte";
-import { elegivelAdiantamento, valorAdiantamento } from "@/lib/adiantamentos";
+import { competenciaAtualSP, deslocarCompetencia, EMPRESAS_VT, moedaVT } from "@/lib/vale-transporte";
+import { montarLinhasAdiantamento, type LinhaAdiantamento } from "@/lib/adiantamentos";
 import ImprimirBotao from "@/components/ImprimirBotao";
+import GerarAdiantamentosBotao from "@/components/GerarAdiantamentosBotao";
 
 export const dynamic = "force-dynamic";
 
-interface Linha {
-  id: string;
-  nome: string;
-  cargo: string;
-  matricula: string;
-  pct: number | null;
-  valor: number | null;
+function dataHora(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
 }
 
-export default async function RelatorioAdiantamentosPage({ searchParams }: { searchParams: { competencia?: string } }) {
+export default async function RelatorioAdiantamentosPage({ searchParams }: { searchParams: { competencia?: string; empresa?: string } }) {
   const competencia = /^\d{4}-(0[1-9]|1[0-2])$/.test(searchParams.competencia ?? "")
     ? (searchParams.competencia as string)
     : competenciaAtualSP();
 
   const supabase = createClient();
-  const [empresasRes, unidadesRes, colaboradoresRes] = await Promise.all([
+  const [empresasRes, unidadesRes, colaboradoresRes, salvosRes] = await Promise.all([
     supabase.from("empresas").select("*"),
     supabase.from("unidades").select("*"),
     supabase.from("colaboradores").select("*"),
+    supabase.from("adiantamentos_mensais").select("*").eq("competencia", competencia),
   ]);
   if (colaboradoresRes.error) {
     return (
@@ -39,32 +36,42 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
 
   const empresaPorId = new Map(((empresasRes.data ?? []) as Empresa[]).map((e) => [e.id, e]));
   const unidadePorId = new Map(((unidadesRes.data ?? []) as Unidade[]).map((u) => [u.id, u]));
-  const colaboradores = (colaboradoresRes.data ?? []) as Colaborador[];
+
+  // Mês salvo (gerado antes) tem prioridade; senão mostra a prévia com a lista de hoje.
+  const tabelaFaltando = !!salvosRes.error;
+  const salvos = tabelaFaltando ? [] : (salvosRes.data ?? []);
+  const jaSalvo = salvos.length > 0;
+  const geradoEm = jaSalvo ? (salvos as { gerado_em: string }[]).map((s) => s.gerado_em).sort().slice(-1)[0] : null;
+
+  const todas: LinhaAdiantamento[] = jaSalvo
+    ? (salvos as Record<string, unknown>[]).map((s) => ({
+        id: String(s.colaborador_id ?? s.id),
+        nome: String(s.nome ?? ""),
+        cargo: String(s.cargo ?? ""),
+        matricula: String(s.matricula ?? ""),
+        empresa: String(s.empresa ?? ""),
+        unidade: String(s.unidade ?? ""),
+        pct: s.pct === null || s.pct === undefined ? null : Number(s.pct),
+        valor: s.valor === null || s.valor === undefined ? null : Number(s.valor),
+      }))
+    : montarLinhasAdiantamento((colaboradoresRes.data ?? []) as Colaborador[], empresaPorId, unidadePorId);
+
+  const empresasComDados = Array.from(new Set(todas.map((l) => l.empresa)));
+  const outras = empresasComDados.filter((e) => !(EMPRESAS_VT as readonly string[]).includes(e)).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const empresasOrdem: string[] = [...EMPRESAS_VT, ...outras];
+
+  const filtro = searchParams.empresa && empresasOrdem.includes(searchParams.empresa) ? searchParams.empresa : "todas";
+  const linhasFiltradas = filtro === "todas" ? todas : todas.filter((l) => l.empresa === filtro);
 
   // empresa -> unidade -> linhas
-  const grupos = new Map<string, Map<string, Linha[]>>();
-  for (const c of colaboradores) {
-    if (!elegivelAdiantamento(c) || !c.adiantamento_salario) continue;
-    const empresa = empresaVT(c, empresaPorId, unidadePorId);
-    const unidade = grupoVT(c, empresaPorId, unidadePorId);
-    const un = c.unidade_id ? unidadePorId.get(c.unidade_id) : undefined;
-    if (!grupos.has(empresa)) grupos.set(empresa, new Map());
-    const porUnidade = grupos.get(empresa)!;
-    if (!porUnidade.has(unidade)) porUnidade.set(unidade, []);
-    porUnidade.get(unidade)!.push({
-      id: c.id,
-      nome: c.nome,
-      cargo: c.cargo ?? "",
-      matricula: c.matricula ?? "",
-      pct: un?.adiantamento_pct ?? null,
-      valor: valorAdiantamento(c, un),
-    });
+  const grupos = new Map<string, Map<string, LinhaAdiantamento[]>>();
+  for (const l of linhasFiltradas) {
+    if (!grupos.has(l.empresa)) grupos.set(l.empresa, new Map());
+    const porUnidade = grupos.get(l.empresa)!;
+    if (!porUnidade.has(l.unidade)) porUnidade.set(l.unidade, []);
+    porUnidade.get(l.unidade)!.push(l);
   }
-
-  const outras = Array.from(grupos.keys())
-    .filter((e) => !(EMPRESAS_VT as readonly string[]).includes(e))
-    .sort((a, b) => a.localeCompare(b, "pt-BR"));
-  const ordem: string[] = [...EMPRESAS_VT, ...outras].filter((e) => grupos.has(e));
+  const ordem = empresasOrdem.filter((e) => grupos.has(e));
 
   const resumo = ordem.map((empresa) => {
     const linhas = Array.from(grupos.get(empresa)!.values()).flat();
@@ -79,7 +86,9 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
   const valorTotal = resumo.reduce((s, r) => s + r.total, 0);
   const semValorTotal = resumo.reduce((s, r) => s + r.semValor, 0);
 
-  const href = (comp: string) => `/departamento-pessoal/adiantamentos/relatorio?competencia=${comp}`;
+  const href = (comp: string, emp: string = filtro) =>
+    `/departamento-pessoal/adiantamentos/relatorio?competencia=${comp}${emp !== "todas" ? `&empresa=${encodeURIComponent(emp)}` : ""}`;
+  const tituloEmpresa = filtro === "todas" ? "Todas as empresas" : filtro;
 
   return (
     <div className="space-y-5">
@@ -100,12 +109,51 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
               ›
             </Link>
           </div>
+          {!tabelaFaltando && <GerarAdiantamentosBotao competencia={competencia} rotulo={rotuloCompetencia(competencia)} jaSalvo={jaSalvo} />}
           <ImprimirBotao />
         </div>
       </div>
 
+      {tabelaFaltando && (
+        <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 print:hidden">
+          Para salvar os meses, rode o arquivo <b>migration_039_adiantamentos_mensais.sql</b> no Supabase. Enquanto isso, o relatório mostra a lista de hoje.
+        </div>
+      )}
+
+      <div
+        className={`rounded-xl border px-4 py-2.5 text-sm print:hidden ${jaSalvo ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-stone-300 bg-stone-50 text-stone-700"}`}
+      >
+        {jaSalvo ? (
+          <>
+            ✅ <b>{rotuloCompetencia(competencia)} salvo</b> em {dataHora(geradoEm as string)}. Esta lista não muda mais, mesmo que o cadastro mude.
+          </>
+        ) : (
+          <>
+            ⚠️ <b>Prévia:</b> {rotuloCompetencia(competencia)} ainda não foi gerado. Os dados abaixo são da lista de hoje. Toque em “Gerar e salvar” para guardar este mês.
+          </>
+        )}
+      </div>
+
+      {empresasOrdem.some((e) => empresasComDados.includes(e)) && (
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <span className="text-sm font-semibold text-stone-600">Empresa:</span>
+          {["todas", ...empresasOrdem.filter((e) => empresasComDados.includes(e))].map((e) => (
+            <Link
+              key={e}
+              href={href(competencia, e)}
+              aria-current={filtro === e ? "true" : undefined}
+              className={`rounded-full border px-4 py-1.5 text-sm font-semibold no-underline ${filtro === e ? "bg-ink-900 text-white border-ink-900" : "bg-white border-brand-200"}`}
+            >
+              {e === "todas" ? "Todas as empresas" : e}
+            </Link>
+          ))}
+        </div>
+      )}
+
       <div className="hidden print:block">
-        <p className="font-display text-2xl font-semibold uppercase">Relatório de adiantamentos · {rotuloCompetencia(competencia)}</p>
+        <p className="font-display text-2xl font-semibold uppercase">
+          Relatório de adiantamentos · {rotuloCompetencia(competencia)} · {tituloEmpresa}
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -123,7 +171,9 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
 
       {quantidadeTotal === 0 && (
         <div className="card">
-          <p className="text-sm text-stone-600">Ninguém está marcado para receber adiantamento. Marque na tela de Adiantamentos.</p>
+          <p className="text-sm text-stone-600">
+            {jaSalvo || todas.length > 0 ? "Nenhum adiantamento nesta empresa." : "Ninguém está marcado para receber adiantamento. Marque na tela de Adiantamentos."}
+          </p>
         </div>
       )}
 
@@ -160,7 +210,7 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
                         </td>
                       </tr>
                       {linhas.map((l) => (
-                        <tr key={l.id} className="border-b border-brand-100 last:border-b-0">
+                        <tr key={l.id + l.nome} className="border-b border-brand-100 last:border-b-0">
                           <td className="px-4 py-2 font-semibold uppercase">{l.nome}</td>
                           <td className="px-4 py-2 uppercase text-stone-600">{l.cargo || "—"}</td>
                           <td className="px-4 py-2 text-stone-600">{l.matricula || "—"}</td>
@@ -179,7 +229,7 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
 
       {quantidadeTotal > 0 && (
         <p className="text-sm text-stone-600">
-          Total geral: <b>{moedaVT(valorTotal)}</b> para {quantidadeTotal} {quantidadeTotal === 1 ? "colaborador" : "colaboradores"}.
+          Total {filtro === "todas" ? "geral" : `de ${filtro}`}: <b>{moedaVT(valorTotal)}</b> para {quantidadeTotal} {quantidadeTotal === 1 ? "colaborador" : "colaboradores"}.
           {semValorTotal > 0 &&
             ` ${semValorTotal} ${semValorTotal === 1 ? "colaborador está" : "colaboradores estão"} sem valor: a unidade não tem % de adiantamento definido (ou falta o salário no cadastro).`}
           {" "}Valor = salário base × % da unidade. Quem for desligado ou afastado sai da lista sozinho.
