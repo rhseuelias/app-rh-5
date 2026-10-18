@@ -382,6 +382,14 @@ export default async function DashboardPage({
   const totalLinha = (l: LinhaEmpresa) => l.clt + l.pj + l.estagio;
 
   const nPct = (v: number, t: number) => (t > 0 ? Math.round((v / t) * 100) : 0);
+
+  // Feminino e masculino: sistema de RH + franquias (as franquias só informam a quantidade; usa-se 40% feminino e 60% masculino)
+  const PCT_FEM_FRANQUIAS = 40;
+  const franqFem = Math.round((emFranquias * PCT_FEM_FRANQUIAS) / 100);
+  const franqMas = emFranquias - franqFem;
+  const sexoFem = ativosMes.filter((c) => c.sexo === "Feminino").length + franqFem;
+  const sexoMas = ativosMes.filter((c) => c.sexo === "Masculino").length + franqMas;
+  const sexoSem = ativosMes.length - ativosMes.filter((c) => c.sexo === "Feminino" || c.sexo === "Masculino").length;
   const hojeTexto = `${dois(b.dia)}/${dois(b.mes)}/${b.ano}`;
   const COR_CLT = P7.azul;
   const COR_PJ = P7.laranja;
@@ -437,7 +445,7 @@ export default async function DashboardPage({
       {/* 1. Números do topo: total + cada empresa (mesma altura) */}
       <div
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:[grid-template-columns:var(--cols)]"
-        style={{ "--cols": `1.5fr repeat(${Math.max(linhasEmpresa.length, 1)}, minmax(0, 1fr))` } as CSSProperties}
+        style={{ "--cols": `1.5fr repeat(${Math.max(linhasEmpresa.length, 1)}, minmax(0, 1fr)) 1.25fr` } as CSSProperties}
       >
         <Cartao7 className="flex flex-col justify-between gap-4 sm:col-span-2 lg:col-span-1">
           <div>
@@ -498,6 +506,13 @@ export default async function DashboardPage({
             </div>
           </Cartao7>
         ))}
+
+        <Cartao7 className="flex flex-col gap-2 sm:col-span-2 lg:col-span-1">
+          <div className={ROTULO_COLUNA} style={{ color: P7.lab }}>
+            Feminino e masculino
+          </div>
+          <SexoPictograma fem={sexoFem} mas={sexoMas} sem={sexoSem} compacto />
+        </Cartao7>
       </div>
 
     </>
@@ -740,12 +755,7 @@ export default async function DashboardPage({
       {/* Sexo dos colaboradores */}
       <Cartao7>
         <Titulo7 sub="Colaboradores ativos no filtro atual">Feminino e Masculino</Titulo7>
-        {(() => {
-          const fem = ativosMes.filter((c) => c.sexo === "Feminino").length;
-          const mas = ativosMes.filter((c) => c.sexo === "Masculino").length;
-          const sem = ativosMes.length - fem - mas;
-          return <SexoPictograma fem={fem} mas={mas} sem={sem} />;
-        })()}
+        <SexoPictograma fem={sexoFem} mas={sexoMas} sem={sexoSem} />
       </Cartao7>
 
       {/* 5. Experiência terminando, aniversariantes e férias */}
