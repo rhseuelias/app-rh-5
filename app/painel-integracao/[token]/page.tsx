@@ -71,10 +71,10 @@ export default async function PainelPublicoPage({ params }: { params: { token: s
           </h1>
           <p style={{ fontSize: 13, color: "#5c5c5c", marginTop: 4 }}>
             {linhas.length} colaborador{linhas.length !== 1 ? "es" : ""} em integração · {atrasados} com etapa atrasada ·
-            somente visualização
+            abra o colaborador para confirmar o onboarding
           </p>
         </div>
-        <PainelTimeline linhas={linhas} gruposNomes={GRUPOS} somenteLeitura />
+        <PainelTimeline linhas={linhas} gruposNomes={GRUPOS} somenteLeitura tokenSupervisor={token} />
       </main>
     </div>
   );

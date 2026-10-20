@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { concluirEtapaAtual, finalizarTodasEtapas, removerDoPainelIntegracao, voltarEtapa } from "@/lib/actions-integracao";
+import { confirmarOnboardingSupervisor } from "@/lib/actions-confirmar-onboarding";
 import type { CSSProperties, ReactNode } from "react";
 import NomeColaborador from "@/components/NomeColaborador";
 
@@ -59,6 +61,8 @@ export interface LinhaTimeline {
   pendencias: { nome: string; atrasada: boolean; resp: string }[];
   etapas: { nome: string; resp: string; estado: "done" | "progress" | "late" | "pending"; direita: string }[];
   movimentos: { data: string; texto: string; quem: string }[];
+  /** Situação da etapa Onboarding: feito, liberado (pode confirmar), bloqueado (etapas anteriores pendentes) ou sem. */
+  onboarding: "feito" | "liberado" | "bloqueado" | "sem";
 }
 
 type Quick = "" | "atrasado" | "atencao" | "dentro" | "experiencia" | "novos";
@@ -115,10 +119,13 @@ export default function PainelTimeline({
   linhas,
   gruposNomes,
   somenteLeitura = false,
+  tokenSupervisor,
 }: {
   linhas: LinhaTimeline[];
   gruposNomes: string[];
   somenteLeitura?: boolean;
+  /** Só no link do supervisor: libera o botão "Confirmar onboarding". */
+  tokenSupervisor?: string;
 }) {
   const [filtros, setFiltros] = useState<Filtros>(VAZIO);
   const [quick, setQuick] = useState<Quick>("");
@@ -512,7 +519,7 @@ export default function PainelTimeline({
                       </div>
                     </div>
 
-                    {open && <Detalhe l={l} somenteLeitura={somenteLeitura} />}
+                    {open && <Detalhe l={l} somenteLeitura={somenteLeitura} tokenSupervisor={tokenSupervisor} />}
                   </div>
                 );
               })
@@ -614,7 +621,7 @@ function Legenda({ cor, texto }: { cor: string; texto: string }) {
 
 const SUBTITULO: CSSProperties = { ...CABECALHO, marginBottom: 10 };
 
-function Detalhe({ l, somenteLeitura }: { l: LinhaTimeline; somenteLeitura: boolean }) {
+function Detalhe({ l, somenteLeitura, tokenSupervisor }: { l: LinhaTimeline; somenteLeitura: boolean; tokenSupervisor?: string }) {
   const abrirFicha = `/onboarding/${l.colaboradorId}`;
   const botao: CSSProperties = {
     fontFamily: INTER,
@@ -705,6 +712,7 @@ function Detalhe({ l, somenteLeitura }: { l: LinhaTimeline; somenteLeitura: bool
           </a>
         </div>
         )}
+        {somenteLeitura && tokenSupervisor && <ConfirmarOnboarding l={l} token={tokenSupervisor} />}
       </div>
 
       {/* Últimas movimentações */}
@@ -730,6 +738,95 @@ function Detalhe({ l, somenteLeitura }: { l: LinhaTimeline; somenteLeitura: bool
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Link do supervisor: botão para confirmar o onboarding. Ao confirmar, o sistema marca a etapa como feita. */
+function ConfirmarOnboarding({ l, token }: { l: LinhaTimeline; token: string }) {
+  const router = useRouter();
+  const [nome, setNome] = useState("");
+  const [pendente, iniciar] = useTransition();
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
+
+  if (l.onboarding === "sem") return null;
+
+  const caixa: CSSProperties = { marginTop: 16, padding: 14, border: "1px solid #e7ddd2", borderRadius: 10, background: "#fff" };
+
+  if (l.onboarding === "feito") {
+    return (
+      <div style={{ ...caixa, background: "#e6f4ec", borderColor: "#bfe3cf" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#1f7a52" }}>✓ Onboarding confirmado</span>
+      </div>
+    );
+  }
+
+  if (l.onboarding === "bloqueado") {
+    return (
+      <div style={caixa}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#262626" }}>Onboarding</div>
+        <p style={{ fontSize: 12, color: "#737373", marginTop: 4 }}>
+          Ainda não liberado. O RH está terminando as etapas anteriores; quando liberar, o botão de confirmar aparece aqui.
+        </p>
+      </div>
+    );
+  }
+
+  function confirmar() {
+    setMsg(null);
+    if (!nome.trim()) {
+      setMsg({ ok: false, texto: "Escreva o seu nome para confirmar." });
+      return;
+    }
+    if (!window.confirm(`Confirmar que o onboarding de ${l.nome} foi feito?`)) return;
+    iniciar(async () => {
+      try {
+        const r = await confirmarOnboardingSupervisor(token, l.colaboradorId, nome);
+        setMsg({ ok: r.ok, texto: r.mensagem });
+        if (r.ok) router.refresh();
+      } catch {
+        setMsg({ ok: false, texto: "Não consegui confirmar agora. Tente de novo." });
+      }
+    });
+  }
+
+  return (
+    <div style={caixa}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "#262626" }}>Confirmar onboarding</div>
+      <p style={{ fontSize: 12, color: "#737373", marginTop: 4, marginBottom: 10 }}>
+        Já fez o onboarding de {l.nome.split(" ")[0]}? Escreva seu nome e confirme. O sistema marca como feito para o RH.
+      </p>
+      <input
+        value={nome}
+        onChange={(e) => setNome(e.target.value)}
+        placeholder="Seu nome"
+        maxLength={80}
+        style={{ width: "100%", fontSize: 13, padding: 8, border: "1px solid #e7ddd2", borderRadius: 8, marginBottom: 10 }}
+      />
+      <button
+        type="button"
+        disabled={pendente}
+        onClick={confirmar}
+        style={{
+          fontFamily: INTER,
+          fontSize: 13,
+          fontWeight: 600,
+          padding: "9px 16px",
+          borderRadius: 8,
+          border: "1px solid #262626",
+          background: "#262626",
+          color: "#fff",
+          cursor: pendente ? "wait" : "pointer",
+          opacity: pendente ? 0.6 : 1,
+        }}
+      >
+        {pendente ? "Confirmando..." : "Confirmar onboarding"}
+      </button>
+      {msg && (
+        <p role="status" style={{ fontSize: 12, fontWeight: 600, marginTop: 8, color: msg.ok ? "#1f7a52" : "#b42318" }}>
+          {msg.texto}
+        </p>
+      )}
     </div>
   );
 }

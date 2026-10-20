@@ -287,6 +287,16 @@ export async function montarPainelIntegracao(supabase: ClienteSupabase) {
       .slice(0, 5)
       .map(({ data, texto, quem }) => ({ data, texto, quem }));
 
+    // Situação da etapa Onboarding (usada pelo botão "Confirmar onboarding" do link do supervisor).
+    const etapaOnboarding = etapasDoProcesso.find((e) => e.chave === "onboarding");
+    const onboarding: LinhaTimeline["onboarding"] = !etapaOnboarding
+      ? "sem"
+      : feita(etapaOnboarding)
+      ? "feito"
+      : etapaOnboarding.bloqueada
+      ? "bloqueado"
+      : "liberado";
+
     const ultimaEtapa = etapasDoProcesso[etapasDoProcesso.length - 1];
     const previsao = fmt(p.data_fim_experiencia ?? ultimaEtapa?.prazo ?? null);
 
@@ -327,6 +337,7 @@ export async function montarPainelIntegracao(supabase: ClienteSupabase) {
       pendencias,
       etapas: etapasLista,
       movimentos,
+      onboarding,
     };
   });
 

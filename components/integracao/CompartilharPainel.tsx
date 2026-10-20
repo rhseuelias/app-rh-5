@@ -106,7 +106,8 @@ export default function CompartilharPainel({
           }}
         >
           <p style={{ fontSize: 13, color: "#262626", marginBottom: 12 }}>
-            Quem receber o link vê o painel <b>só para acompanhar</b>. Não muda nada nem entra no resto do sistema.
+            Quem receber o link acompanha o painel e pode <b>confirmar o onboarding</b> de cada colaborador (o sistema marca como feito). Não
+            acessa nem muda mais nada no sistema.
           </p>
 
           <div style={{ fontSize: 12, fontWeight: 700, color: "#93440c", marginBottom: 6, textTransform: "uppercase" }}>
