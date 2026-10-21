@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Entrevista técnica — Grupo Seu Elias",
   robots: { index: false, follow: false },
+  referrer: "no-referrer",
 };
 
 function Aviso({ titulo, texto }: { titulo: string; texto: string }) {

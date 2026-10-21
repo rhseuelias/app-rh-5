@@ -29,6 +29,7 @@ export default function CompartilharPainel({
 }) {
   const [aberto, setAberto] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+  const [expira, setExpira] = useState<string | null>(null);
   const [modo, setModo] = useState<"todos" | "escolher">("todos");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [busca, setBusca] = useState("");
@@ -37,6 +38,7 @@ export default function CompartilharPainel({
 
   function aplicar(r: RespostaLinkPainel) {
     setToken(r.token);
+    setExpira(r.token ? r.expira ?? null : null);
     if (r.token) {
       setModo(r.selecionados ? "escolher" : "todos");
       setSel(new Set(r.selecionados ?? []));
@@ -163,8 +165,15 @@ export default function CompartilharPainel({
                 readOnly
                 value={url}
                 onFocus={(e) => e.currentTarget.select()}
-                style={{ width: "100%", fontSize: 12, padding: 8, border: "1px solid #e7ddd2", borderRadius: 8, marginBottom: 10 }}
+                style={{ width: "100%", fontSize: 12, padding: 8, border: "1px solid #e7ddd2", borderRadius: 8, marginBottom: 6 }}
               />
+              <p style={{ fontSize: 12, marginBottom: 10, color: expira && new Date(expira).getTime() < Date.now() ? "#b42318" : "#737373" }}>
+                {expira
+                  ? new Date(expira).getTime() < Date.now()
+                    ? "Este link venceu. Clique em Gerar link novo."
+                    : `Vale por 24 horas (até ${new Date(expira).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} às ${new Date(expira).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}). Depois, gere um link novo.`
+                  : "Este link não tem validade registrada. Clique em Gerar link novo."}
+              </p>
               <div className="flex flex-wrap gap-2">
                 <button type="button" style={botaoEscuro} onClick={copiar}>
                   Copiar link

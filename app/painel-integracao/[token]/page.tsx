@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Painel de Integração — acompanhamento",
   robots: { index: false, follow: false },
+  referrer: "no-referrer",
 };
 
 function Aviso({ titulo, texto }: { titulo: string; texto: string }) {
@@ -35,12 +36,15 @@ export default async function PainelPublicoPage({ params }: { params: { token: s
 
   const { data: link } = await admin
     .from("links_painel_integracao")
-    .select("id, ativo, colaboradores_ids")
+    .select("id, ativo, colaboradores_ids, expira_em")
     .eq("token", token)
     .maybeSingle();
 
   if (!link || !link.ativo) {
     return <Aviso titulo="Link desativado" texto="Este link não funciona mais. Peça ao RH um link novo." />;
+  }
+  if (!link.expira_em || new Date(link.expira_em).getTime() < Date.now()) {
+    return <Aviso titulo="Link expirado" texto="Este link venceu. Peça ao RH um link novo." />;
   }
 
   await admin.from("links_painel_integracao").update({ ultimo_acesso: new Date().toISOString() }).eq("id", link.id);

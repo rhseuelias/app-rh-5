@@ -7,6 +7,7 @@ import { concluirEtapaAtual, finalizarTodasEtapas, removerDoPainelIntegracao, vo
 import { confirmarOnboardingSupervisor } from "@/lib/actions-confirmar-onboarding";
 import type { CSSProperties, ReactNode } from "react";
 import NomeColaborador from "@/components/NomeColaborador";
+import PesquisaIntegracaoBox from "@/components/integracao/PesquisaIntegracaoBox";
 
 export type EstadoEtapa = "done" | "progress" | "late" | "attention" | "pending" | "na";
 export type StatusLinha = "dentro" | "andamento" | "atencao" | "atrasado" | "naoiniciado";
@@ -697,21 +698,7 @@ function Detalhe({ l, somenteLeitura, tokenSupervisor }: { l: LinhaTimeline; som
             ))}
           </div>
         )}
-        {!somenteLeitura && (
-        <div className="flex flex-wrap gap-2" style={{ marginTop: 14 }}>
-          <AcoesEtapa l={l} botao={botao} />
-          <BotaoCobrar l={l} estilo={botao} />
-          <Link href={abrirFicha} style={botao}>
-            Abrir ficha
-          </Link>
-          <a href={`/api/ficha-admissao/${l.colaboradorId}/pdf`} style={botao} title="Baixar a ficha de admissão em PDF">
-            Ficha de admissão (PDF)
-          </a>
-          <a href={`/api/ficha-admissao/${l.colaboradorId}/excel`} style={botao} title="Baixar a ficha de admissão em Excel">
-            Ficha de admissão (Excel)
-          </a>
-        </div>
-        )}
+        {!somenteLeitura && <AcoesEtapa l={l} botao={botao} abrirFicha={abrirFicha} />}
         {somenteLeitura && tokenSupervisor && <ConfirmarOnboarding l={l} token={tokenSupervisor} />}
       </div>
 
@@ -738,6 +725,9 @@ function Detalhe({ l, somenteLeitura, tokenSupervisor }: { l: LinhaTimeline; som
           </div>
         )}
       </div>
+
+      {/* Pesquisa de integração: link para o colaborador responder no celular (só para o RH, nunca no link do supervisor) */}
+      {!somenteLeitura && <PesquisaIntegracaoBox colaboradorId={l.colaboradorId} nome={l.nome} />}
     </div>
   );
 }
@@ -867,8 +857,23 @@ function BotaoCobrar({ l, estilo }: { l: LinhaTimeline; estilo: CSSProperties })
   );
 }
 
-/** Concluir etapa · Voltar etapa · Finalizar todas as etapas */
-function AcoesEtapa({ l, botao }: { l: LinhaTimeline; botao: CSSProperties }) {
+/** Título pequeno de cada grupo de botões. */
+const TITULO_GRUPO: CSSProperties = { ...CABECALHO, marginBottom: 0 };
+
+function GrupoAcoes({ titulo, primeiro, children }: { titulo: string; primeiro?: boolean; children: ReactNode }) {
+  return (
+    <div
+      className="flex flex-col"
+      style={{ gap: 8, paddingTop: primeiro ? 0 : 14, marginTop: primeiro ? 0 : 14, borderTop: primeiro ? "none" : "1px solid #f1e4d6" }}
+    >
+      <div style={TITULO_GRUPO}>{titulo}</div>
+      {children}
+    </div>
+  );
+}
+
+/** Botões de ação do colaborador, em grupos: Etapa · Cobrança · Colaborador · Excluir do painel. */
+function AcoesEtapa({ l, botao, abrirFicha }: { l: LinhaTimeline; botao: CSSProperties; abrirFicha: string }) {
   const [pendente, iniciar] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
 

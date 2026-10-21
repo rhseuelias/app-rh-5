@@ -10,7 +10,12 @@ export interface RespostaLinkPainel {
   /** null = o link mostra todos os colaboradores. */
   selecionados: string[] | null;
   mensagem: string;
+  /** Até quando o link vale (24 horas depois de criado). */
+  expira?: string | null;
 }
+
+/** Quantas horas o link do supervisor vale. Depois disso o RH gera um novo. */
+const HORAS_VALIDADE_LINK = 24;
 
 async function exigirLogin(): Promise<string | null> {
   const supabase = createClient();
@@ -25,7 +30,7 @@ const ERRO_TABELA: RespostaLinkPainel = {
   ok: false,
   token: null,
   selecionados: null,
-  mensagem: "Não consegui. Rode o arquivo migration_020_link_painel_integracao.sql no Supabase e tente de novo.",
+  mensagem: "Não consegui. Rode os arquivos migration_020_link_painel_integracao.sql e migration_042_pesquisa_integracao.sql no Supabase e tente de novo.",
 };
 
 function limpar(ids: string[] | null): string[] | null {
@@ -40,13 +45,19 @@ export async function obterLinkPainel(): Promise<RespostaLinkPainel> {
     const admin = createAdminClient();
     const { data, error } = await admin
       .from("links_painel_integracao")
-      .select("token, colaboradores_ids")
+      .select("token, colaboradores_ids, expira_em")
       .eq("ativo", true)
       .order("criado_em", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) return ERRO_TABELA;
-    return { ok: true, token: data?.token ?? null, selecionados: data?.colaboradores_ids ?? null, mensagem: "" };
+    return {
+      ok: true,
+      token: data?.token ?? null,
+      selecionados: data?.colaboradores_ids ?? null,
+      mensagem: "",
+      expira: data?.expira_em ?? null,
+    };
   } catch {
     return ERRO_TABELA;
   }
@@ -61,9 +72,12 @@ export async function gerarLinkPainel(ids: string[] | null = null): Promise<Resp
     const off = await admin.from("links_painel_integracao").update({ ativo: false }).eq("ativo", true);
     if (off.error) return ERRO_TABELA;
     const token = randomBytes(24).toString("hex");
-    const { error } = await admin.from("links_painel_integracao").insert({ token, criado_por: email, colaboradores_ids: limpar(ids) });
+    const expira = new Date(Date.now() + HORAS_VALIDADE_LINK * 3600000).toISOString();
+    const { error } = await admin
+      .from("links_painel_integracao")
+      .insert({ token, criado_por: email, colaboradores_ids: limpar(ids), expira_em: expira });
     if (error) return ERRO_TABELA;
-    return { ok: true, token, selecionados: limpar(ids), mensagem: "Link criado." };
+    return { ok: true, token, selecionados: limpar(ids), mensagem: "Link criado.", expira };
   } catch {
     return ERRO_TABELA;
   }

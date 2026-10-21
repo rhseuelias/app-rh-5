@@ -31,10 +31,13 @@ export async function confirmarOnboardingSupervisor(
     // 1) o link precisa estar ativo e o colaborador precisa estar na seleção do link
     const { data: link } = await admin
       .from("links_painel_integracao")
-      .select("id, ativo, colaboradores_ids")
+      .select("id, ativo, colaboradores_ids, expira_em")
       .eq("token", token)
       .maybeSingle();
     if (!link || !link.ativo) return { ok: false, mensagem: "Este link não funciona mais. Peça ao RH um link novo." };
+    if (!link.expira_em || new Date(link.expira_em).getTime() < Date.now()) {
+      return { ok: false, mensagem: "O link expirou. Peça ao RH um link novo." };
+    }
     if (Array.isArray(link.colaboradores_ids) && !link.colaboradores_ids.includes(colaboradorId)) {
       return { ok: false, mensagem: "Este colaborador não está liberado neste link." };
     }
