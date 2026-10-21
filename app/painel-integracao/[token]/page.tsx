@@ -55,6 +55,16 @@ export default async function PainelPublicoPage({ params }: { params: { token: s
   const linhas = escolhidos ? painel.linhas.filter((l) => escolhidos.includes(l.colaboradorId)) : painel.linhas;
   const atrasados = linhas.filter((l) => l.status === "atrasado").length;
 
+  // O RH escolheu colaboradores, mas nenhum deles está (mais) no painel: explica em vez de mostrar uma tela vazia.
+  if (escolhidos && linhas.length === 0) {
+    return (
+      <Aviso
+        titulo="Nenhum colaborador liberado"
+        texto="O RH ainda não liberou nenhum colaborador neste link, ou ele saiu do Painel de Integração. Peça ao RH para salvar a seleção ou gerar um link novo."
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#faf7f3]">
       <main className="p-4 md:p-10 max-w-7xl mx-auto w-full space-y-5" style={{ fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" }}>

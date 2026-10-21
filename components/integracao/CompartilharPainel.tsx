@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { CSSProperties } from "react";
 import {
   desativarLinkPainel,
@@ -22,6 +22,9 @@ const botao: CSSProperties = {
 };
 const botaoEscuro: CSSProperties = { ...botao, background: "#262626", color: "#fff", borderColor: "#262626" };
 
+/** Resume a seleção em um texto, para saber se mudou desde a última vez que foi salva. */
+const chaveSelecao = (ids: string[] | null) => (ids ? JSON.stringify([...ids].sort()) : "todos");
+
 export default function CompartilharPainel({
   colaboradores,
 }: {
@@ -30,6 +33,7 @@ export default function CompartilharPainel({
   const [aberto, setAberto] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [expira, setExpira] = useState<string | null>(null);
+  const [salvo, setSalvo] = useState<string | null>(null); // seleção que está gravada no link
   const [modo, setModo] = useState<"todos" | "escolher">("todos");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [busca, setBusca] = useState("");
@@ -42,6 +46,7 @@ export default function CompartilharPainel({
     if (r.token) {
       setModo(r.selecionados ? "escolher" : "todos");
       setSel(new Set(r.selecionados ?? []));
+      setSalvo(chaveSelecao(r.selecionados));
     }
     setMsg(r.mensagem);
   }
@@ -56,19 +61,49 @@ export default function CompartilharPainel({
   const url = token && typeof window !== "undefined" ? `${window.location.origin}/painel-integracao/${token}` : "";
   const idsAtuais = modo === "escolher" ? Array.from(sel) : null;
   const semNinguem = modo === "escolher" && sel.size === 0;
+  // true quando o RH marcou/desmarcou alguém mas ainda não gravou no link
+  const naoSalvo = !!token && salvo !== null && chaveSelecao(idsAtuais) !== salvo;
 
   const visiveis = useMemo(() => {
     const t = busca.trim().toLowerCase();
     return t ? colaboradores.filter((c) => c.nome.toLowerCase().includes(t)) : colaboradores;
   }, [colaboradores, busca]);
 
-  function alternar(id: string) {
-    setSel((antigo) => {
-      const novo = new Set(antigo);
-      if (novo.has(id)) novo.delete(id);
-      else novo.add(id);
-      return novo;
+  // Salva sozinho a cada mudança (uma de cada vez, na ordem em que o RH clicou).
+  const fila = useRef<Promise<void>>(Promise.resolve());
+  function salvarAuto(ids: string[] | null) {
+    if (!token) return; // ainda não existe link: a seleção é gravada quando o link for criado
+    if (ids && ids.length === 0) {
+      setMsg("Marque pelo menos um colaborador. O link só salva com alguém marcado.");
+      return;
+    }
+    setMsg("Salvando...");
+    fila.current = fila.current.then(async () => {
+      try {
+        const r = await salvarSelecaoLinkPainel(ids);
+        if (r.ok) {
+          setSalvo(chaveSelecao(ids));
+          setMsg("Salvo automaticamente.");
+        } else {
+          setMsg(r.mensagem || "Não consegui salvar agora. Tente de novo.");
+        }
+      } catch {
+        setMsg("Não consegui salvar agora. Tente de novo.");
+      }
     });
+  }
+
+  function mudarSelecao(novoModo: "todos" | "escolher", novoSel: Set<string>) {
+    setModo(novoModo);
+    setSel(novoSel);
+    salvarAuto(novoModo === "escolher" ? Array.from(novoSel) : null);
+  }
+
+  function alternar(id: string) {
+    const novo = new Set(sel);
+    if (novo.has(id)) novo.delete(id);
+    else novo.add(id);
+    mudarSelecao(modo, novo);
   }
 
   function agir(fn: () => Promise<RespostaLinkPainel>) {
@@ -78,9 +113,19 @@ export default function CompartilharPainel({
   }
 
   async function copiar() {
+    // Antes de copiar, grava a seleção: assim o supervisor sempre vê quem o RH marcou.
+    if (naoSalvo) {
+      if (semNinguem) {
+        setMsg("Marque pelo menos um colaborador antes de copiar o link.");
+        return;
+      }
+      const r = await salvarSelecaoLinkPainel(idsAtuais);
+      aplicar(r);
+      if (!r.ok) return;
+    }
     try {
       await navigator.clipboard.writeText(url);
-      setMsg("Link copiado! Cole no WhatsApp ou no e-mail.");
+      setMsg(naoSalvo ? "Seleção salva e link copiado! Cole no WhatsApp ou no e-mail." : "Link copiado! Cole no WhatsApp ou no e-mail.");
     } catch {
       setMsg("Não deu para copiar sozinho. Selecione o link e copie.");
     }
@@ -116,11 +161,11 @@ export default function CompartilharPainel({
             Quem o supervisor vai ver
           </div>
           <label style={{ display: "flex", gap: 8, fontSize: 13, marginBottom: 4 }}>
-            <input type="radio" checked={modo === "todos"} onChange={() => setModo("todos")} />
+            <input type="radio" checked={modo === "todos"} onChange={() => mudarSelecao("todos", sel)} />
             Todos os colaboradores em integração
           </label>
           <label style={{ display: "flex", gap: 8, fontSize: 13, marginBottom: 8 }}>
-            <input type="radio" checked={modo === "escolher"} onChange={() => setModo("escolher")} />
+            <input type="radio" checked={modo === "escolher"} onChange={() => mudarSelecao("escolher", sel)} />
             Só os que eu escolher
           </label>
 
@@ -147,11 +192,11 @@ export default function CompartilharPainel({
               <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 8px", borderTop: "1px solid #e7ddd2", fontSize: 12, color: "#5c5c5c" }}>
                 <span>{sel.size} escolhido{sel.size !== 1 ? "s" : ""}</span>
                 <span>
-                  <button type="button" style={{ color: "#b85c12" }} onClick={() => setSel(new Set(colaboradores.map((c) => c.id)))}>
+                  <button type="button" style={{ color: "#b85c12" }} onClick={() => mudarSelecao("escolher", new Set(colaboradores.map((c) => c.id)))}>
                     Marcar todos
                   </button>
                   {" · "}
-                  <button type="button" style={{ color: "#b85c12" }} onClick={() => setSel(new Set())}>
+                  <button type="button" style={{ color: "#b85c12" }} onClick={() => mudarSelecao("escolher", new Set())}>
                     Limpar
                   </button>
                 </span>
@@ -174,13 +219,18 @@ export default function CompartilharPainel({
                     : `Vale por 24 horas (até ${new Date(expira).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} às ${new Date(expira).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}). Depois, gere um link novo.`
                   : "Este link não tem validade registrada. Clique em Gerar link novo."}
               </p>
+              {naoSalvo && (
+                <p role="alert" style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: "#93440c", background: "#fff3e6", borderRadius: 8, padding: "8px 10px" }}>
+                  A seleção ainda não foi salva. Marque pelo menos um colaborador (salva sozinho) ou clique em Salvar seleção.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <button type="button" style={botaoEscuro} onClick={copiar}>
                   Copiar link
                 </button>
                 <button
                   type="button"
-                  style={{ ...botao, opacity: semNinguem ? 0.5 : 1 }}
+                  style={{ ...(naoSalvo ? botaoEscuro : botao), opacity: semNinguem ? 0.5 : 1 }}
                   disabled={pendente || semNinguem}
                   onClick={() => agir(() => salvarSelecaoLinkPainel(idsAtuais))}
                 >
