@@ -68,6 +68,43 @@ export default function ContratoPJEmissao({
           </div>
         </>
       )}
+
+      {!comercial && (
+        <div className="space-y-2 pt-3 border-t border-slate-100 mt-3">
+          <h3 className="text-sm font-medium text-slate-700">🎓 Contrato Bolsa de Estudos</h3>
+          <p className="text-xs text-slate-500">
+            Termo que complementa o Contrato de Parceria. Sai preenchido com os dados do parceiro e do salão (empresa). O
+            contrato de parceria acima não muda.
+          </p>
+          <form
+            method="get"
+            action={`/api/contratos-pj/${colaboradorId}/bolsa`}
+            className="grid gap-2 sm:grid-cols-[2fr_1fr_1fr_auto] items-end"
+          >
+            <label className="text-xs text-slate-500 space-y-1">
+              <span>Curso</span>
+              <input
+                type="text"
+                name="curso"
+                required
+                defaultValue="Aperfeiçoamento em Barbearia e Técnicas de Corte Masculino"
+                className="input !py-1 text-sm"
+              />
+            </label>
+            <label className="text-xs text-slate-500 space-y-1">
+              <span>Valor da mensalidade (R$)</span>
+              <input type="text" name="valor" inputMode="decimal" required placeholder="350,00" className="input !py-1 text-sm" />
+            </label>
+            <label className="text-xs text-slate-500 space-y-1">
+              <span>Nº de parcelas</span>
+              <input type="number" name="parcelas" min={1} max={99} required className="input !py-1 text-sm" />
+            </label>
+            <button type="submit" className="btn-secondary text-sm">
+              ⬇️ Baixar Contrato Bolsa (Word)
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
