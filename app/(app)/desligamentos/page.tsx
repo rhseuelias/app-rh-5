@@ -74,7 +74,6 @@ export default async function DesligamentosDashboard({ searchParams }: { searchP
   const acoes = (
     <>
       <LinkBotao href="/desligamentos/historico">Histórico</LinkBotao>
-      <LinkBotao href="/desligamentos/registrar" primario>+ Registrar desligamento</LinkBotao>
     </>
   );
 
@@ -158,7 +157,7 @@ export default async function DesligamentosDashboard({ searchParams }: { searchP
     <div className="space-y-5">
       <CabecalhoModulo
         titulo="Desligamentos"
-        subtitulo="Visão do período: quantos saíram, por quê e em relação ao tamanho da equipe."
+        subtitulo="Visão do período: quantos saíram, por quê e em relação ao tamanho da equipe. Para registrar um desligamento, abra a ficha do colaborador e clique em Desligar."
         acoes={acoes}
       />
 

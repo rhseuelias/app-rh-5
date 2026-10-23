@@ -191,7 +191,6 @@ const GRUPOS: Grupo[] = [
       { href: "/ferias/simulacao", label: "Simulação de Férias", icon: "ferias" },
       { href: "/previsao-ferias", label: "Previsão de Férias", icon: "relatorio" },
       { href: "/desligamentos", label: "Desligamentos", icon: "relatorio", restrito: true },
-      { href: "/desligamentos/registrar", label: "Registrar desligamento", icon: "colaboradores", restrito: true },
       { href: "/desligamentos/historico", label: "Histórico de desligamentos", icon: "relatorio", restrito: true },
       { href: "/desligamentos/analise", label: "Análise estratégica", icon: "custo", restrito: true },
     ],

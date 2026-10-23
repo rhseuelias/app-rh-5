@@ -78,7 +78,6 @@ export default async function HistoricoDesligamentos({ searchParams }: { searchP
   const acoes = (
     <>
       <LinkBotao href="/desligamentos">Dashboard</LinkBotao>
-      <LinkBotao href="/desligamentos/registrar" primario>+ Registrar desligamento</LinkBotao>
     </>
   );
   if (!res.ok) {

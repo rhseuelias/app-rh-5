@@ -63,6 +63,7 @@ function atualizarTelas() {
   revalidatePath("/desligamentos/historico");
   revalidatePath("/desligamentos/analise");
   revalidatePath("/colaboradores");
+  revalidatePath("/colaboradores/[id]", "page");
   revalidatePath("/dashboard");
 }
 
@@ -164,7 +165,14 @@ export async function registrarDesligamento(e: EntradaRegistro): Promise<Respost
   if (e.dataDesligamento <= hojeSP()) {
     const { error: erroStatus } = await supabase
       .from("colaboradores")
-      .update({ status: "desligado", data_desligamento: e.dataDesligamento })
+      .update({
+        status: "desligado",
+        data_desligamento: e.dataDesligamento,
+        // campos antigos da ficha, mantidos para as telas que já os mostram
+        tipo_rescisao: e.tipoRescisao.trim(),
+        motivo_desligamento: e.motivoComplementar?.trim() || e.motivoPrincipal.trim(),
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", e.colaboradorId);
     if (erroStatus) {
       return { ok: false, erro: `O desligamento foi salvo, mas o status do colaborador não mudou: ${mensagem(erroStatus.message)}` };
