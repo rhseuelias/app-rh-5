@@ -762,6 +762,14 @@ export default async function DashboardPage({
 
       {blocoFolha}
 
+      {/* Divisão: acompanhamento dos processos de RH */}
+      <div
+        className="rounded-[6px] px-4 py-2 text-center text-[19px] font-extrabold italic text-white"
+        style={{ background: "#000", fontFamily: MANROPE }}
+      >
+        Acompanhamento dos Processos de RH
+      </div>
+
       {/* 3. Alertas do dia: quatro quadrados com o semáforo */}
       <AlertasTopo
         etapasAtrasadas={atrasadasPainel}
