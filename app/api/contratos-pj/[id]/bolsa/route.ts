@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { combinarDadosEmpresa } from "@/lib/dados-empresa";
 import { gerarContratoBolsaDocx } from "@/lib/contrato-bolsa";
-import type { Colaborador, Empresa } from "@/types/db";
+import type { Colaborador, Empresa, Unidade } from "@/types/db";
 
 /** "350", "350,00" ou "1.250,50" -> número. */
 function lerValor(txt: string | null): number {
@@ -39,8 +39,14 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const { data } = await supabase.from("empresas").select("*").eq("id", colaborador.empresa_id).maybeSingle();
     empresa = (data as Empresa) ?? null;
   }
-  // Salão-Parceiro = a empresa do colaborador (razão social, CNPJ e sede cadastrados em Projeção de Custo > Empresas / Unidades)
-  const salao = combinarDadosEmpresa(empresa, null);
+  let unidade: Unidade | null = null;
+  if (colaborador.unidade_id) {
+    const { data } = await supabase.from("unidades").select("*").eq("id", colaborador.unidade_id).maybeSingle();
+    unidade = (data as Unidade) ?? null;
+  }
+  // Salão-Parceiro = a unidade onde o parceiro atua (razão social, CNPJ e endereço cadastrados em
+  // Projeção de Custo > Empresas / Unidades); o que a unidade não tiver vem da empresa.
+  const salao = combinarDadosEmpresa(empresa, unidade);
   if (!salao.razao || !salao.cnpj) {
     return ERRO("Faltam a razão social e o CNPJ da empresa. Complete em Projeção de Custo > Empresas / Unidades e tente de novo.");
   }
