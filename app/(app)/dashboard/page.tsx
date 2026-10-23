@@ -28,6 +28,7 @@ import AvisosRescisoes from "@/components/dashboard/AvisosRescisoes";
 import AlertasTopo from "@/components/dashboard/AlertasTopo";
 import BotaoImprimir from "@/components/dashboard/BotaoImprimir";
 import ColaboradoresPorAno, { type PontoAno } from "@/components/dashboard/ColaboradoresPorAno";
+import DesligamentosPorAno, { type RegistroDeslDash } from "@/components/dashboard/DesligamentosPorAno";
 import { montarLinhasIntegracao } from "@/components/dashboard/integracao-dados";
 import { LegendaSemaforo } from "@/components/dashboard/Semaforo";
 import ClimaTreinamento from "@/components/dashboard/ClimaTreinamento";
@@ -118,6 +119,7 @@ export default async function DashboardPage({
     { data: unidades },
     { data: outrasEmpresasRaw },
     { data: historicoRaw, error: erroHistorico },
+    { data: desligRaw },
   ] = await Promise.all([
     supabase.from("colaboradores").select("*"),
     supabase.from("empresas").select("*"),
@@ -130,6 +132,9 @@ export default async function DashboardPage({
     supabase.from("unidades").select("*"),
     supabase.from("colaborador_outras_empresas").select("*"),
     supabase.from("historico_colaboradores").select("*"),
+    supabase
+      .from("desligamentos_registro")
+      .select("empresa, unidade, data_desligamento, iniciativa, tipo_rescisao, status, colaborador_id, data_admissao"),
   ]);
 
   const lista = (colaboradores ?? []) as Colaborador[];
@@ -523,6 +528,30 @@ export default async function DashboardPage({
 
     </>
   );
+  // Desligamentos por ano (módulo Desligamentos). Só registros ativos, dentro do filtro de empresa.
+  const nomeEmpresaFiltro = empresaEscolhida ? normalizar(empresaEscolhida.nome) : null;
+  type LinhaDeslBruta = RegistroDeslDash & { status: string; colaborador_id: string | null; data_admissao: string | null };
+  const registrosDeslEscopo = ((desligRaw ?? []) as LinhaDeslBruta[]).filter(
+    (r) =>
+      r.status === "ativo" &&
+      empresaSel !== "franquias" &&
+      (empresaSel === "todas" || (nomeEmpresaFiltro !== null && normalizar(r.empresa ?? "") === nomeEmpresaFiltro))
+  );
+  // admissões: quem está no cadastro + quem saiu e só existe no histórico importado (com data de admissão)
+  const admissoesDesl = [
+    ...escopo.map((c) => dia10(c.data_admissao)).filter((d) => d.length === 10),
+    ...registrosDeslEscopo.filter((r) => !r.colaborador_id && r.data_admissao).map((r) => dia10(r.data_admissao)),
+  ];
+  const blocoDesligamentos =
+    empresaSel === "franquias" ? null : (
+      <DesligamentosPorAno
+        registros={registrosDeslEscopo}
+        admissoes={admissoesDesl}
+        anoAtual={b.ano}
+        agrupar={empresaSel === "todas" ? "empresa" : "unidade"}
+        nomeEscopo={empresaSel === "todas" ? "Todas as empresas" : empresaEscolhida?.nome ?? ""}
+      />
+    );
   const blocoCrescimento = (
     <>
       {/* Crescimento por ano */}
@@ -672,6 +701,7 @@ export default async function DashboardPage({
 
         {blocoKpi}
         {blocoCrescimento}
+        {blocoDesligamentos}
         {blocoMetas}
         {blocoFolha}
 
@@ -725,6 +755,8 @@ export default async function DashboardPage({
       {blocoKpi}
 
       {blocoCrescimento}
+
+      {blocoDesligamentos}
 
       {blocoMetas}
 
