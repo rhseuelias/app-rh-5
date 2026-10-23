@@ -158,7 +158,7 @@ function Icone({ nome }: { nome: IconeNome }) {
   }
 }
 
-type Item = { href: string; label: string; icon: IconeNome };
+type Item = { href: string; label: string; icon: IconeNome; restrito?: boolean };
 type Grupo = { id: string; nome: string; restrito?: boolean; itens: Item[] };
 
 // Menu em 6 blocos. Blocos "restrito" não aparecem para o perfil "assistente" (ex.: Francielle):
@@ -190,6 +190,10 @@ const GRUPOS: Grupo[] = [
       { href: "/ferias", label: "Férias", icon: "ferias" },
       { href: "/ferias/simulacao", label: "Simulação de Férias", icon: "ferias" },
       { href: "/previsao-ferias", label: "Previsão de Férias", icon: "relatorio" },
+      { href: "/desligamentos", label: "Desligamentos", icon: "relatorio", restrito: true },
+      { href: "/desligamentos/registrar", label: "Registrar desligamento", icon: "colaboradores", restrito: true },
+      { href: "/desligamentos/historico", label: "Histórico de desligamentos", icon: "relatorio", restrito: true },
+      { href: "/desligamentos/analise", label: "Análise estratégica", icon: "custo", restrito: true },
     ],
   },
   {
@@ -246,7 +250,10 @@ function Seta({ aberta }: { aberta: boolean }) {
 export default function Sidebar({ papel }: { papel?: string | null }) {
   const pathname = usePathname();
   // perfil "assistente" (ex.: Francielle) não vê os blocos restritos
-  const grupos = papel === "assistente" ? GRUPOS.filter((g) => !g.restrito) : GRUPOS;
+  const grupos =
+    papel === "assistente"
+      ? GRUPOS.filter((g) => !g.restrito).map((g) => ({ ...g, itens: g.itens.filter((i) => !i.restrito) }))
+      : GRUPOS;
 
   // item ativo = o endereço mais específico que bate com a tela atual
   // (assim "Férias" não fica marcado junto com "Simulação de Férias")
