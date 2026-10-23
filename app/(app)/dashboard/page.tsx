@@ -764,10 +764,27 @@ export default async function DashboardPage({
 
       {/* Divisão: acompanhamento dos processos de RH */}
       <div
-        className="rounded-[6px] px-4 py-2 text-center text-[19px] font-extrabold italic text-white"
-        style={{ background: "#000", fontFamily: MANROPE }}
+        className="mt-3 flex items-center gap-4 rounded-[14px] px-5 py-4"
+        style={{ background: `linear-gradient(90deg, ${P7.ink} 0%, ${P7.deep} 100%)`, fontFamily: MANROPE, color: "#fff" }}
       >
-        Acompanhamento dos Processos de RH
+        <span
+          aria-hidden="true"
+          className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full"
+          style={{ background: "rgba(255,255,255,0.14)" }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 11l3 3L22 4" />
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+          </svg>
+        </span>
+        <div className="min-w-0">
+          <div className="text-[18px] font-extrabold uppercase leading-tight tracking-[0.06em]">
+            Acompanhamento dos Processos de RH
+          </div>
+          <div className="mt-[2px] text-[12px] font-medium" style={{ color: "rgba(255,255,255,0.75)" }}>
+            Integração, rescisões, experiência e férias, o que precisa de ação agora
+          </div>
+        </div>
       </div>
 
       {/* 3. Alertas do dia: quatro quadrados com o semáforo */}
