@@ -40,7 +40,7 @@ function um(p: Param): string {
 
 export function lerFiltros(sp: Record<string, Param>): FiltrosDesl {
   const p = um(sp.periodo);
-  const periodo: PeriodoChave = ["mes", "trimestre", "semestre", "ano", "personalizado"].includes(p)
+  const periodo: PeriodoChave = ["todos", "mes", "trimestre", "semestre", "ano", "personalizado"].includes(p)
     ? (p as PeriodoChave)
     : "semestre";
   return {
@@ -55,6 +55,19 @@ export function lerFiltros(sp: Record<string, Param>): FiltrosDesl {
 
 export function intervalosDosFiltros(f: FiltrosDesl): { atual: Intervalo; anterior: Intervalo } {
   return calcularIntervalos(f.periodo, hojeSP(), f.de, f.ate);
+}
+
+/** Igual a intervalosDosFiltros, mas "Todos" começa na data mais antiga que existe nos dados (desligamento ou admissão). */
+export function intervalosComBase(f: FiltrosDesl, base: BaseDesligamentos): { atual: Intervalo; anterior: Intervalo } {
+  const r = intervalosDosFiltros(f);
+  if (f.periodo !== "todos") return r;
+  const datas = [
+    ...base.registros.map((x) => x.data_desligamento),
+    ...base.quadro.map((c) => c.admissao).filter((d): d is string => !!d),
+  ].sort();
+  const de = datas[0] ?? r.atual.ate;
+  // não existe "período anterior" quando se olha tudo: fica vazio
+  return { atual: { de, ate: r.atual.ate }, anterior: { de: "1990-01-01", ate: "1990-01-02" } };
 }
 
 export async function carregarBase(): Promise<ResultadoBase> {

@@ -4,7 +4,7 @@ import {
   carregarBase,
   filtrarQuadro,
   filtrarRegistros,
-  intervalosDosFiltros,
+  intervalosComBase,
   lerFiltros,
 } from "@/lib/desligamentos-dados";
 import {
@@ -47,19 +47,18 @@ function resumo(regs: RegistroDesligamento[]) {
     const d = tempoDeCasaDias(r);
     return d !== null && d <= 90;
   }).length;
-  const semEntrevista = regs.filter((r) => r.entrevista !== "realizada" && r.entrevista !== "nao_se_aplica").length;
-  return { total: regs.length, vol, invol, ate90, semEntrevista };
+  return { total: regs.length, vol, invol, ate90 };
 }
 
 function meses(i: Intervalo): string[] {
   const lista: string[] = [];
   let m = i.de.slice(0, 7);
   const fim = i.ate.slice(0, 7);
-  while (m <= fim && lista.length < 36) {
+  while (m <= fim) {
     lista.push(m);
     m = inicioMesDeslocado(`${m}-01`, 1).slice(0, 7);
   }
-  return lista;
+  return lista.slice(-36); // o gráfico mostra no máximo os últimos 36 meses
 }
 
 const NOMES_MES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -68,7 +67,6 @@ export default async function DesligamentosDashboard({ searchParams }: { searchP
   if (await souAssistente()) redirect("/dashboard");
 
   const filtros = lerFiltros(searchParams);
-  const { atual, anterior } = intervalosDosFiltros(filtros);
   const res = await carregarBase();
 
   const acoes = (
@@ -86,6 +84,7 @@ export default async function DesligamentosDashboard({ searchParams }: { searchP
     );
   }
   const base = res.base;
+  const { atual, anterior } = intervalosComBase(filtros, base);
 
   const ativos = filtrarRegistros(base.registros.filter((r) => r.status === "ativo"), filtros);
   const regsAtual = ativos.filter((r) => emIntervalo(r.data_desligamento, atual));
@@ -99,6 +98,8 @@ export default async function DesligamentosDashboard({ searchParams }: { searchP
   const tgA = turnoverGeral(admissoesNoPeriodo(quadro, atual), rA.total, qmA);
   const tgP = turnoverGeral(admissoesNoPeriodo(quadro, anterior), rP.total, qmP);
   const tvA = turnoverVoluntario(rA.vol, qmA);
+  const admA = admissoesNoPeriodo(quadro, atual);
+  const admP = admissoesNoPeriodo(quadro, anterior);
 
   const variacaoPP =
     tgA !== null && tgP !== null
@@ -190,10 +191,10 @@ export default async function DesligamentosDashboard({ searchParams }: { searchP
           variacaoTexto={variacaoPP}
         />
         <Kpi
-          rotulo="Sem entrevista de desligamento"
-          valor={String(rA.semEntrevista)}
-          detalhe="Registros sem entrevista realizada"
-          variacaoTexto={textoVariacao(rA.semEntrevista, rP.semEntrevista)}
+          rotulo="Admissões"
+          valor={String(admA)}
+          detalhe={`Saldo do período: ${admA - rA.total > 0 ? "+" : ""}${admA - rA.total} (admissões − desligamentos)`}
+          variacaoTexto={textoVariacao(admA, admP)}
         />
       </div>
       <p className="text-xs text-stone-500">

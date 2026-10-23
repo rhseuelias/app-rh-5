@@ -20,6 +20,7 @@ import {
   type RegistroDesligamento,
 } from "@/lib/desligamentos-modulo";
 import { AvisoErro, CabecalhoModulo, LinkBotao } from "@/components/desligamentos/ui";
+import FormAuto from "@/components/desligamentos/FormAuto";
 
 export const dynamic = "force-dynamic";
 
@@ -166,7 +167,7 @@ export default async function HistoricoDesligamentos({ searchParams }: { searchP
         <div role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">✓ {msg}</div>
       ) : null}
 
-      <form method="get" action="/desligamentos/historico" className="card space-y-3 !p-4">
+      <FormAuto action="/desligamentos/historico" className="card space-y-3 !p-4">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
           <div className="col-span-2">
             <label className="label" htmlFor="h-q">Buscar</label>
@@ -210,11 +211,11 @@ export default async function HistoricoDesligamentos({ searchParams }: { searchP
             </select>
           </div>
         </div>
-        <div className="flex justify-end gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-stone-500">Os filtros atualizam sozinhos. Para buscar por nome, digite e aperte Enter.</span>
           <Link href="/desligamentos/historico" className="btn-secondary !px-4 !py-2 text-sm">Limpar</Link>
-          <button type="submit" className="btn-primary !px-4 !py-2 text-sm">Aplicar filtros</button>
         </div>
-      </form>
+      </FormAuto>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
         <section className="card !p-0 overflow-x-auto">

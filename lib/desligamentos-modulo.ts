@@ -191,9 +191,10 @@ export function tempoDeCasaDias(r: Pick<RegistroDesligamento, "data_admissao" | 
 
 // ---------------------------------------------------------------- período
 
-export type PeriodoChave = "mes" | "trimestre" | "semestre" | "ano" | "personalizado";
+export type PeriodoChave = "todos" | "mes" | "trimestre" | "semestre" | "ano" | "personalizado";
 
 export const PERIODOS: { valor: PeriodoChave; rotulo: string }[] = [
+  { valor: "todos", rotulo: "Todos" },
   { valor: "mes", rotulo: "Mês" },
   { valor: "trimestre", rotulo: "Trimestre" },
   { valor: "semestre", rotulo: "Semestre" },
@@ -217,6 +218,8 @@ export function calcularIntervalos(
     const tam = diasEntre(de, ate) + 1;
     return { atual: { de, ate }, anterior: { de: somarDias(de, -tam), ate: somarDias(de, -1) } };
   }
+  // "todos": o início real é calculado em intervalosComBase (precisa dos dados); aqui é só um valor provisório
+  if (periodo === "todos") return { atual: { de: "2000-01-01", ate: hoje }, anterior: { de: "1990-01-01", ate: "1999-12-31" } };
   const meses = periodo === "mes" ? 1 : periodo === "trimestre" ? 3 : periodo === "ano" ? 12 : 6;
   // o período termina hoje e começa no 1º dia do mês, (meses - 1) meses atrás
   const inicio = inicioMesDeslocado(hoje, -(meses - 1));

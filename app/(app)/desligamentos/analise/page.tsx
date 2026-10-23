@@ -5,7 +5,7 @@ import {
   carregarBase,
   filtrarQuadro,
   filtrarRegistros,
-  intervalosDosFiltros,
+  intervalosComBase,
   lerFiltros,
 } from "@/lib/desligamentos-dados";
 import {
@@ -49,7 +49,6 @@ export default async function AnaliseEstrategica({ searchParams }: { searchParam
   if (await souAssistente()) redirect("/dashboard");
 
   const filtros = lerFiltros(searchParams);
-  const { atual, anterior } = intervalosDosFiltros(filtros);
   const res = await carregarBase();
   const acoes = <LinkBotao href="/desligamentos">Dashboard</LinkBotao>;
 
@@ -62,6 +61,7 @@ export default async function AnaliseEstrategica({ searchParams }: { searchParam
     );
   }
   const base = res.base;
+  const { atual, anterior } = intervalosComBase(filtros, base);
   const cfg = base.config;
 
   const ativos = filtrarRegistros(base.registros.filter((r) => r.status === "ativo"), filtros);

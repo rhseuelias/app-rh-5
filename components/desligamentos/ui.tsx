@@ -1,4 +1,5 @@
 import Link from "next/link";
+import FormAuto from "@/components/desligamentos/FormAuto";
 import { INICIATIVAS, PERIODOS, fmtData, fmtPct } from "@/lib/desligamentos-modulo";
 import type { FiltrosDesl, BaseDesligamentos } from "@/lib/desligamentos-dados";
 import type { Intervalo } from "@/lib/desligamentos-modulo";
@@ -39,7 +40,7 @@ export function AvisoErro({ texto }: { texto: string }) {
   );
 }
 
-/** Filtros globais (formulário GET: funciona sem JavaScript). */
+/** Filtros globais: atualizam a tela sozinhos ao mudar qualquer lista ou data. */
 export function FiltrosGlobais({
   acao,
   filtros,
@@ -53,7 +54,7 @@ export function FiltrosGlobais({
 }) {
   const unidades = base.unidades.filter((u) => !filtros.empresa || u.empresa === filtros.empresa);
   return (
-    <form method="get" action={acao} className="card space-y-3 !p-4">
+    <FormAuto action={acao} className="card space-y-3 !p-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
         <div>
           <label className="label" htmlFor="f-periodo">Período</label>
@@ -99,13 +100,10 @@ export function FiltrosGlobais({
           </select>
         </div>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-stone-500">
-          Período analisado: {fmtData(intervalo.de)} a {fmtData(intervalo.ate)}. O filtro de unidade só mostra as unidades da empresa escolhida.
-        </span>
-        <button type="submit" className="btn-primary !px-4 !py-2 text-sm">Aplicar filtros</button>
+      <div className="text-xs text-stone-500">
+        Período analisado: {fmtData(intervalo.de)} a {fmtData(intervalo.ate)}. O filtro de unidade só mostra as unidades da empresa escolhida. As telas atualizam sozinhas ao mudar um filtro.
       </div>
-    </form>
+    </FormAuto>
   );
 }
 
