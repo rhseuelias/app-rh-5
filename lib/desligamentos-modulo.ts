@@ -84,7 +84,7 @@ export const ROTULO_RECONTRATAVEL: Record<string, string> = Object.fromEntries(R
 /** Linha do banco (tabela desligamentos_registro). */
 export interface RegistroDesligamento {
   id: string;
-  colaborador_id: string;
+  colaborador_id: string | null;
   nome: string;
   matricula: string | null;
   vinculo: string | null;

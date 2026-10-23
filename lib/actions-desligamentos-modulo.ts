@@ -201,6 +201,7 @@ export async function aplicarDesligamentosAgendados(): Promise<void> {
     .from("desligamentos_registro")
     .select("colaborador_id, data_desligamento")
     .eq("status", "ativo")
+    .not("colaborador_id", "is", null)
     .lte("data_desligamento", hoje);
   if (error || !data) return;
   for (const r of data as { colaborador_id: string; data_desligamento: string }[]) {
@@ -228,7 +229,7 @@ export async function cancelarRegistro(formData: FormData): Promise<void> {
   const supabase = createClient();
   const { data: reg } = await supabase.from("desligamentos_registro").select("*").eq("id", id).maybeSingle();
   if (!reg) voltar(id, "Registro não encontrado.");
-  const r = reg as { colaborador_id: string; status: string; status_anterior: string | null; nome: string };
+  const r = reg as { colaborador_id: string | null; status: string; status_anterior: string | null; nome: string };
   if (r.status === "cancelado") voltar(id, "Este registro já está cancelado.");
 
   const { error } = await supabase
@@ -244,13 +245,16 @@ export async function cancelarRegistro(formData: FormData): Promise<void> {
   if (error) voltar(id, mensagem(error.message));
 
   // devolve o colaborador ao status anterior, se ele não tiver outro desligamento ativo
-  const { data: outro } = await supabase
-    .from("desligamentos_registro")
-    .select("id")
-    .eq("colaborador_id", r.colaborador_id)
-    .eq("status", "ativo")
-    .maybeSingle();
-  if (!outro) {
+  // (registros importados podem não ter colaborador ligado: nesse caso não há o que reativar)
+  const { data: outro } = r.colaborador_id
+    ? await supabase
+        .from("desligamentos_registro")
+        .select("id")
+        .eq("colaborador_id", r.colaborador_id)
+        .eq("status", "ativo")
+        .maybeSingle()
+    : { data: null };
+  if (r.colaborador_id && !outro) {
     const volta = r.status_anterior && r.status_anterior !== "desligado" ? r.status_anterior : "ativo";
     await supabase.from("colaboradores").update({ status: volta, data_desligamento: null }).eq("id", r.colaborador_id);
   }

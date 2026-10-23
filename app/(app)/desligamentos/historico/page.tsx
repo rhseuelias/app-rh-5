@@ -322,7 +322,8 @@ export default async function HistoricoDesligamentos({ searchParams }: { searchP
                       <input type="hidden" name="id" value={registroSel.id} />
                       <div>
                         <label className="label">Motivo principal</label>
-                        <select name="motivo_principal" defaultValue={registroSel.motivo_principal} className="input">
+                        <select name="motivo_principal" defaultValue={MOTIVOS_POR_INICIATIVA[registroSel.iniciativa].includes(registroSel.motivo_principal) ? registroSel.motivo_principal : ""} className="input">
+                          {!MOTIVOS_POR_INICIATIVA[registroSel.iniciativa].includes(registroSel.motivo_principal) ? <option value="">{registroSel.motivo_principal}</option> : null}
                           {MOTIVOS_POR_INICIATIVA[registroSel.iniciativa].map((m) => <option key={m} value={m}>{m}</option>)}
                         </select>
                       </div>
