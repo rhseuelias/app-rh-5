@@ -89,10 +89,11 @@ export function paragrafosCarta(d: DadosCarta): string[] {
   let abertura: string[];
   if (d.tipo === "indenizado") {
     abertura = [
-      "Pelo presente, comunicamos a V.Sa. que não mais convindo a esta empresa manter seu contrato de trabalho, " +
-        "vimos por meio deste, rescindí-lo, na forma da Legislação pertinente, encontrando-se V.Sa. dispensado(a) " +
-        "do cumprimento do Aviso Prévio, que lhe será pago de forma indenizatória junto às demais verbas rescisórias, " +
-        `devendo cessar suas atividades a partir de ${ultimo}.`,
+      "Informamos que a empresa decidiu encerrar seu contrato de trabalho, com efeitos a partir de " +
+        `${ultimo}. Você fica dispensado(a) do cumprimento do aviso-prévio, que será pago de forma indenizada ` +
+        "juntamente com as demais verbas rescisórias, conforme a legislação aplicável.",
+      "Agradecemos pela sua dedicação e contribuição durante o período em que fez parte da nossa equipe " +
+        "e desejamos sucesso em seus próximos passos profissionais.",
     ];
   } else if (d.tipo === "trabalhado") {
     const dias = d.diasAviso ?? 30;
