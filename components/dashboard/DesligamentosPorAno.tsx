@@ -1,6 +1,5 @@
-import Link from "next/link";
-import RankingSaidas from "./RankingSaidas";
-import { Cartao7, Titulo7, Ponto, P7, MANROPE, FS, ROTULO_COLUNA, LINK7, LINK7_STYLE } from "./tema7";
+import DesligamentosAbas from "./DesligamentosAbas";
+import { Cartao7, Titulo7, Ponto, P7, MANROPE, FS } from "./tema7";
 
 /**
  * Desligamentos no Dashboard (Modelo A): saldo de admissões e desligamentos por ano,
@@ -53,58 +52,20 @@ function tipoPadrao(t: string): string {
   return t || "Não informado";
 }
 
+/** Em qual iniciativa cada tipo de rescisão se encaixa (0 colaborador, 1 empresa, 2 acordo, 3 outros). */
+function iniDoTipo(t: string): number {
+  if (t === TIPOS[0] || t === TIPOS[2]) return 0;
+  if (t === TIPOS[1] || t === TIPOS[3] || t === "Dispensa por justa causa") return 1;
+  if (t === TIPOS[5]) return 2;
+  return 3;
+}
+
 const anoDe = (d: string) => Number(d.slice(0, 4));
 const sinal = (n: number) => (n > 0 ? `+${n}` : String(n));
 const corSaldo = (n: number) => (n > 0 ? COR_BOM : n < 0 ? COR_RUIM : P7.sec);
 
 function iniDe(r: RegistroDeslDash): Ini {
   return (["colaborador", "empresa", "acordo"].includes(r.iniciativa) ? r.iniciativa : "outro") as Ini;
-}
-
-type Linha100 = { rotulo: string; por: Record<Ini, number>; total: number };
-
-/** Uma linha por período: barra de 100% dividida por iniciativa, com quantidade e % dentro do segmento. */
-function Barras100({ linhas }: { linhas: Linha100[] }) {
-  return (
-    <div className="flex flex-col gap-[10px]">
-      {linhas.map((l) => (
-        <div key={l.rotulo} className="grid items-center gap-x-3" style={{ gridTemplateColumns: "92px minmax(0,1fr) 28px" }}>
-          <span className="text-[12.5px]" style={{ color: P7.sec }}>{l.rotulo}</span>
-          <div className="flex h-[26px] gap-[2px] overflow-hidden rounded-[6px]" style={{ background: P7.track }} role="img"
-            aria-label={`${l.rotulo}: ${INICIATIVAS.map((i) => `${i.nome} ${l.por[i.chave]}`).join(", ")}`}>
-            {l.total > 0 && INICIATIVAS.map((i) => {
-              const n = l.por[i.chave];
-              if (n <= 0) return null;
-              const pct = Math.round((n / l.total) * 100);
-              return (
-                <div key={i.chave} className="flex items-center justify-center overflow-hidden whitespace-nowrap text-[11px] font-bold"
-                  style={{ width: `${(n / l.total) * 100}%`, background: i.cor, color: i.chave === "outro" ? P7.ink : "#fff" }}
-                  title={`${i.nome}: ${n} (${pct}%)`}>
-                  {pct >= 10 ? `${n} · ${pct}%` : ""}
-                </div>
-              );
-            })}
-          </div>
-          <span className="text-right text-[12.5px] font-extrabold tabular-nums">{l.total}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function linhasSemestre(registros: RegistroDeslDash[], anos: number[], anoAtual: number): Linha100[] {
-  const itens: Linha100[] = [];
-  for (const y of anos) {
-    for (const sm of [1, 2]) {
-      const rs = registros.filter((r) => anoDe(r.data_desligamento) === y && (Number(r.data_desligamento.slice(5, 7)) <= 6 ? 1 : 2) === sm);
-      const por = { colaborador: 0, empresa: 0, acordo: 0, outro: 0 } as Record<Ini, number>;
-      for (const r of rs) por[iniDe(r)]++;
-      itens.push({ rotulo: `${sm}º sem/${String(y).slice(2)}`, por, total: rs.length });
-    }
-  }
-  while (itens.length > 0 && itens[0].total === 0) itens.shift();
-  if (anos.includes(anoAtual) && itens.length > 0 && itens[itens.length - 1].rotulo.startsWith("2º") && itens[itens.length - 1].total === 0) itens.pop();
-  return itens.slice(-8);
 }
 
 export default function DesligamentosPorAno({
@@ -148,7 +109,6 @@ export default function DesligamentosPorAno({
   const grupos = Array.from(new Set(registros.map(chaveGrupo))).sort(
     (a, b) => registros.filter((r) => chaveGrupo(r) === b).length - registros.filter((r) => chaveGrupo(r) === a).length
   );
-  const maxGrupo = Math.max(1, ...grupos.map((g) => registros.filter((r) => chaveGrupo(r) === g).length));
   const ranking = (chave: (r: RegistroDeslDash) => string) => {
     const m = new Map<string, Record<Ini, number>>();
     for (const r of registros) {
@@ -157,18 +117,15 @@ export default function DesligamentosPorAno({
       o[iniDe(r)]++;
       m.set(k, o);
     }
-    return Array.from(m, ([nome, por]) => ({ nome, por, total: por.colaborador + por.empresa + por.acordo + por.outro }))
+    return Array.from(m, ([nome, p]) => ({ nome, por: [p.colaborador, p.empresa, p.acordo, p.outro], total: p.colaborador + p.empresa + p.acordo + p.outro }))
       .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome))
       .slice(0, 8);
   };
-  const COR_ANO = ["#d8d4cc", "#eb6834", "#2b2118", "#0f766e", "#2a78d6", "#8a8780"];
-  const corAno = (y: number) => COR_ANO[anos.indexOf(y) % COR_ANO.length];
 
   // tipo de rescisão por ano
   const tiposUsados = Array.from(new Set(registros.map((r) => tipoPadrao(r.tipo_rescisao))));
   const tiposOrdenados = [...TIPOS.filter((t) => tiposUsados.includes(t)), ...tiposUsados.filter((t) => !TIPOS.includes(t))];
   const nTipo = (t: string, y: number) => deslAno(y).filter((r) => tipoPadrao(r.tipo_rescisao) === t).length;
-  const maxTipo = Math.max(1, ...tiposOrdenados.flatMap((t) => anos.map((y) => nTipo(t, y))));
 
   return (
     <div className="space-y-4">
@@ -231,148 +188,36 @@ export default function DesligamentosPorAno({
           <span><Ponto cor={COR_ADM} />Admissões</span>
           <span><Ponto cor={COR_DESL} />Desligamentos</span>
           <span style={{ color: P7.sec }}>
-            O número grande é o saldo do ano. Turnover = saídas ÷ quadro médio do ano × 100. Em {anoAtual} é só até hoje, por isso fica menor que o ano inteiro.
+            Número grande = saldo. Turnover = saídas ÷ quadro médio × 100 ({anoAtual} só até hoje).
           </span>
-          <div className="mt-1 grid w-full gap-2 sm:grid-cols-3">
-            {[
-              { cor: COR_BOM, bg: "#eef7ee", t: "Ideal: até cerca de 15% ao ano", d: "As saídas são poucas e a equipe fica estável." },
-              { cor: "#a36b00", bg: "#fff6df", t: "Médio: entre 25% e 45% ao ano", d: "Faixa comum em serviços com atendimento ao público. Barbearia e salão tendem a ficar aqui." },
-              { cor: COR_RUIM, bg: "#fceeee", t: "Máximo aceitável: perto de 50% ao ano", d: "Acima disso, o custo de reposição e treinamento pesa, e vale investigar as causas." },
-            ].map((f) => (
-              <div key={f.t} className="rounded-[10px] px-3 py-2" style={{ background: f.bg }}>
-                <div className="font-bold" style={{ color: f.cor }}>{f.t}</div>
-                <div className="text-[11.5px]" style={{ color: P7.sec }}>{f.d}</div>
-              </div>
-            ))}
+          <div className="flex w-full flex-wrap gap-x-4 gap-y-1 text-[11.5px]">
+            <span title="As saídas são poucas e a equipe fica estável."><Ponto cor={COR_BOM} /><b>Ideal</b> até ~15%</span>
+            <span title="Faixa comum em serviços com atendimento ao público. Barbearia e salão tendem a ficar aqui."><Ponto cor="#a36b00" /><b>Médio</b> 25% a 45%</span>
+            <span title="Acima disso, o custo de reposição e treinamento pesa, e vale investigar as causas."><Ponto cor={COR_RUIM} /><b>Máximo</b> ~50%</span>
           </div>
         </div>
       </Cartao7>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Cartao7>
-          <Titulo7 sub="Cada barra soma 100% do semestre; dentro, quantidade e %" direita={<Link href="/desligamentos" className={LINK7} style={LINK7_STYLE}>Abrir módulo</Link>}>
-            Evolução dos desligamentos
-          </Titulo7>
-          <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11.5px]">
-            {INICIATIVAS.map((i) => (<span key={i.chave}><Ponto cor={i.cor} />{i.nome}</span>))}
-          </div>
-          {linhasSemestre(registros, anos, anoAtual).length === 0 ? (
-            <p className="text-[12.5px]" style={{ color: P7.sec }}>Sem desligamentos para mostrar.</p>
-          ) : (
-            <Barras100 linhas={linhasSemestre(registros, anos, anoAtual)} />
-          )}
-        </Cartao7>
-
-        <Cartao7>
-          <Titulo7 sub="Cada barra soma 100% do ano; dentro, quantidade e %">Iniciativa, por ano</Titulo7>
-          <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11.5px]">
-            {INICIATIVAS.map((i) => (<span key={i.chave}><Ponto cor={i.cor} />{i.nome}</span>))}
-          </div>
-          <Barras100
-            linhas={anos.map((y) => {
-              const rs = deslAno(y);
-              const por = { colaborador: 0, empresa: 0, acordo: 0, outro: 0 } as Record<Ini, number>;
-              for (const r of rs) por[iniDe(r)]++;
-              return { rotulo: rotuloAno(y), por, total: rs.length };
-            })}
-          />
-        </Cartao7>
-
-        <Cartao7 className="lg:col-span-2">
-          <Titulo7 sub="Quem mais teve saídas no período do filtro">Ranking de saídas</Titulo7>
-          <RankingSaidas
-            cargo={ranking((r) => r.cargo || "Sem cargo")}
-            unidade={ranking((r) => r.unidade || "Sem unidade")}
-            cores={INICIATIVAS.map((i) => ({ chave: i.chave, nome: i.nome, cor: i.cor }))}
-          />
-          {(() => {
-            const semCargo = registros.filter((r) => !(r.cargo || "").trim());
-            const semUnidade = registros.filter((r) => !(r.unidade || "").trim());
-            const bloco = (titulo: string, lista: RegistroDeslDash[]) =>
-              lista.length === 0 ? null : (
-                <details className="mt-3 rounded-[10px] border px-3 py-2 text-[12.5px]" style={{ borderColor: P7.bd }}>
-                  <summary className="cursor-pointer font-semibold">{titulo} ({lista.length})</summary>
-                  <ul className="mt-2 flex flex-col gap-1">
-                    {[...lista].sort((a, b) => b.data_desligamento.localeCompare(a.data_desligamento)).map((r, i) => (
-                      <li key={i} className="flex flex-wrap gap-x-3" style={{ color: P7.sec }}>
-                        <b style={{ color: P7.ink }}>{r.nome || "Sem nome"}</b>
-                        <span>{r.empresa || "Sem empresa"}</span>
-                        <span>{r.unidade || "Sem unidade"}</span>
-                        <span>{r.data_desligamento.split("-").reverse().join("/")}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              );
-            return (<>{bloco("Quem está sem cargo", semCargo)}{bloco("Quem está sem unidade", semUnidade)}</>);
-          })()}
-        </Cartao7>
-
-        <Cartao7>
-          <Titulo7 sub="Quantidade em cada ano; quanto mais forte a cor, mais saídas">Tipo de rescisão, por ano</Titulo7>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[12.5px]">
-              <thead>
-                <tr>
-                  <th className={`${ROTULO_COLUNA} py-2 pr-2 text-left`} style={{ color: P7.lab, borderBottom: `1px solid ${P7.bd}` }}>Tipo</th>
-                  {anos.map((y) => (<th key={y} className={`${ROTULO_COLUNA} px-2 py-2 text-right`} style={{ color: P7.lab, borderBottom: `1px solid ${P7.bd}` }}>{y}</th>))}
-                  <th className={`${ROTULO_COLUNA} px-2 py-2 text-right`} style={{ color: P7.lab, borderBottom: `1px solid ${P7.bd}` }}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tiposOrdenados.map((t) => (
-                  <tr key={t}>
-                    <td className="py-[7px] pr-2" style={{ borderBottom: `1px solid ${P7.grid}` }}>{t}</td>
-                    {anos.map((y) => {
-                      const n = nTipo(t, y);
-                      return (
-                        <td key={y} className="px-2 py-[7px] text-right font-bold tabular-nums" style={{ borderBottom: `1px solid ${P7.grid}`, background: n === 0 ? undefined : `rgba(235,104,52,${(0.12 + 0.5 * (n / maxTipo)).toFixed(2)})` }}>
-                          {n}
-                        </td>
-                      );
-                    })}
-                    <td className="px-2 py-[7px] text-right font-extrabold tabular-nums" style={{ borderBottom: `1px solid ${P7.grid}` }}>
-                      {anos.reduce((a, y) => a + nTipo(t, y), 0)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Cartao7>
-
-        <Cartao7>
-          <Titulo7 sub={agrupar === "empresa" ? "Saídas de cada empresa, separadas por ano" : "Saídas de cada unidade, separadas por ano"}>
-            {agrupar === "empresa" ? "Desligamentos por empresa" : "Desligamentos por unidade"}
-          </Titulo7>
-          <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11.5px]">
-            {anos.map((y) => (<span key={y}><Ponto cor={corAno(y)} />{y}</span>))}
-          </div>
-          <div className="flex flex-col gap-4">
-            {grupos.map((g) => {
-              const rs = registros.filter((r) => chaveGrupo(r) === g);
-              return (
-                <div key={g}>
-                  <div className="mb-1 flex items-baseline justify-between text-[12.5px]">
-                    <b>{g}</b>
-                    <span style={{ color: P7.sec }}><b style={{ color: P7.ink }}>{rs.length}</b> saídas</span>
-                  </div>
-                  <div className="flex h-[22px] overflow-hidden rounded-[6px]">
-                    {anos.map((y) => {
-                      const n = rs.filter((r) => anoDe(r.data_desligamento) === y).length;
-                      return n > 0 ? (
-                        <div key={y} className="flex items-center justify-center text-[11px] font-bold" style={{ width: `${(n / maxGrupo) * 100}%`, background: corAno(y), color: y === anos[0] ? P7.ink : "#fff" }} title={`${y}: ${n}`}>
-                          {n}
-                        </div>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Cartao7>
-      </div>
+      <DesligamentosAbas
+        ini={anos.map((y) => {
+          const por = [0, 0, 0, 0];
+          for (const r of deslAno(y)) por[INICIATIVAS.findIndex((i) => i.chave === iniDe(r))]++;
+          return { nome: rotuloAno(y), por };
+        })}
+        cargo={ranking((r) => r.cargo || "Sem cargo")}
+        unidade={ranking((r) => r.unidade || "Sem unidade")}
+        tipos={tiposOrdenados.map((t) => ({
+          nome: t,
+          ini: iniDoTipo(t),
+          anos: anos.map((y) => nTipo(t, y)),
+        }))}
+        grupos={grupos.map((g) => ({
+          nome: g,
+          anos: anos.map((y) => registros.filter((r) => chaveGrupo(r) === g && anoDe(r.data_desligamento) === y).length),
+        }))}
+        anos={anos.map(rotuloAno)}
+        nomeGrupo={agrupar}
+      />
       <p className="text-[11px]" style={{ color: P7.lab, fontSize: FS.rotulo + 0.5 }}>
         Desligamentos vêm do módulo Desligamentos (registros ativos). Registros cancelados não entram.
       </p>

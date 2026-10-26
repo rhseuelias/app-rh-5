@@ -1,0 +1,74 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>5 modelos de desligamentos</title>
+<style>
+:root{--bg:#eaf1f0;--card:#fff;--bd:#e1e9e7;--ink:#12302c;--sec:#3f5a56;--lab:#5b7470;--trk:#edf2f1;--c1:#2a78d6;--c2:#eb6834;--c3:#1baf7a;--c4:#eda100}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Manrope,Inter,system-ui,sans-serif;font-size:13px;padding:16px}
+h2{font-size:15px;margin:28px 0 4px}.nota{color:var(--sec);margin:0 0 10px;font-size:12.5px}
+.top{font-weight:700;color:#a52828;font-size:12px;margin-bottom:4px}
+.m{max-width:1000px;margin:0 auto 8px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px 18px;min-width:0}
+.card h3{margin:0 0 2px;font-size:14px}.card .s{color:var(--lab);font-size:11.5px;margin-bottom:10px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stack{display:flex;flex-direction:column;gap:12px}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;margin-bottom:10px}.leg i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+.row{display:grid;grid-template-columns:110px minmax(0,1fr) 34px;gap:10px;align-items:center;margin:7px 0;font-size:12.5px}
+.row .t{text-align:right;font-weight:800}.row .n{color:var(--sec);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{display:flex;gap:2px;height:12px;border-radius:6px;overflow:hidden;background:var(--trk)}.bar b{display:block;height:100%}
+.bar.g{height:20px}.bar.g b{color:#fff;font-size:10.5px;display:flex;align-items:center;justify-content:center}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}@media(max-width:760px){.kpis{grid-template-columns:1fr 1fr}}
+.kpi{background:#fff;border:1px solid var(--bd);border-radius:12px;padding:10px 14px}.kpi small{display:block;color:var(--lab);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600}.kpi b{font-size:24px}.kpi span{font-size:11.5px;color:var(--sec);display:block}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}.tabs button{border:1px solid var(--bd);background:#fff;border-radius:999px;padding:6px 14px;font:inherit;font-weight:600;color:var(--sec);cursor:pointer}.tabs button.on{background:#0f5c55;color:#fff;border-color:#0f5c55}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--lab);text-align:right;padding:6px 8px;border-bottom:1px solid var(--bd)}th:first-child,td:first-child{text-align:left}td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--trk)}
+.heat{font-weight:700}
+.dark{background:#1d2a28;color:#eef5f3;border-radius:16px;padding:16px}.dark .card{background:#26363a;border-color:#34484c;color:#eef5f3}.dark .card .s,.dark .leg,.dark .row .n{color:#a9c0bc}.dark .bar{background:#34484c}.dark th{color:#a9c0bc;border-color:#34484c}.dark td{border-color:#34484c}
+.big{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}@media(max-width:760px){.big{grid-template-columns:1fr}}
+.yc{background:var(--trk);border-radius:12px;padding:12px}.yc .y{font-weight:700;color:var(--lab)}.yc .v{font-size:30px;font-weight:800}
+.sw{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.sw div{display:inline-flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}.sw button{border:0;background:#fff;padding:5px 12px;font:inherit;font-weight:600;color:var(--sec);cursor:pointer}.sw button.on{background:#0f5c55;color:#fff}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%}
+</style></head><body>
+<div class="top">PRÉVIA: números reais da sua tela. O card "Evolução dos desligamentos" foi removido nos 5 modelos.</div>
+<div id="app"></div>
+<script>
+var K=[['Colaborador','--c1'],['Empresa','--c2'],['Acordo','--c3'],['Término / outros','--c4']];
+var INI=[['2024',[5,2,2,1]],['2025',[13,10,0,3]],['2026 (até hoje)',[20,13,4,6]]];
+var CAR=[['Recepcionista',[15,6,3,4]],['Closer',[7,3,0,1]],['Auxiliar de Limpeza',[3,2,0,0]],['Estoquista',[4,1,0,0]],['Manobrista',[1,3,0,1]],['Balconista',[0,1,2,0]],['Assistente de Compras',[1,0,0,1]],['Auxiliar de Compras',[0,2,0,0]]];
+var UNI=[['Savassi',[8,5,3,3]],['Belvedere',[5,4,1,2]],['Pampulha',[5,4,1,2]],['Alphaville',[4,4,1,2]],['Confins',[3,3,1,1]],['Ouro Minas',[2,2,0,1]],['Lagoa Santa',[1,1,0,1]]];
+var TIP=[['Pedido de demissão',5,6,9],['Dispensa sem justa causa',2,9,11],['Término antecipado (empregado)',0,7,11],['Término antecipado (empregador)',0,1,2],['Término de experiência',0,3,5],['Acordo',2,0,4],['Transferência no grupo',1,0,1]];
+var EMP=[['BSE',[8,15,20]],['BDU',[0,6,15]],['BABOON',[2,5,8]]];
+var YC=['#d8d4cc','#eb6834','#2b2118'];
+function S(a){return a.reduce(function(x,y){return x+y},0)}
+function col(i){return 'var('+K[i][1]+')'}
+function leg(){return '<div class="leg">'+K.map(function(k){return '<span><i style="background:var('+k[1]+')"></i>'+k[0]+'</span>'}).join('')+'</div>'}
+function bar(v,mode,max,g){var t=S(v);var w=mode==='max'?t/max*100:100;
+ return '<div class="bar'+(g?' g':'')+'" style="width:'+w+'%;min-width:20px">'+v.map(function(n,i){if(!n)return'';var p=Math.round(n/t*100);return '<b style="width:'+n/t*100+'%;background:'+col(i)+(i==3?';color:#12302c':'')+'" title="'+K[i][0]+': '+n+' ('+p+'%)">'+(g&&p>=10?n+' · '+p+'%':(g&&n>=2?n:''))+'</b>'}).join('')+'</div>'}
+function rows(d,mode,g){var max=Math.max.apply(null,d.map(function(x){return S(x[1])}));return d.map(function(x){return '<div class="row"><span class="n" title="'+x[0]+'">'+x[0]+'</span>'+bar(x[1],mode,max,g)+'<span class="t">'+S(x[1])+'</span></div>'}).join('')}
+function tbl(){var mx=11;return '<table><tr><th>Tipo</th><th>2024</th><th>2025</th><th>2026</th><th>Total</th></tr>'+TIP.map(function(r){return '<tr><td>'+r[0]+'</td>'+[1,2,3].map(function(i){var a=r[i]?(0.12+0.5*r[i]/mx):0;return '<td class="heat" style="background:'+(a?'rgba(235,104,52,'+a.toFixed(2)+')':'none')+'">'+r[i]+'</td>'}).join('')+'<td><b>'+(r[1]+r[2]+r[3])+'</b></td></tr>'}).join('')+'</table>'}
+function emp(){return EMP.map(function(e){var t=S(e[1]);return '<div class="row"><span class="n"><b>'+e[0]+'</b></span><div class="bar g" style="width:'+t/43*100+'%;min-width:30px">'+e[1].map(function(n,i){return n?'<b style="width:'+n/t*100+'%;background:'+YC[i]+(i==0?';color:#12302c':'')+'">'+n+'</b>':''}).join('')+'</div><span class="t">'+t+'</span></div>'}).join('')+'<div class="leg" style="margin-top:8px">'+['2024','2025','2026'].map(function(y,i){return '<span><i style="background:'+YC[i]+'"></i>'+y+'</span>'}).join('')+'</div>'}
+function card(t,s,b,x){return '<section class="card" '+(x||'')+'><h3>'+t+'</h3><div class="s">'+s+'</div>'+b+'</section>'}
+var h='';
+/* 1 */
+h+='<div class="m"><h2>Modelo 1 · Limpo em grade</h2><p class="nota">Barras finas, só o total na ponta. Detalhe aparece ao passar o mouse. Menos números dentro das barras.</p><div class="grid2">'+
+card('Iniciativa, por ano','Cada barra soma 100% do ano',leg()+rows(INI,'full',false))+
+card('Ranking de saídas · por cargo','Quem mais teve saídas',leg()+rows(CAR,'max',false))+
+card('Tipo de rescisão, por ano','Quanto mais forte a cor, mais saídas',tbl())+
+card('Desligamentos por empresa','Saídas separadas por ano',emp())+'</div></div>';
+/* 2 */
+h+='<div class="m"><h2>Modelo 2 · Resumo no topo</h2><p class="nota">Quatro números grandes primeiro; os gráficos ficam embaixo, em uma coluna só.</p>'+
+'<div class="kpis"><div class="kpi"><small>Saídas em 2026</small><b>43</b><span>até hoje</span></div><div class="kpi"><small>Mais comum</small><b>Colaborador</b><span>47% das saídas</span></div><div class="kpi"><small>Cargo líder</small><b>Recepcionista</b><span>28 saídas</span></div><div class="kpi"><small>Empresa líder</small><b>BSE</b><span>43 saídas</span></div></div>'+
+'<div class="stack">'+card('Iniciativa, por ano','',leg()+rows(INI,'full',true))+card('Ranking de saídas · por cargo','',rows(CAR,'max',true))+'<div class="grid2">'+card('Tipo de rescisão','',tbl())+card('Por empresa','',emp())+'</div></div></div>';
+/* 3 */
+h+='<div class="m"><h2>Modelo 3 · Abas</h2><p class="nota">Um gráfico por vez. A tela fica leve e o assunto muda ao clicar.</p><section class="card"><div class="tabs" id="tb3"></div><div id="bd3"></div></section></div>';
+/* 4 */
+h+='<div class="m"><h2>Modelo 4 · Anos em cartões e lista</h2><p class="nota">Cada ano vira um cartão com número grande. O ranking vira uma lista simples, com a barra só de uma cor.</p>'+
+'<div class="big" style="margin-bottom:12px">'+INI.map(function(x,i){var t=S(x[1]);return '<div class="yc"><div class="y">'+x[0]+'</div><div class="v">'+t+' <small style="font-size:12px;font-weight:600;color:var(--lab)">saídas</small></div>'+bar(x[1],'full',0,false)+'<div style="font-size:11.5px;color:var(--sec);margin-top:6px">'+K.map(function(k,j){return x[1][j]?k[0].split(' ')[0]+' '+x[1][j]:''}).filter(Boolean).join(' · ')+'</div></div>'}).join('')+'</div>'+leg()+
+'<div class="grid2">'+card('Cargos com mais saídas','Total no período',CAR.map(function(c,i){var t=S(c[1]);return '<div class="row" style="grid-template-columns:22px minmax(0,1fr) 34px"><span style="color:var(--lab);font-weight:700">'+(i+1)+'º</span><div><div style="margin-bottom:3px">'+c[0]+'</div><div class="bar" style="width:'+t/28*100+'%;height:8px;background:var(--trk)"><b style="width:100%;background:#0f5c55"></b></div></div><span class="t">'+t+'</span></div>'}).join(''))+card('Desligamentos por empresa','',emp())+'</div>'+card('Tipo de rescisão, por ano','',tbl(),'style="margin-top:12px"')+'</div>';
+/* 5 */
+h+='<div class="m"><h2>Modelo 5 · Painel escuro</h2><p class="nota">Fundo escuro para destacar o bloco de desligamentos do resto do dashboard.</p><div class="dark"><div class="grid2">'+
+card('Iniciativa, por ano','Cada barra soma 100% do ano',leg()+rows(INI,'full',true))+
+card('Ranking de saídas · por cargo','',leg()+rows(CAR.slice(0,6),'max',true))+
+card('Tipo de rescisão, por ano','',tbl())+card('Desligamentos por empresa','',emp())+'</div></div></div>';
+document.getElementById('app').innerHTML=h;
+/* abas modelo 3 */
+var T3=[['Iniciativa',function(){return leg()+rows(INI,'full',true)}],['Por cargo',function(){return leg()+rows(CAR,'max',true)}],['Tipo de rescisão',tbl],['Por empresa',emp]];
+function p3(i){document.getElementById('tb3').innerHTML=T3.map(function(t,j){return '<button class="'+(i==j?'on':'')+'" onclick="p3('+j+')">'+t[0]+'</button>'}).join('');document.getElementById('bd3').innerHTML=T3[i][1]()}
+p3(0);
+</script></body></html>

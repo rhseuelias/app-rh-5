@@ -1,0 +1,47 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Modelo 3 uniforme</title>
+<style>
+:root{--bg:#eaf1f0;--card:#fff;--bd:#e1e9e7;--ink:#12302c;--sec:#3f5a56;--lab:#5b7470;--trk:#edf2f1;--c1:#2a78d6;--c2:#eb6834;--c3:#1baf7a;--c4:#eda100;--a1:#b7d6d2;--a2:#4f9d96;--a3:#0f5c55}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Manrope,Inter,system-ui,sans-serif;font-size:13px;padding:16px}
+.top{font-weight:700;color:#a52828;font-size:12px;margin:0 auto 8px;max-width:1000px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px 20px;max-width:1000px;margin:auto}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px}.tabs button{border:1px solid var(--bd);background:#fff;border-radius:999px;padding:6px 14px;font:inherit;font-weight:600;color:var(--sec);cursor:pointer}.tabs button.on{background:#0f5c55;color:#fff;border-color:#0f5c55}
+h3{margin:0 0 2px;font-size:14px}.s{color:var(--lab);font-size:11.5px;margin-bottom:12px}
+.leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;margin-bottom:12px}.leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:middle}
+/* mesma linha em todas as abas: rótulo | barra | total */
+.row{display:grid;grid-template-columns:190px minmax(0,1fr) 36px;gap:12px;align-items:center;margin:9px 0;font-size:12.5px}
+@media(max-width:640px){.row{grid-template-columns:110px minmax(0,1fr) 30px}}
+.n{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.t{text-align:right;font-weight:800}
+.bar{display:flex;gap:2px;height:22px;border-radius:6px;overflow:hidden;background:var(--trk)}
+.bar b{display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;min-width:0;overflow:hidden;white-space:nowrap}
+.bar b.dk{color:#12302c}
+.yrs{display:grid;grid-template-columns:repeat(3,44px);font-size:11px;color:var(--sec);text-align:center}
+.head{display:grid;grid-template-columns:190px minmax(0,1fr) 36px;gap:12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--lab);font-weight:600;border-bottom:1px solid var(--bd);padding-bottom:6px}
+@media(max-width:640px){.head{grid-template-columns:110px minmax(0,1fr) 30px}}
+.head span:last-child{text-align:right}
+</style></head><body>
+<div class="top">PRÉVIA com os números reais da sua tela. Regra de cor: as 4 cores = iniciativa (aparecem iguais em todas as abas); os tons de verde-água = ano (2024 claro, 2026 escuro).</div>
+<section class="card"><div class="tabs" id="tb"></div><div id="bd"></div></section>
+<script>
+var K=[['Colaborador','--c1'],['Empresa','--c2'],['Acordo','--c3'],['Término / outros','--c4']];
+var INI=[['2024',[5,2,2,1]],['2025',[13,10,0,3]],['2026 (até hoje)',[20,13,4,6]]];
+var CAR=[['Recepcionista',[15,6,3,4]],['Closer',[7,3,0,1]],['Auxiliar de Limpeza',[3,2,0,0]],['Estoquista',[4,1,0,0]],['Manobrista',[1,3,0,1]],['Balconista',[0,1,2,0]],['Assistente de Compras',[1,0,0,1]],['Auxiliar de Compras',[0,2,0,0]]];
+/* tipo de rescisão: cor = iniciativa a que pertence */
+var TIP=[['Pedido de demissão',0,[5,6,9]],['Dispensa sem justa causa',1,[2,9,11]],['Término antecipado (empregado)',0,[0,7,11]],['Término antecipado (empregador)',1,[0,1,2]],['Término de experiência',3,[0,3,5]],['Acordo',2,[2,0,4]],['Transferência no grupo',3,[1,0,1]]];
+var EMP=[['BSE',[8,15,20]],['BDU',[0,6,15]],['BABOON',[2,5,8]]];
+var AN=['var(--a1)','var(--a2)','var(--a3)'];
+function S(a){return a.reduce(function(x,y){return x+y},0)}
+function legIni(){return '<div class="leg">'+K.map(function(k){return '<span><i style="background:var('+k[1]+')"></i>'+k[0]+'</span>'}).join('')+'</div>'}
+function legAno(){return '<div class="leg">'+['2024','2025','2026'].map(function(y,i){return '<span><i style="background:'+AN[i]+'"></i>'+y+'</span>'}).join('')+'</div>'}
+function seg(n,tot,color,dark,label){if(!n)return'';var p=Math.round(n/tot*100);return '<b class="'+(dark?'dk':'')+'" style="width:'+n/tot*100+'%;background:'+color+'" title="'+label+': '+n+' ('+p+'%)">'+(p>=9?n+(label&&tot?'':''):'')+'</b>'}
+function barIni(v,w){var t=S(v);return '<div class="bar" style="width:'+w+'%;min-width:26px">'+v.map(function(n,i){return seg(n,t,'var('+K[i][1]+')',i==3,K[i][0])}).join('')+'</div>'}
+function rowsIni(d,rel){var mx=Math.max.apply(null,d.map(function(x){return S(x[1])}));return d.map(function(x){return '<div class="row"><span class="n">'+x[0]+'</span>'+barIni(x[1],rel?S(x[1])/mx*100:100)+'<span class="t">'+S(x[1])+'</span></div>'}).join('')}
+function rowsTip(){var mx=Math.max.apply(null,TIP.map(function(x){return S(x[2])}));return TIP.map(function(x){var t=S(x[2]);var c='var('+K[x[1]][1]+')';return '<div class="row"><span class="n" title="'+x[0]+'">'+x[0]+'</span><div class="bar" style="width:'+t/mx*100+'%;min-width:26px">'+x[2].map(function(n,i){return n?'<b class="'+(x[1]==3?'dk':'')+'" style="width:'+n/t*100+'%;background:'+c+';opacity:'+[0.5,0.75,1][i]+'" title="'+(2024+i)+': '+n+'">'+(n/t>=0.15?n:'')+'</b>':''}).join('')+'</div><span class="t">'+t+'</span></div>'}).join('')}
+function rowsEmp(){var mx=43;return EMP.map(function(e){var t=S(e[1]);return '<div class="row"><span class="n"><b>'+e[0]+'</b></span><div class="bar" style="width:'+t/mx*100+'%;min-width:26px">'+e[1].map(function(n,i){return n?'<b class="'+(i==0?'dk':'')+'" style="width:'+n/t*100+'%;background:'+AN[i]+'" title="'+(2024+i)+': '+n+'">'+n+'</b>':''}).join('')+'</div><span class="t">'+t+'</span></div>'}).join('')}
+var T=[
+['Iniciativa','Iniciativa, por ano','Cada barra soma 100% do ano; número dentro = quantidade',function(){return legIni()+rowsIni(INI,false)}],
+['Por cargo','Ranking de saídas · por cargo','Barra mais longa = mais saídas; cores = iniciativa',function(){return legIni()+rowsIni(CAR,true)}],
+['Tipo de rescisão','Tipo de rescisão, por ano','A cor mostra a iniciativa do tipo; do claro ao forte = 2024, 2025, 2026',function(){return legIni()+rowsTip()}],
+['Por empresa','Desligamentos por empresa','Saídas separadas por ano (do claro ao escuro)',function(){return legAno()+rowsEmp()}]];
+function p(i){document.getElementById('tb').innerHTML=T.map(function(t,j){return '<button class="'+(i==j?'on':'')+'" onclick="p('+j+')">'+t[0]+'</button>'}).join('');document.getElementById('bd').innerHTML='<h3>'+T[i][1]+'</h3><div class="s">'+T[i][2]+'</div>'+T[i][3]()}
+p(0);
+</script></body></html>
