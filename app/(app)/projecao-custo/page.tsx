@@ -11,6 +11,7 @@ import EmpresaForm from "@/components/EmpresaForm";
 import UnidadesForm from "@/components/UnidadesForm";
 import FranquiasBSE, { type Franquia } from "@/components/projecao/FranquiasBSE";
 import { cadastroEmpresaCompleto } from "@/lib/dados-empresa";
+import PrevisaoCrescimento from "@/components/projecao/PrevisaoCrescimento";
 import RelatorioExecutivo from "@/components/projecao/RelatorioExecutivo";
 import { souAssistente } from "@/lib/permissoes";
 
@@ -71,6 +72,9 @@ export default async function ProjecaoCustoPage({
 
   const custoTotalGeral = listaColaboradores.reduce((acc, c) => acc + custoMensalColaborador(c), 0);
 
+  const clts = listaColaboradores.filter((c) => c.tipo === "CLT");
+  const pjs = listaColaboradores.filter((c) => c.tipo === "PJ");
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -101,6 +105,10 @@ export default async function ProjecaoCustoPage({
           proporcional (13º, férias, 1/3 e multa rescisória).
         </p>
       </div>
+
+      {!assistente && (
+        <PrevisaoCrescimento nClt={clts.length} nPj={pjs.length} />
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {porEmpresa.map(({ empresa, custoTotal, pct, headcount, detalhado }, i) => {

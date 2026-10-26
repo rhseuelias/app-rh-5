@@ -1,0 +1,18 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prévia previsão</title>
+<style>body{margin:0;padding:20px;background:#f1f5f9;font-family:Inter,system-ui,sans-serif;color:#0f172a}
+.ex{max-width:900px;margin:0 auto 8px;color:#a52828;font-weight:700;font-size:12px}
+.card{max-width:900px;margin:auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px}
+h2{margin:0;font-size:16px}.s{color:#64748b;font-size:13px}.top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
+label{font-size:13px;color:#64748b}input[type=number]{display:block;margin-top:4px;width:110px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}@media(max-width:700px){.g3{grid-template-columns:1fr}}
+.b{background:#f8fafc;border-radius:12px;padding:12px}.b small{display:block;color:#64748b;font-size:12px}.b b{font-size:24px}
+.n{font-size:12px;color:#94a3b8;margin-top:10px}</style></head><body>
+<div class="ex">PRÉVIA com números de exemplo (48 CLT e 26 PJ hoje). No app, os valores vêm do seu cadastro.</div>
+<div class="card"><div class="top"><div><h2>Previsão de crescimento</h2><div class="s">Quantidade de colaboradores, com a média entre CLT e PJ</div></div>
+<div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap"><label>Novos colaboradores<input id="q" type="number" value="50" min="0"></label><label>% PJ entre os novos: <b id="pv"></b><br><input id="p" type="range" min="0" max="100" step="5" value="35" style="width:150px;margin-top:8px"></label></div></div>
+<div class="g3"><div class="b"><small>Hoje</small><b>74</b><small style="color:#94a3b8">48 CLT · 26 PJ</small></div><div class="b"><small>Novos previstos</small><b id="n"></b><small id="ns" style="color:#94a3b8"></small></div><div class="b" style="background:#dcece9"><small style="color:#0a4a44">Quadro previsto</small><b style="color:#0a4a44" id="t"></b><small id="ts" style="color:#0a4a44"></small></div></div>
+<div class="n">Por padrão, os novos seguem a proporção atual de CLT e PJ. Arraste a barra para testar outra divisão.</div></div>
+<script>function u(){var q=+document.getElementById('q').value||0,p=+document.getElementById('p').value,pj=Math.round(q*p/100),cl=q-pj;
+document.getElementById('pv').textContent=p+'%';document.getElementById('n').textContent=q;document.getElementById('ns').textContent=cl+' CLT · '+pj+' PJ';
+document.getElementById('t').textContent=74+q;document.getElementById('ts').textContent=(48+cl)+' CLT · '+(26+pj)+' PJ'}
+document.getElementById('q').oninput=u;document.getElementById('p').oninput=u;u();</script></body></html>

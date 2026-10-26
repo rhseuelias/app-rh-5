@@ -134,7 +134,7 @@ export default async function DashboardPage({
     supabase.from("historico_colaboradores").select("*"),
     supabase
       .from("desligamentos_registro")
-      .select("empresa, unidade, cargo, data_desligamento, iniciativa, tipo_rescisao, status, colaborador_id, data_admissao"),
+      .select("nome, empresa, unidade, cargo, data_desligamento, iniciativa, tipo_rescisao, status, colaborador_id, data_admissao"),
   ]);
 
   const lista = (colaboradores ?? []) as Colaborador[];
