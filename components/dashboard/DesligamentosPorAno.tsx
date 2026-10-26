@@ -145,13 +145,13 @@ export default function DesligamentosPorAno({
             const a = admAno(y);
             const d = deslAno(y).length;
             const s = a - d;
-            // turnover = (admissões + saídas) / 2 / quadro médio × 100; quadro médio = média do quadro no início e no fim do ano
+            // turnover (só saídas) = saídas / quadro médio × 100; quadro médio = média do quadro no início e no fim do ano
             const fimAno = y === anoAtual ? hojeISO : `${y}-12-31`;
             const quadroEm = (limite: string, estrito: boolean) =>
               admissoes.filter((x) => (estrito ? x < limite : x <= limite)).length -
               registros.filter((r) => (estrito ? r.data_desligamento < limite : r.data_desligamento <= limite)).length;
             const medio = (quadroEm(`${y}-01-01`, true) + quadroEm(fimAno, false)) / 2;
-            const turnover = medio > 0 ? ((a + d) / 2 / medio) * 100 : null;
+            const turnover = medio > 0 ? (d / medio) * 100 : null;
             const corT = turnover === null ? P7.sec : turnover <= 15 ? COR_BOM : turnover <= 50 ? "#a36b00" : COR_RUIM;
             const bgT = turnover === null ? "#edf2f1" : turnover <= 15 ? "#eef7ee" : turnover <= 50 ? "#fff6df" : "#fceeee";
             return (
@@ -188,7 +188,7 @@ export default function DesligamentosPorAno({
           <span><Ponto cor={COR_ADM} />Admissões</span>
           <span><Ponto cor={COR_DESL} />Desligamentos</span>
           <span style={{ color: P7.sec }}>
-            Número grande = saldo. Turnover = (admissões + saídas) ÷ 2 ÷ quadro médio × 100 ({anoAtual} só até hoje).
+            Número grande = saldo. Turnover = saídas ÷ quadro médio × 100 ({anoAtual} só até hoje).
           </span>
           <div className="flex w-full flex-wrap gap-x-4 gap-y-1 text-[11.5px]">
             <span title="As saídas são poucas e a equipe fica estável."><Ponto cor={COR_BOM} /><b>Ideal</b> até ~15%</span>
