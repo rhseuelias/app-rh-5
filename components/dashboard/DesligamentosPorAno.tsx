@@ -11,6 +11,7 @@ export interface RegistroDeslDash {
   empresa: string | null;
   unidade: string | null;
   cargo?: string | null;
+  nome?: string | null;
   data_desligamento: string;
   iniciativa: string;
   tipo_rescisao: string;
@@ -139,6 +140,7 @@ export default function DesligamentosPorAno({
   const admAno = (y: number) => admissoes.filter((d) => anoDe(d) === y).length;
   const rotuloAno = (y: number) => (y === anoAtual ? `${y} (até hoje)` : String(y));
   const maxBarra = Math.max(1, ...anos.map((y) => Math.max(admAno(y), deslAno(y).length)));
+  const hojeISO = new Date().toISOString().slice(0, 10);
   const saldoTotal = anos.reduce((a, y) => a + admAno(y) - deslAno(y).length, 0);
 
   // por empresa (ou por unidade)
@@ -186,10 +188,27 @@ export default function DesligamentosPorAno({
             const a = admAno(y);
             const d = deslAno(y).length;
             const s = a - d;
+            // turnover (só saídas) = saídas / quadro médio × 100; quadro médio = média do quadro no início e no fim do ano
+            const fimAno = y === anoAtual ? hojeISO : `${y}-12-31`;
+            const quadroEm = (limite: string, estrito: boolean) =>
+              admissoes.filter((x) => (estrito ? x < limite : x <= limite)).length -
+              registros.filter((r) => (estrito ? r.data_desligamento < limite : r.data_desligamento <= limite)).length;
+            const medio = (quadroEm(`${y}-01-01`, true) + quadroEm(fimAno, false)) / 2;
+            const turnover = medio > 0 ? (d / medio) * 100 : null;
+            const corT = turnover === null ? P7.sec : turnover <= 15 ? COR_BOM : turnover <= 50 ? "#a36b00" : COR_RUIM;
+            const bgT = turnover === null ? "#edf2f1" : turnover <= 15 ? "#eef7ee" : turnover <= 50 ? "#fff6df" : "#fceeee";
             return (
               <div key={y} className="rounded-[12px] px-3 pb-3 pt-3" style={{ background: "#f4f8f7", fontFamily: MANROPE }}>
                 <div className="text-[12.5px] font-bold" style={{ color: P7.lab }}>{rotuloAno(y)}</div>
-                <div className="text-[28px] font-extrabold leading-[1.15] tabular-nums" style={{ color: corSaldo(s) }}>{sinal(s)}</div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-[28px] font-extrabold leading-[1.15] tabular-nums" style={{ color: corSaldo(s) }}>{sinal(s)}</div>
+                  <div className="rounded-[10px] px-2.5 py-1 text-right" style={{ background: bgT }} title={`Quadro médio: ${medio.toFixed(0)} pessoas`}>
+                    <div className="text-[10.5px] font-semibold uppercase tracking-[0.08em]" style={{ color: P7.lab }}>Turnover</div>
+                    <div className="text-[18px] font-extrabold leading-[1.1] tabular-nums" style={{ color: corT }}>
+                      {turnover === null ? "—" : `${turnover.toFixed(1).replace(".", ",")}%`}
+                    </div>
+                  </div>
+                </div>
                 <div className="mt-2 flex h-[84px] items-end gap-3">
                   <div className="flex flex-1 flex-col items-center justify-end">
                     <span className="mb-1 text-[12px] font-bold tabular-nums">{a}</span>
@@ -212,8 +231,20 @@ export default function DesligamentosPorAno({
           <span><Ponto cor={COR_ADM} />Admissões</span>
           <span><Ponto cor={COR_DESL} />Desligamentos</span>
           <span style={{ color: P7.sec }}>
-            O número grande é o saldo do ano. As admissões vêm do cadastro de Colaboradores, inclusive de quem já saiu.
+            O número grande é o saldo do ano. Turnover = saídas ÷ quadro médio do ano × 100. Em {anoAtual} é só até hoje, por isso fica menor que o ano inteiro.
           </span>
+          <div className="mt-1 grid w-full gap-2 sm:grid-cols-3">
+            {[
+              { cor: COR_BOM, bg: "#eef7ee", t: "Ideal: até cerca de 15% ao ano", d: "As saídas são poucas e a equipe fica estável." },
+              { cor: "#a36b00", bg: "#fff6df", t: "Médio: entre 25% e 45% ao ano", d: "Faixa comum em serviços com atendimento ao público. Barbearia e salão tendem a ficar aqui." },
+              { cor: COR_RUIM, bg: "#fceeee", t: "Máximo aceitável: perto de 50% ao ano", d: "Acima disso, o custo de reposição e treinamento pesa, e vale investigar as causas." },
+            ].map((f) => (
+              <div key={f.t} className="rounded-[10px] px-3 py-2" style={{ background: f.bg }}>
+                <div className="font-bold" style={{ color: f.cor }}>{f.t}</div>
+                <div className="text-[11.5px]" style={{ color: P7.sec }}>{f.d}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </Cartao7>
 
@@ -254,6 +285,27 @@ export default function DesligamentosPorAno({
             unidade={ranking((r) => r.unidade || "Sem unidade")}
             cores={INICIATIVAS.map((i) => ({ chave: i.chave, nome: i.nome, cor: i.cor }))}
           />
+          {(() => {
+            const semCargo = registros.filter((r) => !(r.cargo || "").trim());
+            const semUnidade = registros.filter((r) => !(r.unidade || "").trim());
+            const bloco = (titulo: string, lista: RegistroDeslDash[]) =>
+              lista.length === 0 ? null : (
+                <details className="mt-3 rounded-[10px] border px-3 py-2 text-[12.5px]" style={{ borderColor: P7.bd }}>
+                  <summary className="cursor-pointer font-semibold">{titulo} ({lista.length})</summary>
+                  <ul className="mt-2 flex flex-col gap-1">
+                    {[...lista].sort((a, b) => b.data_desligamento.localeCompare(a.data_desligamento)).map((r, i) => (
+                      <li key={i} className="flex flex-wrap gap-x-3" style={{ color: P7.sec }}>
+                        <b style={{ color: P7.ink }}>{r.nome || "Sem nome"}</b>
+                        <span>{r.empresa || "Sem empresa"}</span>
+                        <span>{r.unidade || "Sem unidade"}</span>
+                        <span>{r.data_desligamento.split("-").reverse().join("/")}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              );
+            return (<>{bloco("Quem está sem cargo", semCargo)}{bloco("Quem está sem unidade", semUnidade)}</>);
+          })()}
         </Cartao7>
 
         <Cartao7>
