@@ -1,4 +1,5 @@
 import Link from "next/link";
+import RankingSaidas from "./RankingSaidas";
 import { Cartao7, Titulo7, Ponto, P7, MANROPE, FS, ROTULO_COLUNA, LINK7, LINK7_STYLE } from "./tema7";
 
 /**
@@ -9,6 +10,7 @@ import { Cartao7, Titulo7, Ponto, P7, MANROPE, FS, ROTULO_COLUNA, LINK7, LINK7_S
 export interface RegistroDeslDash {
   empresa: string | null;
   unidade: string | null;
+  cargo?: string | null;
   data_desligamento: string;
   iniciativa: string;
   tipo_rescisao: string;
@@ -16,10 +18,10 @@ export interface RegistroDeslDash {
 
 type Ini = "colaborador" | "empresa" | "acordo" | "outro";
 const INICIATIVAS: { chave: Ini; nome: string; cor: string }[] = [
-  { chave: "colaborador", nome: "Colaborador", cor: "#0f766e" },
-  { chave: "empresa", nome: "Empresa", cor: "#2b2118" },
-  { chave: "acordo", nome: "Acordo", cor: "#e8743b" },
-  { chave: "outro", nome: "Término / outros", cor: "#8a8780" },
+  { chave: "colaborador", nome: "Colaborador", cor: "#2a78d6" },
+  { chave: "empresa", nome: "Empresa", cor: "#eb6834" },
+  { chave: "acordo", nome: "Acordo", cor: "#1baf7a" },
+  { chave: "outro", nome: "Término / outros", cor: "#eda100" },
 ];
 const COR_ADM = P7.verde;
 const COR_DESL = P7.laranja;
@@ -58,8 +60,39 @@ function iniDe(r: RegistroDeslDash): Ini {
   return (["colaborador", "empresa", "acordo"].includes(r.iniciativa) ? r.iniciativa : "outro") as Ini;
 }
 
-function BarrasSemestre({ registros, anos, anoAtual }: { registros: RegistroDeslDash[]; anos: number[]; anoAtual: number }) {
-  const itens: { rotulo: string; por: Record<Ini, number>; total: number }[] = [];
+type Linha100 = { rotulo: string; por: Record<Ini, number>; total: number };
+
+/** Uma linha por período: barra de 100% dividida por iniciativa, com quantidade e % dentro do segmento. */
+function Barras100({ linhas }: { linhas: Linha100[] }) {
+  return (
+    <div className="flex flex-col gap-[10px]">
+      {linhas.map((l) => (
+        <div key={l.rotulo} className="grid items-center gap-x-3" style={{ gridTemplateColumns: "92px minmax(0,1fr) 28px" }}>
+          <span className="text-[12.5px]" style={{ color: P7.sec }}>{l.rotulo}</span>
+          <div className="flex h-[26px] gap-[2px] overflow-hidden rounded-[6px]" style={{ background: P7.track }} role="img"
+            aria-label={`${l.rotulo}: ${INICIATIVAS.map((i) => `${i.nome} ${l.por[i.chave]}`).join(", ")}`}>
+            {l.total > 0 && INICIATIVAS.map((i) => {
+              const n = l.por[i.chave];
+              if (n <= 0) return null;
+              const pct = Math.round((n / l.total) * 100);
+              return (
+                <div key={i.chave} className="flex items-center justify-center overflow-hidden whitespace-nowrap text-[11px] font-bold"
+                  style={{ width: `${(n / l.total) * 100}%`, background: i.cor, color: i.chave === "outro" ? P7.ink : "#fff" }}
+                  title={`${i.nome}: ${n} (${pct}%)`}>
+                  {pct >= 10 ? `${n} · ${pct}%` : ""}
+                </div>
+              );
+            })}
+          </div>
+          <span className="text-right text-[12.5px] font-extrabold tabular-nums">{l.total}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function linhasSemestre(registros: RegistroDeslDash[], anos: number[], anoAtual: number): Linha100[] {
+  const itens: Linha100[] = [];
   for (const y of anos) {
     for (const sm of [1, 2]) {
       const rs = registros.filter((r) => anoDe(r.data_desligamento) === y && (Number(r.data_desligamento.slice(5, 7)) <= 6 ? 1 : 2) === sm);
@@ -68,44 +101,9 @@ function BarrasSemestre({ registros, anos, anoAtual }: { registros: RegistroDesl
       itens.push({ rotulo: `${sm}º sem/${String(y).slice(2)}`, por, total: rs.length });
     }
   }
-  // não mostra semestres vazios no começo nem o semestre futuro do ano atual
   while (itens.length > 0 && itens[0].total === 0) itens.shift();
   if (anos.includes(anoAtual) && itens.length > 0 && itens[itens.length - 1].rotulo.startsWith("2º") && itens[itens.length - 1].total === 0) itens.pop();
-  const lista = itens.slice(-8);
-  if (lista.length === 0) return <p className="text-[12.5px]" style={{ color: P7.sec }}>Sem desligamentos para mostrar.</p>;
-  const W = 480;
-  const H = 210;
-  const base = H - 28;
-  const topo = 26;
-  const max = Math.max(1, ...lista.map((i) => i.total));
-  const un = (base - topo) / max;
-  const passo = (W - 20) / lista.length;
-  const bw = Math.min(44, passo * 0.6);
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="block w-full" role="img" aria-label={`Desligamentos por semestre: ${lista.map((i) => `${i.rotulo} ${i.total}`).join(", ")}`}>
-      <line x1="10" y1={base} x2={W} y2={base} stroke={P7.bd} />
-      {lista.map((it, idx) => {
-        const x = 10 + passo * idx + (passo - bw) / 2;
-        let y = base;
-        return (
-          <g key={it.rotulo}>
-            {INICIATIVAS.map((ini) => {
-              const h = it.por[ini.chave] * un;
-              if (h <= 0) return null;
-              y -= h;
-              return (
-                <rect key={ini.chave} x={x} y={y} width={bw} height={h} fill={ini.cor}>
-                  <title>{`${ini.nome}: ${it.por[ini.chave]}`}</title>
-                </rect>
-              );
-            })}
-            <text x={x + bw / 2} y={y - 6} textAnchor="middle" fontSize="12" fontWeight="800" fill={P7.ink}>{it.total}</text>
-            <text x={x + bw / 2} y={base + 16} textAnchor="middle" fontSize="10.5" fill={P7.lab}>{it.rotulo}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
+  return itens.slice(-8);
 }
 
 export default function DesligamentosPorAno({
@@ -149,6 +147,18 @@ export default function DesligamentosPorAno({
     (a, b) => registros.filter((r) => chaveGrupo(r) === b).length - registros.filter((r) => chaveGrupo(r) === a).length
   );
   const maxGrupo = Math.max(1, ...grupos.map((g) => registros.filter((r) => chaveGrupo(r) === g).length));
+  const ranking = (chave: (r: RegistroDeslDash) => string) => {
+    const m = new Map<string, Record<Ini, number>>();
+    for (const r of registros) {
+      const k = chave(r);
+      const o = m.get(k) ?? ({ colaborador: 0, empresa: 0, acordo: 0, outro: 0 } as Record<Ini, number>);
+      o[iniDe(r)]++;
+      m.set(k, o);
+    }
+    return Array.from(m, ([nome, por]) => ({ nome, por, total: por.colaborador + por.empresa + por.acordo + por.outro }))
+      .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome))
+      .slice(0, 8);
+  };
   const COR_ANO = ["#d8d4cc", "#eb6834", "#2b2118", "#0f766e", "#2a78d6", "#8a8780"];
   const corAno = (y: number) => COR_ANO[anos.indexOf(y) % COR_ANO.length];
 
@@ -209,44 +219,41 @@ export default function DesligamentosPorAno({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Cartao7>
-          <Titulo7 sub="Por semestre, empilhado por iniciativa" direita={<Link href="/desligamentos" className={LINK7} style={LINK7_STYLE}>Abrir módulo</Link>}>
+          <Titulo7 sub="Cada barra soma 100% do semestre; dentro, quantidade e %" direita={<Link href="/desligamentos" className={LINK7} style={LINK7_STYLE}>Abrir módulo</Link>}>
             Evolução dos desligamentos
           </Titulo7>
-          <div className="mb-1 flex flex-wrap gap-x-3 gap-y-1 text-[11.5px]">
-            {INICIATIVAS.map((i) => (<span key={i.chave}><Ponto cor={i.cor} />{i.nome}</span>))}
-          </div>
-          <BarrasSemestre registros={registros} anos={anos} anoAtual={anoAtual} />
-        </Cartao7>
-
-        <Cartao7>
-          <Titulo7 sub="Cada barra soma 100% do ano; os números são quantidades">Iniciativa, por ano</Titulo7>
           <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11.5px]">
             {INICIATIVAS.map((i) => (<span key={i.chave}><Ponto cor={i.cor} />{i.nome}</span>))}
           </div>
-          <div className="flex flex-col gap-4">
-            {anos.map((y) => {
-              const rs = deslAno(y);
-              const tot = rs.length;
-              return (
-                <div key={y}>
-                  <div className="mb-1 flex items-baseline justify-between text-[12.5px]">
-                    <span>{rotuloAno(y)}</span>
-                    <span style={{ color: P7.sec }}><b style={{ color: P7.ink }}>{tot}</b> saídas</span>
-                  </div>
-                  <div className="flex h-[22px] overflow-hidden rounded-[6px]" style={{ background: P7.track }}>
-                    {tot > 0 && INICIATIVAS.map((i) => {
-                      const n = rs.filter((r) => iniDe(r) === i.chave).length;
-                      return n > 0 ? (
-                        <div key={i.chave} className="flex items-center justify-center text-[11px] font-bold text-white" style={{ width: `${(n / tot) * 100}%`, background: i.cor }} title={`${i.nome}: ${n}`}>
-                          {n}
-                        </div>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+          {linhasSemestre(registros, anos, anoAtual).length === 0 ? (
+            <p className="text-[12.5px]" style={{ color: P7.sec }}>Sem desligamentos para mostrar.</p>
+          ) : (
+            <Barras100 linhas={linhasSemestre(registros, anos, anoAtual)} />
+          )}
+        </Cartao7>
+
+        <Cartao7>
+          <Titulo7 sub="Cada barra soma 100% do ano; dentro, quantidade e %">Iniciativa, por ano</Titulo7>
+          <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11.5px]">
+            {INICIATIVAS.map((i) => (<span key={i.chave}><Ponto cor={i.cor} />{i.nome}</span>))}
           </div>
+          <Barras100
+            linhas={anos.map((y) => {
+              const rs = deslAno(y);
+              const por = { colaborador: 0, empresa: 0, acordo: 0, outro: 0 } as Record<Ini, number>;
+              for (const r of rs) por[iniDe(r)]++;
+              return { rotulo: rotuloAno(y), por, total: rs.length };
+            })}
+          />
+        </Cartao7>
+
+        <Cartao7 className="lg:col-span-2">
+          <Titulo7 sub="Quem mais teve saídas no período do filtro">Ranking de saídas</Titulo7>
+          <RankingSaidas
+            cargo={ranking((r) => r.cargo || "Sem cargo")}
+            unidade={ranking((r) => r.unidade || "Sem unidade")}
+            cores={INICIATIVAS.map((i) => ({ chave: i.chave, nome: i.nome, cor: i.cor }))}
+          />
         </Cartao7>
 
         <Cartao7>
