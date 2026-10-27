@@ -559,8 +559,14 @@ export default async function DashboardPage({
       <ColaboradoresPorAno dados={dadosPorAno} escopo={modoRelatorio || ocultarFinanceiro || empresaSel === "franquias" ? null : empresaSel} tabelaPronta={!erroHistorico} />
       {empresaSel !== "franquias" && (
         <PrevisaoCrescimento
-          nClt={ativosAgora.filter((c) => c.tipo === "CLT").length}
-          nPj={ativosAgora.filter((c) => c.tipo === "PJ").length}
+          empresas={listaEmpresas
+            .filter((e) => empresaSel === "todas" || e.id === empresaSel)
+            .map((e) => ({
+              nome: e.nome,
+              cor: corEmpresa(e.nome),
+              nClt: ativosAgora.filter((c) => c.empresa_id === e.id && c.tipo === "CLT").length,
+              nPj: ativosAgora.filter((c) => c.empresa_id === e.id && c.tipo === "PJ").length,
+            }))}
         />
       )}
 
