@@ -16,13 +16,17 @@ const chave = (c: string, o: string, cartao: string | null) => `${c}|${o}|${cart
 export async function copiarDoMesAnteriorVT(
   supabase: Cliente,
   competencia: string,
-  colaboradorIds: string[]
+  colaboradorIds: string[],
+  operadoras?: string[]
 ): Promise<ResultadoCopia> {
   if (colaboradorIds.length === 0) return { ok: true, copiados: 0 };
   const anterior = deslocarCompetencia(competencia, -1);
 
+  let consultaAnterior = supabase.from("vt_lancamentos").select("*").eq("competencia", anterior).in("colaborador_id", colaboradorIds);
+  if (operadoras) consultaAnterior = consultaAnterior.in("operadora", operadoras);
+
   const [antRes, atualRes] = await Promise.all([
-    supabase.from("vt_lancamentos").select("*").eq("competencia", anterior).in("colaborador_id", colaboradorIds),
+    consultaAnterior,
     supabase
       .from("vt_lancamentos")
       .select("colaborador_id, operadora, cartao")
@@ -74,9 +78,10 @@ export async function copiarDoMesAnteriorVT(
 }
 
 /**
- * Cópia automática: na primeira vez que um mês (atual ou passado) é aberto, traz
- * os cartões do mês anterior. Um marcador (vt_competencias) garante que isso só
- * acontece uma vez, então um cartão que você excluir não volta sozinho.
+ * Cópia automática: ao abrir um mês (atual, próximo ou passado), cada operadora (BHBUS, ÓTIMO,
+ * SEMPARAR, CAJU) que ainda não tem NENHUM lançamento no mês traz os cartões e valores do mês
+ * anterior. Operadora que já tem lançamentos no mês não é mexida, então o que você excluir
+ * ou ajustar não volta sozinho. (Para trazer o que faltar, use "Copiar cartões do mês anterior".)
  */
 export async function copiaAutomaticaVT(
   supabase: Cliente,
@@ -88,20 +93,18 @@ export async function copiaAutomaticaVT(
   if (competencia > deslocarCompetencia(competenciaAtual, 1)) return false;
   const anterior = deslocarCompetencia(competencia, -1);
 
-  const marcado = await supabase.from("vt_competencias").select("competencia").eq("competencia", competencia).maybeSingle();
-  if (marcado.error || marcado.data) return false; // sem a tabela (migration 023) ou já copiado
+  const [atual, ant] = await Promise.all([
+    supabase.from("vt_lancamentos").select("operadora").eq("competencia", competencia).limit(5000),
+    supabase.from("vt_lancamentos").select("operadora").eq("competencia", anterior).limit(5000),
+  ]);
+  if (atual.error || ant.error) return false;
 
-  const temAnterior = await supabase.from("vt_lancamentos").select("id", { count: "exact", head: true }).eq("competencia", anterior);
-  if (temAnterior.error || (temAnterior.count ?? 0) === 0) return false;
+  const comLancamento = new Set<string>((atual.data ?? []).map((r: { operadora: string }) => r.operadora));
+  const vazias = Array.from(new Set<string>((ant.data ?? []).map((r: { operadora: string }) => r.operadora))).filter(
+    (o) => !comLancamento.has(o)
+  );
+  if (vazias.length === 0) return false;
 
-  // o marcador funciona como trava: se duas telas abrirem juntas, só uma copia
-  const trava = await supabase.from("vt_competencias").insert({ competencia });
-  if (trava.error) return false;
-
-  const r = await copiarDoMesAnteriorVT(supabase, competencia, colaboradorIds);
-  if (!r.ok) {
-    await supabase.from("vt_competencias").delete().eq("competencia", competencia);
-    return false;
-  }
-  return true;
+  const r = await copiarDoMesAnteriorVT(supabase, competencia, colaboradorIds, vazias);
+  return r.ok && r.copiados > 0;
 }
