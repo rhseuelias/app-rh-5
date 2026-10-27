@@ -3,16 +3,20 @@
 .ex{max-width:900px;margin:0 auto 8px;color:#a52828;font-weight:700;font-size:12px}
 .card{max-width:900px;margin:auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px}
 h2{margin:0;font-size:16px}.s{color:#64748b;font-size:13px}.top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
-label{font-size:13px;color:#64748b}input[type=number]{display:block;margin-top:4px;width:110px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px}
-.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}@media(max-width:700px){.g3{grid-template-columns:1fr}}
-.b{background:#f8fafc;border-radius:12px;padding:12px}.b small{display:block;color:#64748b;font-size:12px}.b b{font-size:24px}
-.n{font-size:12px;color:#94a3b8;margin-top:10px}</style></head><body>
-<div class="ex">PRÉVIA com números de exemplo (48 CLT e 26 PJ hoje). No app, os valores vêm do seu cadastro.</div>
-<div class="card"><div class="top"><div><h2>Previsão de crescimento</h2><div class="s">Quantidade de colaboradores, com a média entre CLT e PJ</div></div>
-<div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap"><label>Novos colaboradores<input id="q" type="number" value="50" min="0"></label><label>% PJ entre os novos: <b id="pv"></b><br><input id="p" type="range" min="0" max="100" step="5" value="35" style="width:150px;margin-top:8px"></label></div></div>
-<div class="g3"><div class="b"><small>Hoje</small><b>74</b><small style="color:#94a3b8">48 CLT · 26 PJ</small></div><div class="b"><small>Novos previstos</small><b id="n"></b><small id="ns" style="color:#94a3b8"></small></div><div class="b" style="background:#dcece9"><small style="color:#0a4a44">Quadro previsto</small><b style="color:#0a4a44" id="t"></b><small id="ts" style="color:#0a4a44"></small></div></div>
-<div class="n">Por padrão, os novos seguem a proporção atual de CLT e PJ. Arraste a barra para testar outra divisão.</div></div>
-<script>function u(){var q=+document.getElementById('q').value||0,p=+document.getElementById('p').value,pj=Math.round(q*p/100),cl=q-pj;
-document.getElementById('pv').textContent=p+'%';document.getElementById('n').textContent=q;document.getElementById('ns').textContent=cl+' CLT · '+pj+' PJ';
-document.getElementById('t').textContent=74+q;document.getElementById('ts').textContent=(48+cl)+' CLT · '+(26+pj)+' PJ'}
-document.getElementById('q').oninput=u;document.getElementById('p').oninput=u;u();</script></body></html>
+label{font-size:13px;color:#64748b}input[type=number]{display:block;margin-top:4px;width:90px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;text-align:right}
+table{width:100%;border-collapse:collapse;font-size:14px;margin-top:16px}th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;text-align:right;padding:8px 12px}th:first-child,td:first-child{text-align:left;padding-left:0}
+td{padding:8px 12px;text-align:right;border-top:1px solid #f1f5f9}td input{margin:0 0 0 auto;width:70px}.sm{font-size:12px;color:#94a3b8;margin-left:8px}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
+tr.t td{border-top:2px solid #e2e8f0;font-weight:700}.pv{font-weight:700;color:#0a4a44}.n{font-size:12px;color:#94a3b8;margin-top:10px}</style></head><body>
+<div class="ex">PRÉVIA com números de exemplo. No app, os valores vêm do seu cadastro.</div>
+<div class="card"><div class="top"><div><h2>Previsão de crescimento por empresa</h2><div class="s">Quantidade de colaboradores, com a média entre CLT e PJ</div></div>
+<div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap"><label>Novos no total<input id="q" type="number" value="50"></label><label>% PJ entre os novos: <b id="pv"></b><br><input id="p" type="range" min="0" max="100" step="5" value="35" style="width:150px;margin-top:8px;padding:0"></label></div></div>
+<table><thead><tr><th>Empresa</th><th>Hoje</th><th>Novos</th><th>CLT / PJ novos</th><th>Previsto</th></tr></thead><tbody id="tb"></tbody></table>
+<div class="n">Os novos são divididos entre as empresas pela proporção do quadro de hoje. Você pode trocar o número de cada empresa. Mudar o total refaz a divisão.</div></div>
+<script>var E=[['BSE','#1baf7a',44,20],['BDU','#e87ba4',9,5],['BABOON','#6250d6',6,3]];var man=[null,null,null];
+function div(t,w){var s=w.reduce(function(a,b){return a+b},0),ex=w.map(function(x){return t*x/s}),b=ex.map(Math.floor),r=t-b.reduce(function(a,c){return a+c},0);ex.map(function(e,i){return[i,e-Math.floor(e)]}).sort(function(a,c){return c[1]-a[1]}).forEach(function(o){if(r>0){b[o[0]]++;r--}});return b}
+function u(){var q=+document.getElementById('q').value||0,p=+document.getElementById('p').value;document.getElementById('pv').textContent=p+'%';
+var a=div(q,E.map(function(e){return e[2]+e[3]})),h='',T=[0,0,0,0];
+E.forEach(function(e,i){var n=man[i]==null?a[i]:man[i],pj=Math.round(n*p/100),hj=e[2]+e[3];T[0]+=hj;T[1]+=n;T[2]+=pj;
+h+='<tr><td><span class="dot" style="background:'+e[1]+'"></span><b>'+e[0]+'</b><span class="sm">'+e[2]+' CLT · '+e[3]+' PJ</span></td><td>'+hj+'</td><td><input type="number" value="'+n+'" onchange="man['+i+']=Math.max(0,+this.value||0);u()"></td><td>'+(n-pj)+' / '+pj+'</td><td class="pv">'+(hj+n)+'</td></tr>'});
+h+='<tr class="t"><td>Total</td><td>'+T[0]+'</td><td>'+T[1]+'</td><td>'+(T[1]-T[2])+' / '+T[2]+'</td><td class="pv">'+(T[0]+T[1])+'</td></tr>';document.getElementById('tb').innerHTML=h}
+document.getElementById('q').oninput=function(){man=[null,null,null];u()};document.getElementById('p').oninput=u;u();</script></body></html>
