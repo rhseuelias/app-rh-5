@@ -28,7 +28,6 @@ import AvisosRescisoes from "@/components/dashboard/AvisosRescisoes";
 import AlertasTopo from "@/components/dashboard/AlertasTopo";
 import BotaoImprimir from "@/components/dashboard/BotaoImprimir";
 import ColaboradoresPorAno, { type PontoAno } from "@/components/dashboard/ColaboradoresPorAno";
-import PrevisaoCrescimento from "@/components/projecao/PrevisaoCrescimento";
 import DesligamentosPorAno, { type RegistroDeslDash } from "@/components/dashboard/DesligamentosPorAno";
 import { montarLinhasIntegracao } from "@/components/dashboard/integracao-dados";
 import { LegendaSemaforo } from "@/components/dashboard/Semaforo";
@@ -557,19 +556,6 @@ export default async function DashboardPage({
     <>
       {/* Crescimento por ano */}
       <ColaboradoresPorAno dados={dadosPorAno} escopo={modoRelatorio || ocultarFinanceiro || empresaSel === "franquias" ? null : empresaSel} tabelaPronta={!erroHistorico} />
-      {empresaSel !== "franquias" && (
-        <PrevisaoCrescimento
-          empresas={listaEmpresas
-            .filter((e) => empresaSel === "todas" || e.id === empresaSel)
-            .map((e) => ({
-              nome: e.nome,
-              cor: corEmpresa(e.nome),
-              nClt: ativosAgora.filter((c) => c.empresa_id === e.id && c.tipo === "CLT").length,
-              nPj: ativosAgora.filter((c) => c.empresa_id === e.id && c.tipo === "PJ").length,
-            }))}
-        />
-      )}
-
     </>
   );
   const blocoMetas = (
