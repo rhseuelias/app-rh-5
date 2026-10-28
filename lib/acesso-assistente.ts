@@ -90,3 +90,39 @@ export async function assistenteSemAcessoAFicha(colaboradorId: string): Promise<
   const supabase = createClient();
   return !(await assistentePodeGerarFicha(supabase, colaboradorId));
 }
+
+// ---------------------------------------------------------------------------
+// Prazo de 10 dias para a assistente mexer no cadastro do colaborador
+// ---------------------------------------------------------------------------
+
+/** Dias após a data de admissão em que a assistente ainda pode editar/salvar o cadastro. */
+export const PRAZO_ASSISTENTE_DIAS = 10;
+
+export const MSG_PRAZO_ASSISTENTE =
+  "Já passaram mais de 10 dias da admissão deste colaborador. Depois desse prazo, só o RH pode editar, salvar, desligar ou excluir o cadastro.";
+
+/** true = a data de admissão (AAAA-MM-DD) tem mais de 10 dias, contando pelo dia de hoje em Brasília. */
+export function passouPrazoDaAssistente(dataAdmissao: string | null | undefined): boolean {
+  const adm = (dataAdmissao ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(adm)) return false; // sem data de admissão: não dá pra contar, não trava
+  const hoje = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const dias = (Date.parse(`${hoje}T00:00:00Z`) - Date.parse(`${adm}T00:00:00Z`)) / 86400000;
+  return dias > PRAZO_ASSISTENTE_DIAS;
+}
+
+/**
+ * true = quem está logado é a assistente E o colaborador já passou de 10 dias da admissão.
+ * Para os demais perfis (RH, gestor, admin) é sempre false.
+ */
+export async function assistenteBloqueadaPorPrazo(colaboradorId: string | null | undefined): Promise<boolean> {
+  if (!colaboradorId) return false; // cadastro novo: liberado
+  if (!(await souAssistente())) return false;
+  const supabase = createClient();
+  const { data } = await supabase.from("colaboradores").select("data_admissao").eq("id", colaboradorId).maybeSingle();
+  return passouPrazoDaAssistente((data as { data_admissao?: string | null } | null)?.data_admissao);
+}
+
+/** Barra a ação (lança erro) quando a assistente já passou do prazo de 10 dias. */
+export async function exigirDentroDoPrazoDaAssistente(colaboradorId: string | null | undefined): Promise<void> {
+  if (await assistenteBloqueadaPorPrazo(colaboradorId)) throw new Error(MSG_PRAZO_ASSISTENTE);
+}

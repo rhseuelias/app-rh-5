@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
+import { assistenteBloqueadaPorPrazo, exigirDentroDoPrazoDaAssistente } from "@/lib/acesso-assistente";
 import { calcularFimExperiencia, calcularPeriodoAquisitivo, formatarDataBR } from "@/lib/calculos";
 import { addDays, addMonths, differenceInCalendarDays } from "date-fns";
 import {
@@ -102,6 +103,8 @@ const CAMPOS_CONTRATO_REMUNERACAO_CLT = [
 export async function salvarColaborador(formData: FormData) {
   const supabase = createClient();
   const id = str(formData, "id");
+  // assistente: depois de 10 dias da admissão não salva mais nenhum dado do colaborador
+  await exigirDentroDoPrazoDaAssistente(id);
 
   const dataAdmissao = str(formData, "data_admissao");
 
@@ -587,6 +590,11 @@ async function importarFichasGoogleForms(formData: FormData): Promise<ResultadoI
     let colaboradorId: string;
 
     if (existente) {
+      // assistente: cadastro com mais de 10 dias de admissão não pode ser atualizado pela importação
+      if (await assistenteBloqueadaPorPrazo(existente.id)) {
+        resultado.erros.push(`${ficha.nome}: já passou de 10 dias da admissão — só o RH pode atualizar este cadastro`);
+        continue;
+      }
       // ---- já cadastrado: atualiza só o que foi respondido ----
       const atualizacao: Record<string, unknown> = { updated_at: new Date().toISOString() };
       for (const [campo, valor] of Object.entries(dadosDoFormulario)) {
@@ -1135,6 +1143,7 @@ export async function corrigirPeriodosAquisitivosDatas(colaboradorId: string): P
 }
 
 export async function atualizarStatusColaborador(id: string, status: string) {
+  await exigirDentroDoPrazoDaAssistente(id);
   const supabase = createClient();
   const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
   if (status === "desligado") {
@@ -1150,6 +1159,7 @@ export async function atualizarStatusColaborador(id: string, status: string) {
 export async function desligarColaborador(formData: FormData) {
   const supabase = createClient();
   const id = str(formData, "colaborador_id")!;
+  await exigirDentroDoPrazoDaAssistente(id);
 
   await supabase
     .from("colaboradores")
@@ -1176,6 +1186,7 @@ export async function desligarColaborador(formData: FormData) {
 export async function renovarContratoPJ(formData: FormData) {
   const supabase = createClient();
   const id = str(formData, "colaborador_id")!;
+  await exigirDentroDoPrazoDaAssistente(id);
 
   const { data: atual } = await supabase
     .from("colaboradores")
@@ -1221,6 +1232,7 @@ export async function editarHistoricoContratoPJ(formData: FormData) {
   const supabase = createClient();
   const id = str(formData, "id")!;
   const colaboradorId = str(formData, "colaborador_id")!;
+  await exigirDentroDoPrazoDaAssistente(colaboradorId);
 
   await supabase
     .from("historico_contratos_pj")
@@ -1236,12 +1248,14 @@ export async function editarHistoricoContratoPJ(formData: FormData) {
 
 /** Exclui em definitivo um período do histórico de renovações de contrato PJ. */
 export async function excluirHistoricoContratoPJ(id: string, colaboradorId: string) {
+  await exigirDentroDoPrazoDaAssistente(colaboradorId);
   const supabase = createClient();
   await supabase.from("historico_contratos_pj").delete().eq("id", id);
   revalidatePath(`/colaboradores/${colaboradorId}`);
 }
 
 export async function excluirColaborador(id: string) {
+  await exigirDentroDoPrazoDaAssistente(id);
   const supabase = createClient();
   await supabase.from("colaboradores").delete().eq("id", id);
   revalidatePath("/colaboradores");

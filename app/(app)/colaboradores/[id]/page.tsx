@@ -38,7 +38,7 @@ import { autoGerarProximosPeriodosVencidos } from "@/lib/actions";
 import { calcularPrevisaoColaborador, fDias } from "@/lib/previsao-ferias";
 import { hojeEmBrasilia } from "@/lib/ferias-regras";
 import { souAssistente, contratoCLTLiberadoParaUsuario } from "@/lib/permissoes";
-import { assistentePodeGerarFicha } from "@/lib/acesso-assistente";
+import { assistentePodeGerarFicha, assistenteBloqueadaPorPrazo, MSG_PRAZO_ASSISTENTE } from "@/lib/acesso-assistente";
 import AcompanhamentoDesligamento from "@/components/desligamento/AcompanhamentoDesligamento";
 import { hojeBrasilia, type Desligamento } from "@/lib/desligamento";
 import { combinarDadosEmpresa } from "@/lib/dados-empresa";
@@ -146,6 +146,8 @@ export default async function ColaboradorPage({ params }: { params: { id: string
   await autoGerarProximosPeriodosVencidos();
 
   const restrito = await souAssistente();
+  // assistente: passou de 10 dias da admissão = só consulta (sem editar, salvar, desligar ou excluir)
+  const bloqueadoPrazo = await assistenteBloqueadaPorPrazo(params.id);
   // assistente: "Contrato e remuneração (CLT)" só aparece enquanto o colaborador está no processo
   // de integração e a etapa Contrato não foi concluída (para os demais perfis é sempre true)
   const contratoLiberado = await contratoCLTLiberadoParaUsuario(params.id);
@@ -325,10 +327,18 @@ export default async function ColaboradorPage({ params }: { params: { id: string
           </div>
         </div>
         <div className="flex items-start gap-2 flex-wrap">
-          <a href="#editar-ficha" className="btn-secondary text-sm">
-            ✏️ Editar
-          </a>
-          <StatusColaboradorAcoes id={c.id} statusAtual={c.status} />
+          {bloqueadoPrazo ? (
+            <p className="max-w-xs rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Somente consulta. {MSG_PRAZO_ASSISTENTE}
+            </p>
+          ) : (
+            <>
+              <a href="#editar-ficha" className="btn-secondary text-sm">
+                ✏️ Editar
+              </a>
+              <StatusColaboradorAcoes id={c.id} statusAtual={c.status} />
+            </>
+          )}
         </div>
       </div>
 
@@ -664,12 +674,14 @@ export default async function ColaboradorPage({ params }: { params: { id: string
                 {!restrito && c.comissao_quimica_pct ? ` · química ${c.comissao_quimica_pct}%` : ""}
               </p>
             </div>
-            <RenovarContratoPJBotao
-              colaboradorId={c.id}
-              contratoFimAtual={c.contrato_fim}
-              valorAtual={c.valor_nota_fiscal}
-              restrito={restrito}
-            />
+            {!bloqueadoPrazo && (
+              <RenovarContratoPJBotao
+                colaboradorId={c.id}
+                contratoFimAtual={c.contrato_fim}
+                valorAtual={c.valor_nota_fiscal}
+                restrito={restrito}
+              />
+            )}
           </div>
 
           <div className="overflow-x-auto -mx-1">
@@ -701,7 +713,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
                         </td>
                       )}
                       <td className="py-2.5 px-1">
-                        <HistoricoContratoPJAcoes item={h} colaboradorId={c.id} restrito={restrito} />
+                        {!bloqueadoPrazo && <HistoricoContratoPJAcoes item={h} colaboradorId={c.id} restrito={restrito} />}
                       </td>
                     </tr>
                   ))}
@@ -822,6 +834,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
       </div>
       )}
 
+      {!bloqueadoPrazo && (
       <div id="editar-ficha" className="scroll-mt-6">
         <h2 className="font-medium text-slate-900 mb-3">Editar ficha</h2>
         <ColaboradorForm
@@ -834,6 +847,7 @@ export default async function ColaboradorPage({ params }: { params: { id: string
           contratoLiberado={contratoLiberado}
         />
       </div>
+      )}
     </div>
   );
 }

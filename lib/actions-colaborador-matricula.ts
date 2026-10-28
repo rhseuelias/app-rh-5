@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import { salvarColaborador } from "@/lib/actions";
 import { souAssistente } from "@/lib/permissoes";
+import { exigirDentroDoPrazoDaAssistente } from "@/lib/acesso-assistente";
 
 // Salva o colaborador do jeito de sempre (salvarColaborador) e, em seguida,
 // grava a matrícula, que é um campo novo. Assim o arquivo lib/actions.ts não
@@ -13,6 +14,9 @@ export async function salvarColaboradorComMatricula(formData: FormData): Promise
   const matricula = String(formData.get("matricula") ?? "").trim();
   const id = String(formData.get("id") ?? "");
   const cpf = String(formData.get("cpf_cnpj") ?? "").trim();
+
+  // assistente: depois de 10 dias da admissão não salva mais nada (nem a matrícula)
+  await exigirDentroDoPrazoDaAssistente(id || null);
 
   let erro: unknown = null;
   let falhou = false;
