@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { definirAdiantamento } from "@/lib/actions-adiantamentos";
+import { definirAdiantamento, definirValeTransporte } from "@/lib/actions-adiantamentos";
 import NomeColaborador from "@/components/NomeColaborador";
 
 export interface ItemAdiantamento {
@@ -12,13 +12,16 @@ export interface ItemAdiantamento {
   empresa: string;
   unidade: string;
   recebe: boolean;
+  recebeVt: boolean;
 }
 
 export default function AdiantamentosTela({ itens, empresas }: { itens: ItemAdiantamento[]; empresas: string[] }) {
   const [marcados, setMarcados] = useState<Set<string>>(() => new Set(itens.filter((i) => i.recebe).map((i) => i.id)));
+  const [marcadosVt, setMarcadosVt] = useState<Set<string>>(() => new Set(itens.filter((i) => i.recebeVt).map((i) => i.id)));
   const [empresa, setEmpresa] = useState<string>("Todas");
   const [busca, setBusca] = useState("");
   const [soSelecionados, setSoSelecionados] = useState(false);
+  const [soVt, setSoVt] = useState(false);
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(0);
 
@@ -45,24 +48,59 @@ export default function AdiantamentosTela({ itens, empresas }: { itens: ItemAdia
     }
   }
 
+  async function alternarVt(id: string) {
+    const novo = !marcadosVt.has(id);
+    setErro("");
+    setMarcadosVt((p) => {
+      const n = new Set(p);
+      if (novo) n.add(id);
+      else n.delete(id);
+      return n;
+    });
+    setSalvando((x) => x + 1);
+    const r = await definirValeTransporte([id], novo);
+    setSalvando((x) => x - 1);
+    if (!r.ok) {
+      setErro(r.erro);
+      setMarcadosVt((p) => {
+        const n = new Set(p);
+        if (novo) n.delete(id);
+        else n.add(id);
+        return n;
+      });
+    }
+  }
+
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return itens
-      .filter((i) => (empresa === "Todas" || i.empresa === empresa) && (!soSelecionados || marcados.has(i.id)) && (!q || i.nome.toLowerCase().includes(q)))
+      .filter((i) => (empresa === "Todas" || i.empresa === empresa) && (!soSelecionados || marcados.has(i.id)) && (!soVt || marcadosVt.has(i.id)) && (!q || i.nome.toLowerCase().includes(q)))
       .sort((a, b) => a.empresa.localeCompare(b.empresa, "pt-BR") || a.unidade.localeCompare(b.unidade, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [itens, empresa, busca, soSelecionados, marcados]);
+  }, [itens, empresa, busca, soSelecionados, soVt, marcados, marcadosVt]);
 
   const totalMarcados = itens.filter((i) => marcados.has(i.id)).length;
+  const totalVt = itens.filter((i) => marcadosVt.has(i.id)).length;
+  const totalAmbos = itens.filter((i) => marcados.has(i.id) && marcadosVt.has(i.id)).length;
   const porEmpresa = (e: string) => itens.filter((i) => i.empresa === e && marcados.has(i.id)).length;
 
   return (
     <div className="space-y-4">
       <div className="card !py-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-3xl font-display font-semibold tabular-nums">{totalMarcados}</p>
-          <p className="text-sm text-stone-600">
-            {totalMarcados === 1 ? "colaborador recebe" : "colaboradores recebem"} adiantamento. A lista se repete todo mês.
-          </p>
+        <div className="flex flex-wrap gap-8">
+          <div>
+            <p className="text-3xl font-display font-semibold tabular-nums">{totalMarcados}</p>
+            <p className="text-sm text-stone-600">
+              {totalMarcados === 1 ? "recebe" : "recebem"} adiantamento. A lista se repete todo mês.
+            </p>
+          </div>
+          <div>
+            <p className="text-3xl font-display font-semibold tabular-nums">{totalVt}</p>
+            <p className="text-sm text-stone-600">{totalVt === 1 ? "recebe" : "recebem"} vale transporte</p>
+          </div>
+          <div>
+            <p className="text-3xl font-display font-semibold tabular-nums">{totalAmbos}</p>
+            <p className="text-sm text-stone-600">{totalAmbos === 1 ? "recebe" : "recebem"} os dois</p>
+          </div>
         </div>
         <Link href="/departamento-pessoal/adiantamentos/relatorio" className="btn-cta no-underline">
           Ver relatório do mês
@@ -96,7 +134,11 @@ export default function AdiantamentosTela({ itens, empresas }: { itens: ItemAdia
         />
         <label className="inline-flex items-center gap-2 text-sm">
           <input type="checkbox" checked={soSelecionados} onChange={(e) => setSoSelecionados(e.target.checked)} />
-          Mostrar só quem recebe
+          Mostrar só quem recebe adiantamento
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={soVt} onChange={(e) => setSoVt(e.target.checked)} />
+          Mostrar só quem recebe vale transporte
         </label>
         <span className="text-sm text-stone-500" aria-live="polite">
           {salvando > 0 ? "Salvando…" : "Tudo salvo"}
@@ -113,7 +155,8 @@ export default function AdiantamentosTela({ itens, empresas }: { itens: ItemAdia
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-brand-200 text-left text-xs uppercase tracking-wider text-stone-500">
-              <th className="px-4 py-2.5 w-24">Recebe</th>
+              <th className="px-4 py-2.5 w-28">Adiantamento</th>
+              <th className="px-4 py-2.5 w-28">Recebe VT</th>
               <th className="px-4 py-2.5">Colaborador</th>
               <th className="px-4 py-2.5">Cargo</th>
               <th className="px-4 py-2.5">Empresa · Unidade</th>
@@ -122,15 +165,16 @@ export default function AdiantamentosTela({ itens, empresas }: { itens: ItemAdia
           <tbody>
             {visiveis.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-stone-500">
+                <td colSpan={5} className="px-4 py-6 text-center text-stone-500">
                   Nenhum colaborador neste filtro.
                 </td>
               </tr>
             )}
             {visiveis.map((i) => {
               const ligado = marcados.has(i.id);
+              const ligadoVt = marcadosVt.has(i.id);
               return (
-                <tr key={i.id} className={`border-b border-brand-100 last:border-b-0 ${ligado ? "bg-brand-50" : ""}`}>
+                <tr key={i.id} className={`border-b border-brand-100 last:border-b-0 ${ligado || ligadoVt ? "bg-brand-50" : ""}`}>
                   <td className="px-4 py-2">
                     <input
                       type="checkbox"
@@ -138,6 +182,15 @@ export default function AdiantamentosTela({ itens, empresas }: { itens: ItemAdia
                       checked={ligado}
                       onChange={() => alternar(i.id)}
                       aria-label={`${i.nome} recebe adiantamento`}
+                    />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input
+                      type="checkbox"
+                      className="h-5 w-5"
+                      checked={ligadoVt}
+                      onChange={() => alternarVt(i.id)}
+                      aria-label={`${i.nome} recebe vale transporte`}
                     />
                   </td>
                   <td className="px-4 py-2 font-semibold uppercase">

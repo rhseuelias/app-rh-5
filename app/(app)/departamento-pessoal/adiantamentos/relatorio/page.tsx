@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, Unidade } from "@/types/db";
 import { rotuloCompetencia } from "@/lib/beneficios-calculos";
 import { competenciaAtualSP, deslocarCompetencia, EMPRESAS_VT, moedaVT } from "@/lib/vale-transporte";
-import { montarLinhasAdiantamento, type LinhaAdiantamento } from "@/lib/adiantamentos";
+import { montarLinhasRelatorio, type LinhaAdiantamento } from "@/lib/adiantamentos";
 import ImprimirBotao from "@/components/ImprimirBotao";
 import GerarAdiantamentosBotao from "@/components/GerarAdiantamentosBotao";
 
@@ -14,7 +14,7 @@ function dataHora(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
 }
 
-export default async function RelatorioAdiantamentosPage({ searchParams }: { searchParams: { competencia?: string; empresa?: string; modo?: string } }) {
+export default async function RelatorioAdiantamentosPage({ searchParams }: { searchParams: { competencia?: string; empresa?: string; modo?: string; sit?: string } }) {
   const competencia = /^\d{4}-(0[1-9]|1[0-2])$/.test(searchParams.competencia ?? "")
     ? (searchParams.competencia as string)
     : competenciaAtualSP();
@@ -53,15 +53,28 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
         unidade: String(s.unidade ?? ""),
         pct: s.pct === null || s.pct === undefined ? null : Number(s.pct),
         valor: s.valor === null || s.valor === undefined ? null : Number(s.valor),
+        temAdiantamento: s.tem_adiantamento !== false,
+        recebeVt: !!s.recebe_vt,
+        descontoVt: s.desconto_vt === null || s.desconto_vt === undefined ? null : Number(s.desconto_vt),
       }))
-    : montarLinhasAdiantamento((colaboradoresRes.data ?? []) as Colaborador[], empresaPorId, unidadePorId);
+    : montarLinhasRelatorio((colaboradoresRes.data ?? []) as Colaborador[], empresaPorId, unidadePorId);
 
   const empresasComDados = Array.from(new Set(todas.map((l) => l.empresa)));
   const outras = empresasComDados.filter((e) => !(EMPRESAS_VT as readonly string[]).includes(e)).sort((a, b) => a.localeCompare(b, "pt-BR"));
   const empresasOrdem: string[] = [...EMPRESAS_VT, ...outras];
 
   const filtro = searchParams.empresa && empresasOrdem.includes(searchParams.empresa) ? searchParams.empresa : "todas";
-  const linhasFiltradas = filtro === "todas" ? todas : todas.filter((l) => l.empresa === filtro);
+  const sit = ["ambos", "ad", "vt"].includes(searchParams.sit ?? "") ? (searchParams.sit as string) : "todos";
+  const linhasFiltradas = todas
+    .filter((l) => filtro === "todas" || l.empresa === filtro)
+    .filter((l) => {
+      const ad = l.temAdiantamento !== false;
+      const vt = !!l.recebeVt;
+      if (sit === "ambos") return ad && vt;
+      if (sit === "ad") return ad && !vt;
+      if (sit === "vt") return vt && !ad;
+      return true;
+    });
 
   // empresa -> unidade -> linhas
   const grupos = new Map<string, Map<string, LinhaAdiantamento[]>>();
@@ -79,16 +92,18 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
       empresa,
       quantidade: linhas.length,
       total: linhas.reduce((s, l) => s + (l.valor ?? 0), 0),
-      semValor: linhas.filter((l) => l.valor === null).length,
+      desconto: linhas.reduce((s, l) => s + (l.descontoVt ?? 0), 0),
+      semValor: linhas.filter((l) => l.temAdiantamento !== false && l.valor === null).length,
     };
   });
   const quantidadeTotal = resumo.reduce((s, r) => s + r.quantidade, 0);
   const valorTotal = resumo.reduce((s, r) => s + r.total, 0);
+  const descontoTotal = resumo.reduce((s, r) => s + r.desconto, 0);
   const semValorTotal = resumo.reduce((s, r) => s + r.semValor, 0);
 
   const soNomes = searchParams.modo === "nomes";
-  const href = (comp: string, emp: string = filtro, nomes: boolean = soNomes) =>
-    `/departamento-pessoal/adiantamentos/relatorio?competencia=${comp}${emp !== "todas" ? `&empresa=${encodeURIComponent(emp)}` : ""}${nomes ? "&modo=nomes" : ""}`;
+  const href = (comp: string, emp: string = filtro, nomes: boolean = soNomes, situacao: string = sit) =>
+    `/departamento-pessoal/adiantamentos/relatorio?competencia=${comp}${emp !== "todas" ? `&empresa=${encodeURIComponent(emp)}` : ""}${nomes ? "&modo=nomes" : ""}${situacao !== "todos" ? `&sit=${situacao}` : ""}`;
   const tituloEmpresa = filtro === "todas" ? "Todas as empresas" : filtro;
 
   return (
@@ -154,8 +169,8 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
       <div className="flex flex-wrap items-center gap-2 print:hidden">
         <span className="text-sm font-semibold text-stone-600">Mostrar:</span>
         {[
-          { nomes: false, rotulo: "Completo (cargo, matrícula, %, valor)" },
-          { nomes: true, rotulo: "Só nomes" },
+          { nomes: false, rotulo: "Com valores" },
+          { nomes: true, rotulo: "Só a situação (sem valores)" },
         ].map((o) => (
           <Link
             key={o.rotulo}
@@ -168,10 +183,29 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
         ))}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <span className="text-sm font-semibold text-stone-600">Quem:</span>
+        {[
+          { v: "todos", rotulo: "Todos" },
+          { v: "ambos", rotulo: "Adiantamento e VT" },
+          { v: "ad", rotulo: "Só adiantamento" },
+          { v: "vt", rotulo: "Só VT" },
+        ].map((o) => (
+          <Link
+            key={o.v}
+            href={href(competencia, filtro, soNomes, o.v)}
+            aria-current={sit === o.v ? "true" : undefined}
+            className={`rounded-full border px-4 py-1.5 text-sm font-semibold no-underline ${sit === o.v ? "bg-ink-900 text-white border-ink-900" : "bg-white border-brand-200"}`}
+          >
+            {o.rotulo}
+          </Link>
+        ))}
+      </div>
+
       <div className="hidden print:block">
         <p className="font-display text-2xl font-semibold uppercase">
           Relatório de adiantamentos · {rotuloCompetencia(competencia)} · {tituloEmpresa}
-          {soNomes ? " · Só nomes" : ""}
+          {soNomes ? " · Só a situação" : ""}
         </p>
       </div>
 
@@ -191,7 +225,7 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
       {quantidadeTotal === 0 && (
         <div className="card">
           <p className="text-sm text-stone-600">
-            {jaSalvo || todas.length > 0 ? "Nenhum adiantamento nesta empresa." : "Ninguém está marcado para receber adiantamento. Marque na tela de Adiantamentos."}
+            {jaSalvo || todas.length > 0 ? "Ninguém neste filtro." : "Ninguém está marcado para receber adiantamento ou vale transporte. Marque na tela de Adiantamentos."}
           </p>
         </div>
       )}
@@ -206,19 +240,26 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
               <h2 className="text-xl font-semibold">{empresa}</h2>
               <p className="text-sm text-stone-600">
                 {r.quantidade} {r.quantidade === 1 ? "colaborador" : "colaboradores"}
-                {soNomes ? "" : ` · total ${moedaVT(r.total)}`}
+                {soNomes ? "" : ` · adiantamento ${moedaVT(r.total)} · desconto de VT ${moedaVT(r.desconto)}`}
               </p>
             </header>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-brand-200 text-left text-xs uppercase tracking-wider text-stone-500">
                   <th className="px-4 py-2">Colaborador</th>
-                  {!soNomes && (
+                  {soNomes ? (
+                    <>
+                      <th className="px-4 py-2">Adiantamento</th>
+                      <th className="px-4 py-2">Vale transporte</th>
+                    </>
+                  ) : (
                     <>
                       <th className="px-4 py-2">Cargo</th>
                       <th className="px-4 py-2">Matrícula</th>
+                      <th className="px-4 py-2">Situação</th>
                       <th className="px-4 py-2 text-right">%</th>
-                      <th className="px-4 py-2 text-right">Valor</th>
+                      <th className="px-4 py-2 text-right">Adiantamento</th>
+                      <th className="px-4 py-2 text-right">Desconto VT</th>
                     </>
                   )}
                 </tr>
@@ -229,19 +270,28 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
                   return (
                     <Fragment key={un}>
                       <tr className="bg-stone-50">
-                        <td colSpan={soNomes ? 1 : 5} className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-stone-600">
+                        <td colSpan={soNomes ? 3 : 7} className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-stone-600">
                           {un} · {linhas.length}
                         </td>
                       </tr>
                       {linhas.map((l) => (
                         <tr key={l.id + l.nome} className="border-b border-brand-100 last:border-b-0">
                           <td className="px-4 py-2 font-semibold uppercase">{l.nome}</td>
-                          {!soNomes && (
+                          {soNomes ? (
+                            <>
+                              <td className="px-4 py-2">{l.temAdiantamento !== false ? <b>Tem adiantamento</b> : <span className="text-stone-400">—</span>}</td>
+                              <td className="px-4 py-2">{l.recebeVt ? <b>Tem VT</b> : <span className="text-stone-400">—</span>}</td>
+                            </>
+                          ) : (
                             <>
                               <td className="px-4 py-2 uppercase text-stone-600">{l.cargo || "—"}</td>
                               <td className="px-4 py-2 text-stone-600">{l.matricula || "—"}</td>
-                              <td className="px-4 py-2 text-right tabular-nums">{l.pct ? `${l.pct}%` : "—"}</td>
-                              <td className="px-4 py-2 text-right tabular-nums">{l.valor === null ? "—" : moedaVT(l.valor)}</td>
+                              <td className="px-4 py-2 text-stone-600">
+                                {[l.temAdiantamento !== false ? "Adiantamento" : "", l.recebeVt ? "VT" : ""].filter(Boolean).join(" + ")}
+                              </td>
+                              <td className="px-4 py-2 text-right tabular-nums">{l.temAdiantamento !== false && l.pct ? `${l.pct}%` : "—"}</td>
+                              <td className="px-4 py-2 text-right tabular-nums">{l.temAdiantamento === false || l.valor === null ? "—" : moedaVT(l.valor)}</td>
+                              <td className="px-4 py-2 text-right tabular-nums">{l.descontoVt == null ? "—" : moedaVT(l.descontoVt)}</td>
                             </>
                           )}
                         </tr>
@@ -263,10 +313,10 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
 
       {quantidadeTotal > 0 && !soNomes && (
         <p className="text-sm text-stone-600">
-          Total {filtro === "todas" ? "geral" : `de ${filtro}`}: <b>{moedaVT(valorTotal)}</b> para {quantidadeTotal} {quantidadeTotal === 1 ? "colaborador" : "colaboradores"}.
+          Total {filtro === "todas" ? "geral" : `de ${filtro}`}: adiantamento <b>{moedaVT(valorTotal)}</b> e desconto de VT <b>{moedaVT(descontoTotal)}</b>, para {quantidadeTotal} {quantidadeTotal === 1 ? "colaborador" : "colaboradores"}.
           {semValorTotal > 0 &&
             ` ${semValorTotal} ${semValorTotal === 1 ? "colaborador está" : "colaboradores estão"} sem valor: a unidade não tem % de adiantamento definido (ou falta o salário no cadastro).`}
-          {" "}Valor = salário base × % da unidade. Quem for desligado ou afastado sai da lista sozinho.
+          {" "}Adiantamento = salário base × % da unidade. Desconto de VT = 6% do salário base, só para quem recebe VT e tem o desconto marcado no cadastro. Quem for desligado ou afastado sai da lista sozinho.
         </p>
       )}
     </div>

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase-server";
 import type { Colaborador, Empresa, Unidade } from "@/types/db";
-import { montarLinhasAdiantamento } from "@/lib/adiantamentos";
+import { montarLinhasRelatorio } from "@/lib/adiantamentos";
 
 export type RespostaAdiantamento = { ok: true } | { ok: false; erro: string };
 export type RespostaGerarAdiantamentos = { ok: true; quantidade: number } | { ok: false; erro: string };
@@ -20,6 +20,29 @@ export async function definirAdiantamento(ids: string[], recebe: boolean): Promi
   if (lista.length === 0 || lista.length > 500) return { ok: false, erro: "Escolha o colaborador." };
 
   const { error } = await supabase.from("colaboradores").update({ adiantamento_salario: recebe }).in("id", lista);
+  if (error) {
+    if (/row-level security|permission denied|policy/i.test(error.message)) {
+      return { ok: false, erro: "O banco não permitiu salvar (falta permissão)." };
+    }
+    return { ok: false, erro: error.message };
+  }
+  revalidatePath("/departamento-pessoal/adiantamentos");
+  revalidatePath("/departamento-pessoal/adiantamentos/relatorio");
+  return { ok: true };
+}
+
+/** Marca ou desmarca "recebe vale transporte" no cadastro dos colaboradores. */
+export async function definirValeTransporte(ids: string[], recebe: boolean): Promise<RespostaAdiantamento> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, erro: "Entre no sistema para fazer isso." };
+
+  const lista = Array.isArray(ids) ? ids.filter((x) => typeof x === "string" && x.length > 0) : [];
+  if (lista.length === 0 || lista.length > 500) return { ok: false, erro: "Escolha o colaborador." };
+
+  const { error } = await supabase.from("colaboradores").update({ vale_transporte: recebe }).in("id", lista);
   if (error) {
     if (/row-level security|permission denied|policy/i.test(error.message)) {
       return { ok: false, erro: "O banco não permitiu salvar (falta permissão)." };
@@ -53,8 +76,14 @@ export async function gerarAdiantamentosMes(competencia: string): Promise<Respos
 
   const empresaPorId = new Map(((empresasRes.data ?? []) as Empresa[]).map((e) => [e.id, e]));
   const unidadePorId = new Map(((unidadesRes.data ?? []) as Unidade[]).map((u) => [u.id, u]));
-  const linhas = montarLinhasAdiantamento((colaboradoresRes.data ?? []) as Colaborador[], empresaPorId, unidadePorId);
-  if (linhas.length === 0) return { ok: false, erro: "Ninguém está marcado para receber adiantamento." };
+  const linhas = montarLinhasRelatorio((colaboradoresRes.data ?? []) as Colaborador[], empresaPorId, unidadePorId);
+  if (linhas.length === 0) return { ok: false, erro: "Ninguém está marcado para receber adiantamento ou vale transporte." };
+
+  // Confere antes de apagar: se a migration 053 não rodou, o mês salvo não é perdido.
+  const teste = await supabase.from("adiantamentos_mensais").select("tem_adiantamento, recebe_vt, desconto_vt").limit(1);
+  if (teste.error && /tem_adiantamento|recebe_vt|desconto_vt|schema cache/i.test(teste.error.message)) {
+    return { ok: false, erro: "Falta rodar a migration_053_adiantamento_vt.sql no Supabase." };
+  }
 
   const apagar = await supabase.from("adiantamentos_mensais").delete().eq("competencia", competencia);
   if (apagar.error) {
@@ -74,9 +103,17 @@ export async function gerarAdiantamentosMes(competencia: string): Promise<Respos
     unidade: l.unidade,
     pct: l.pct,
     valor: l.valor,
+    tem_adiantamento: l.temAdiantamento !== false,
+    recebe_vt: !!l.recebeVt,
+    desconto_vt: l.descontoVt ?? null,
   }));
   const inserir = await supabase.from("adiantamentos_mensais").insert(registros);
-  if (inserir.error) return { ok: false, erro: inserir.error.message };
+  if (inserir.error) {
+    if (/tem_adiantamento|recebe_vt|desconto_vt|schema cache/i.test(inserir.error.message)) {
+      return { ok: false, erro: "Falta rodar a migration_053_adiantamento_vt.sql no Supabase." };
+    }
+    return { ok: false, erro: inserir.error.message };
+  }
 
   revalidatePath("/departamento-pessoal/adiantamentos");
   revalidatePath("/departamento-pessoal/adiantamentos/relatorio");

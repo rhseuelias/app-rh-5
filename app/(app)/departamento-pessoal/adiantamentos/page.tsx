@@ -39,6 +39,7 @@ export default async function AdiantamentosPage() {
     empresa: empresaVT(c, empresaPorId, unidadePorId),
     unidade: grupoVT(c, empresaPorId, unidadePorId),
     recebe: !!c.adiantamento_salario,
+    recebeVt: !!c.vale_transporte,
   }));
 
   const outras = Array.from(new Set(itens.map((i) => i.empresa)))
@@ -53,7 +54,7 @@ export default async function AdiantamentosPage() {
           ← Departamento Pessoal
         </Link>
         <h1 className="text-3xl font-semibold text-slate-900">Adiantamentos</h1>
-        <p className="text-sm text-stone-600">Marque quem recebe adiantamento. Quem estiver marcado entra no relatório de todos os meses.</p>
+        <p className="text-sm text-stone-600">Marque quem recebe adiantamento e quem recebe vale transporte. Quem estiver marcado entra no relatório de todos os meses.</p>
       </div>
       {anteriorSalvo === null ? (
         <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
