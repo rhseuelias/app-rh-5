@@ -267,34 +267,49 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
               <tbody>
                 {unidades.map((un) => {
                   const linhas = (porUnidade.get(un) ?? []).slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+                  const cols = soNomes ? 3 : 7;
+                  const subgrupos = [
+                    { chave: "ambos", titulo: "Adiantamento e vale transporte", itens: linhas.filter((l) => l.temAdiantamento !== false && l.recebeVt) },
+                    { chave: "ad", titulo: "Só adiantamento", itens: linhas.filter((l) => l.temAdiantamento !== false && !l.recebeVt) },
+                    { chave: "vt", titulo: "Só vale transporte", itens: linhas.filter((l) => l.temAdiantamento === false && l.recebeVt) },
+                  ].filter((g) => g.itens.length > 0);
                   return (
                     <Fragment key={un}>
                       <tr className="bg-stone-50">
-                        <td colSpan={soNomes ? 3 : 7} className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-stone-600">
+                        <td colSpan={cols} className="px-4 py-2.5 text-lg font-extrabold uppercase tracking-wide text-red-600">
                           {un} · {linhas.length}
                         </td>
                       </tr>
-                      {linhas.map((l) => (
-                        <tr key={l.id + l.nome} className="border-b border-brand-100 last:border-b-0">
-                          <td className="px-4 py-2 font-semibold uppercase">{l.nome}</td>
-                          {soNomes ? (
-                            <>
-                              <td className="px-4 py-2">{l.temAdiantamento !== false ? <b>Tem adiantamento</b> : <span className="text-stone-400">—</span>}</td>
-                              <td className="px-4 py-2">{l.recebeVt ? <b>Tem VT</b> : <span className="text-stone-400">—</span>}</td>
-                            </>
-                          ) : (
-                            <>
-                              <td className="px-4 py-2 uppercase text-stone-600">{l.cargo || "—"}</td>
-                              <td className="px-4 py-2 text-stone-600">{l.matricula || "—"}</td>
-                              <td className="px-4 py-2 text-stone-600">
-                                {[l.temAdiantamento !== false ? "Adiantamento" : "", l.recebeVt ? "VT" : ""].filter(Boolean).join(" + ")}
-                              </td>
-                              <td className="px-4 py-2 text-right tabular-nums">{l.temAdiantamento !== false && l.pct ? `${l.pct}%` : "—"}</td>
-                              <td className="px-4 py-2 text-right tabular-nums">{l.temAdiantamento === false || l.valor === null ? "—" : moedaVT(l.valor)}</td>
-                              <td className="px-4 py-2 text-right tabular-nums">{l.descontoVt == null ? "—" : moedaVT(l.descontoVt)}</td>
-                            </>
-                          )}
-                        </tr>
+                      {subgrupos.map((g) => (
+                        <Fragment key={g.chave}>
+                          <tr className="border-b border-brand-200 bg-white">
+                            <td colSpan={cols} className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-stone-600">
+                              {g.titulo} · {g.itens.length}
+                            </td>
+                          </tr>
+                          {g.itens.map((l) => (
+                            <tr key={l.id + l.nome} className="border-b border-brand-100 last:border-b-0">
+                              <td className="px-4 py-2 font-semibold uppercase">{l.nome}</td>
+                              {soNomes ? (
+                                <>
+                                  <td className="px-4 py-2">{l.temAdiantamento !== false ? <b>Tem adiantamento</b> : <span className="text-stone-400">—</span>}</td>
+                                  <td className="px-4 py-2">{l.recebeVt ? <b>Tem VT</b> : <span className="text-stone-400">—</span>}</td>
+                                </>
+                              ) : (
+                                <>
+                                  <td className="px-4 py-2 uppercase text-stone-600">{l.cargo || "—"}</td>
+                                  <td className="px-4 py-2 text-stone-600">{l.matricula || "—"}</td>
+                                  <td className="px-4 py-2 text-stone-600">
+                                    {[l.temAdiantamento !== false ? "Adiantamento" : "", l.recebeVt ? "VT" : ""].filter(Boolean).join(" + ")}
+                                  </td>
+                                  <td className="px-4 py-2 text-right tabular-nums">{l.temAdiantamento !== false && l.pct ? `${l.pct}%` : "—"}</td>
+                                  <td className="px-4 py-2 text-right tabular-nums">{l.temAdiantamento === false || l.valor === null ? "—" : moedaVT(l.valor)}</td>
+                                  <td className="px-4 py-2 text-right tabular-nums">{l.descontoVt == null ? "—" : moedaVT(l.descontoVt)}</td>
+                                </>
+                              )}
+                            </tr>
+                          ))}
+                        </Fragment>
                       ))}
                     </Fragment>
                   );
