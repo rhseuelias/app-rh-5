@@ -288,16 +288,39 @@ function codigoDoTipo(t: FolhaTipo): string {
   return m ? codigoNormalizado(m[1]) : "";
 }
 
-// cabeçalho no padrão do modelo: "17 - hora extra 50%  - Referência" / "42 - comissão s/ vendas  - Valor"
-function cabecalhoDoModelo(t: FolhaTipo, codigo: string): string {
-  const nome = t.nome.trim();
-  if (/^\d+\s*-\s*.+\s-\s*(Valor|Refer[eê]ncia)$/i.test(nome)) return nome;
-  const base = nome
-    .replace(/^\s*\d+\s*-\s*/, "")
-    .replace(/\s+-\s+(Valor|Refer[eê]ncia)\s*$/i, "")
-    .trim()
-    .toLowerCase();
-  return `${codigo} - ${base}  - ${/refer[eê]ncia/i.test(nome) ? "Referência" : "Valor"}`;
+// Colunas EXATAS do arquivo padrão de importação (modelo atual da contabilidade), na ordem dele.
+// Atenção: o cabeçalho do 431 tem UM espaço só antes do último traço; os demais têm dois.
+// O sistema que importa recusa cabeçalho diferente e coluna que não existe no padrão.
+const COLUNAS_PADRAO: VerbaModelo[] = [
+  { codigo: "8", cabecalho: "8 - adicional noturno 20%  - Referência" },
+  { codigo: "17", cabecalho: "17 - hora extra 50%  - Referência" },
+  { codigo: "22", cabecalho: "22 - hora extra 100%  - Referência" },
+  { codigo: "42", cabecalho: "42 - comissão s/ vendas  - Valor" },
+  { codigo: "107", cabecalho: "107 - desconto farmácia  - Valor" },
+  { codigo: "431", cabecalho: "431 - desconto de vale avulso - Valor" },
+  { codigo: "442", cabecalho: "442 - gratificação - folha  - Valor" },
+  { codigo: "503", cabecalho: "503 - reposição desconto indevido - Valor" },
+  { codigo: "170", cabecalho: "170 - assistência médica total pago pela empresa  - Valor" },
+  { codigo: "183", cabecalho: "183 - vale transporte custo da empresa  - Valor" },
+  { codigo: "555", cabecalho: "555 - reembolso de despesas  - Valor" },
+  { codigo: "587", cabecalho: "587 - ote  - Valor" },
+  { codigo: "608", cabecalho: "608 - desconto gympass / wellhub  - Valor" },
+];
+
+function formatarDocumento(d: string): string {
+  const n = d.replace(/\D/g, "");
+  if (n.length === 11) return n.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  if (n.length === 14) return n.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+  return d.trim();
+}
+
+function matriculaSemZeros(m: string): string {
+  const t = m.trim();
+  return /^\d+$/.test(t) ? String(Number(t)) : t;
+}
+
+function semAcento(n: string): string {
+  return n.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
 }
 
 // valor numérico de uma célula da folha (horas "04:15" viram 4,25; texto que não é número fica de fora)
@@ -403,20 +426,28 @@ export async function montarMovimentoVariavel(
   const lancPor: Record<string, Record<string, FolhaLancamento>> = {};
   for (const l of (lancData ?? []) as FolhaLancamento[]) (lancPor[l.colaborador_id] ??= {})[l.tipo_id] = l;
 
-  // colunas: todas as ativas que têm código (é o código que o outro sistema reconhece)
+  // colunas: sempre as do arquivo padrão, na ordem dele (o sistema que importa só aceita estas).
+  // Para cada uma, soma os tipos da folha que tenham o mesmo código.
   const comCodigo = tipos.map((t) => ({ t, codigo: codigoDoTipo(t) })).filter((x) => x.codigo !== "");
   const semCodigo = tipos.filter((t) => codigoDoTipo(t) === "");
-  const verbas: VerbaModelo[] = comCodigo.map(({ t, codigo }) => ({ codigo, cabecalho: cabecalhoDoModelo(t, codigo) }));
+  const codigosPadrao = new Set(COLUNAS_PADRAO.map((c) => c.codigo));
+  const foraDoPadrao = comCodigo.filter((x) => !codigosPadrao.has(x.codigo));
+  const verbas: VerbaModelo[] = COLUNAS_PADRAO;
 
   const ignorados = new Set<string>();
   const linhas: LinhaMovimento[] = noEscopo.map(({ c }) => ({
-    cpf: (c.cpf_cnpj ?? "").trim(),
-    nome: c.nome.trim(),
-    matricula: (c.matricula ?? "").trim(),
-    valores: comCodigo.map(({ t }) => {
-      const r = numeroDaCelula(t, lancPor[c.id]?.[t.id]);
-      if (r.ignorado) ignorados.add(t.nome.trim());
-      return r.n;
+    cpf: formatarDocumento(c.cpf_cnpj ?? ""),
+    nome: semAcento(c.nome),
+    matricula: matriculaSemZeros(c.matricula ?? ""),
+    valores: COLUNAS_PADRAO.map((col) => {
+      let soma: number | null = null;
+      for (const { t, codigo } of comCodigo) {
+        if (codigo !== col.codigo) continue;
+        const r = numeroDaCelula(t, lancPor[c.id]?.[t.id]);
+        if (r.ignorado) ignorados.add(t.nome.trim());
+        if (r.n !== null) soma = (soma ?? 0) + r.n;
+      }
+      return soma;
     }),
   }));
 
@@ -425,6 +456,11 @@ export async function montarMovimentoVariavel(
   if (semMatricula.length > 0) avisos.push(`Sem matrícula: ${listar(semMatricula)}`);
   const semCpf = noEscopo.filter((p) => !(p.c.cpf_cnpj ?? "").trim()).map((p) => p.c.nome);
   if (semCpf.length > 0) avisos.push(`Sem CPF: ${listar(semCpf)}`);
+  const foraPadrao = foraDoPadrao
+    .filter(({ t }) => noEscopo.some((p) => lancPor[p.c.id]?.[t.id] && numeroDaCelula(t, lancPor[p.c.id][t.id]).n !== null))
+    .map(({ t }) => t.nome);
+  if (foraPadrao.length > 0)
+    avisos.push(`Colunas que não existem no arquivo padrão de importação (ficaram de fora): ${listar(foraPadrao)}`);
   const foraSemCodigo = semCodigo
     .filter((t) => noEscopo.some((p) => lancPor[p.c.id]?.[t.id] && numeroDaCelula(t, lancPor[p.c.id][t.id]).n !== null))
     .map((t) => t.nome);

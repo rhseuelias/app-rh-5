@@ -21,7 +21,7 @@ export const VERBAS_MODELO: VerbaModelo[] = [
   { codigo: "42", cabecalho: "42 - comissão s/ vendas  - Valor" },
   { codigo: "107", cabecalho: "107 - desconto farmácia  - Valor" },
   { codigo: "385", cabecalho: "385 - desconto quebra de caixa  - Valor" },
-  { codigo: "431", cabecalho: "431 - desconto de vale avulso  - Valor" },
+  { codigo: "431", cabecalho: "431 - desconto de vale avulso - Valor" },
   { codigo: "442", cabecalho: "442 - gratificação - folha  - Valor" },
   { codigo: "170", cabecalho: "170 - assistência médica total pago pela empresa  - Valor" },
   { codigo: "183", cabecalho: "183 - vale transporte custo da empresa  - Valor" },
