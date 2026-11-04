@@ -14,7 +14,7 @@ function dataHora(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
 }
 
-export default async function RelatorioAdiantamentosPage({ searchParams }: { searchParams: { competencia?: string; empresa?: string; modo?: string; sit?: string } }) {
+export default async function RelatorioAdiantamentosPage({ searchParams }: { searchParams: { competencia?: string; empresa?: string; modo?: string; sit?: string; un?: string } }) {
   const competencia = /^\d{4}-(0[1-9]|1[0-2])$/.test(searchParams.competencia ?? "")
     ? (searchParams.competencia as string)
     : competenciaAtualSP();
@@ -65,8 +65,11 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
 
   const filtro = searchParams.empresa && empresasOrdem.includes(searchParams.empresa) ? searchParams.empresa : "todas";
   const sit = ["ambos", "ad", "vt"].includes(searchParams.sit ?? "") ? (searchParams.sit as string) : "todos";
+  const unidadesDisponiveis = Array.from(new Set(todas.filter((l) => filtro === "todas" || l.empresa === filtro).map((l) => l.unidade))).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const unEscolhidas = (searchParams.un ?? "").split("|").filter((u) => unidadesDisponiveis.includes(u));
   const linhasFiltradas = todas
     .filter((l) => filtro === "todas" || l.empresa === filtro)
+    .filter((l) => unEscolhidas.length === 0 || unEscolhidas.includes(l.unidade))
     .filter((l) => {
       const ad = l.temAdiantamento !== false;
       const vt = !!l.recebeVt;
@@ -102,8 +105,9 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
   const semValorTotal = resumo.reduce((s, r) => s + r.semValor, 0);
 
   const soNomes = searchParams.modo === "nomes";
-  const href = (comp: string, emp: string = filtro, nomes: boolean = soNomes, situacao: string = sit) =>
-    `/departamento-pessoal/adiantamentos/relatorio?competencia=${comp}${emp !== "todas" ? `&empresa=${encodeURIComponent(emp)}` : ""}${nomes ? "&modo=nomes" : ""}${situacao !== "todos" ? `&sit=${situacao}` : ""}`;
+  const href = (comp: string, emp: string = filtro, nomes: boolean = soNomes, situacao: string = sit, unids: string[] = unEscolhidas) =>
+    `/departamento-pessoal/adiantamentos/relatorio?competencia=${comp}${emp !== "todas" ? `&empresa=${encodeURIComponent(emp)}` : ""}${nomes ? "&modo=nomes" : ""}${situacao !== "todos" ? `&sit=${situacao}` : ""}${unids.length ? `&un=${encodeURIComponent(unids.join("|"))}` : ""}`;
+  const alternarUnidade = (u: string) => (unEscolhidas.includes(u) ? unEscolhidas.filter((x) => x !== u) : [...unEscolhidas, u]);
   const tituloEmpresa = filtro === "todas" ? "Todas as empresas" : filtro;
 
   return (
@@ -156,13 +160,44 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
           {["todas", ...empresasOrdem.filter((e) => empresasComDados.includes(e))].map((e) => (
             <Link
               key={e}
-              href={href(competencia, e)}
+              href={href(competencia, e, soNomes, sit, [])}
               aria-current={filtro === e ? "true" : undefined}
               className={`rounded-full border px-4 py-1.5 text-sm font-semibold no-underline ${filtro === e ? "bg-ink-900 text-white border-ink-900" : "bg-white border-brand-200"}`}
             >
               {e === "todas" ? "Todas as empresas" : e}
             </Link>
           ))}
+        </div>
+      )}
+
+      {unidadesDisponiveis.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <span className="text-sm font-semibold text-stone-600">Unidades:</span>
+          <Link
+            href={href(competencia, filtro, soNomes, sit, [])}
+            aria-current={unEscolhidas.length === 0 ? "true" : undefined}
+            className={`rounded-full border px-4 py-1.5 text-sm font-semibold no-underline ${unEscolhidas.length === 0 ? "bg-ink-900 text-white border-ink-900" : "bg-white border-brand-200"}`}
+          >
+            Todas
+          </Link>
+          {unidadesDisponiveis.map((u) => {
+            const ativa = unEscolhidas.includes(u);
+            return (
+              <Link
+                key={u}
+                href={href(competencia, filtro, soNomes, sit, alternarUnidade(u))}
+                aria-current={ativa ? "true" : undefined}
+                className={`rounded-full border px-4 py-1.5 text-sm font-semibold no-underline ${ativa ? "bg-ink-900 text-white border-ink-900" : "bg-white border-brand-200"}`}
+              >
+                {u}
+              </Link>
+            );
+          })}
+          {unEscolhidas.length > 0 && (
+            <span className="text-sm text-stone-600">
+              {unEscolhidas.length} {unEscolhidas.length === 1 ? "unidade escolhida" : "unidades escolhidas"}
+            </span>
+          )}
         </div>
       )}
 
@@ -282,11 +317,6 @@ export default async function RelatorioAdiantamentosPage({ searchParams }: { sea
                       </tr>
                       {subgrupos.map((g) => (
                         <Fragment key={g.chave}>
-                          <tr className="border-b border-brand-200 bg-white">
-                            <td colSpan={cols} className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-stone-600">
-                              {g.titulo} · {g.itens.length}
-                            </td>
-                          </tr>
                           {g.itens.map((l) => (
                             <tr key={l.id + l.nome} className="border-b border-brand-100 last:border-b-0">
                               <td className="px-4 py-2 font-semibold uppercase">{l.nome}</td>
