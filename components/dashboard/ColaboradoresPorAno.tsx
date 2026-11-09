@@ -20,6 +20,10 @@ const COR_CLT = P7.azul;
 const COR_PJ = P7.laranja;
 const COR_EST = "#9fb5b1";
 
+/** Contratações extras previstas para o próximo ano, somadas à projeção (6 CLT + 9 PJ = 15). */
+const EXTRA_PROJ_CLT = 6;
+const EXTRA_PROJ_PJ = 9;
+
 /** Linha do total ao longo dos anos. O trecho pontilhado e o círculo vazio são a projeção. */
 function Sparkline({ serie, total }: { serie: PontoAno[]; total: (p: PontoAno) => number }) {
   if (serie.length < 2) return null;
@@ -75,8 +79,9 @@ export default function ColaboradoresPorAno({
     const alvo = Math.max(0, base + mediaAumento);
     const clt = Math.round((alvo * ult.clt) / base);
     const pj = Math.round((alvo * ult.pj) / base);
-    projecao = { ano: ult.ano + 1, clt, pj, est: Math.max(0, alvo - clt - pj), proj: true };
-    faixa = [Math.max(0, base + Math.min(...variacoes)), Math.max(0, base + Math.max(...variacoes))];
+    projecao = { ano: ult.ano + 1, clt: clt + EXTRA_PROJ_CLT, pj: pj + EXTRA_PROJ_PJ, est: Math.max(0, alvo - clt - pj), proj: true };
+    const extra = EXTRA_PROJ_CLT + EXTRA_PROJ_PJ;
+    faixa = [Math.max(0, base + Math.min(...variacoes)) + extra, Math.max(0, base + Math.max(...variacoes)) + extra];
   }
   const serie = projecao ? [...dados, projecao] : dados;
   const maximo = Math.max(1, ...serie.map(total), faixa[1]);
@@ -186,7 +191,7 @@ export default function ColaboradoresPorAno({
           <b style={{ color: P7.ink }}>Projeção para {projecao.ano}:</b> cerca de <b>{total(projecao)}</b> colaboradores
           (média dos aumentos dos últimos {variacoes.length} {variacoes.length === 1 ? "ano" : "anos"}:{" "}
           {mediaAumento > 0 ? "+" : ""}
-          {mediaAumento} por ano). Entre {faixa[0]} e {faixa[1]}, se o ritmo seguir entre o menor e o maior aumento recente. É uma estimativa, não uma garantia.
+          {mediaAumento} por ano, mais {EXTRA_PROJ_CLT + EXTRA_PROJ_PJ} contratações previstas: {EXTRA_PROJ_CLT} CLT e {EXTRA_PROJ_PJ} PJ). Entre {faixa[0]} e {faixa[1]}, se o ritmo seguir entre o menor e o maior aumento recente. É uma estimativa, não uma garantia.
         </p>
       )}
 
