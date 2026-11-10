@@ -88,6 +88,8 @@ export async function GET(req: Request) {
   const competencia = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.get("competencia") ?? "") ? (sp.get("competencia") as string) : "";
   if (!competencia) return NextResponse.json({ error: "mês inválido" }, { status: 400 });
   const empresaFiltro = sp.get("empresa") || "";
+  // separar=1: dentro de cada empresa com mais de uma unidade, uma parte (e uma página) para cada unidade
+  const separar = sp.get("separar") === "1";
 
   const [empRes, uniRes, colRes, lancRes] = await Promise.all([
     supabase.from("empresas").select("*"),
@@ -103,7 +105,7 @@ export async function GET(req: Request) {
   const lancamentos = (lancRes.data ?? []) as LinhaVT[];
 
   // empresa -> operadora -> linhas
-  type Item = { nome: string; unidade: string; l: LinhaVT; repetido: boolean };
+  type Item = { nome: string; unidade: string; uni: string; l: LinhaVT; repetido: boolean };
   const donos = new Map<string, Set<string>>();
   for (const l of lancamentos) {
     const num = (l.cartao ?? "").replace(/\D/g, "");
@@ -123,7 +125,7 @@ export async function GET(req: Request) {
     const m = porGrupo.get(g)!;
     if (!m.has(l.operadora)) m.set(l.operadora, []);
     const num = (l.cartao ?? "").replace(/\D/g, "");
-    m.get(l.operadora)!.push({ nome: c.nome, unidade: unidade === g ? "" : unidade, l, repetido: !!num && (donos.get(`${l.operadora}|${num}`)?.size ?? 0) > 1 });
+    m.get(l.operadora)!.push({ nome: c.nome, unidade: unidade === g ? "" : unidade, uni: unidade, l, repetido: !!num && (donos.get(`${l.operadora}|${num}`)?.size ?? 0) > 1 });
   }
   const ordemEmpresa = (e: string) => {
     const i = (EMPRESAS_VT as readonly string[]).indexOf(e);
@@ -139,7 +141,7 @@ export async function GET(req: Request) {
   paginas.push(page);
   let y = ALT - M - 36;
 
-  const escopo = empresaFiltro ? `Empresa: ${empresaFiltro}` : "Todas as empresas";
+  const escopo = (empresaFiltro ? `Empresa: ${empresaFiltro}` : "Todas as empresas") + (separar ? " · separado por unidade" : "");
   const cabecalhoPagina = (p: PDFPage) => {
     p.drawText("Vale Transporte — relatório para conferência", { x: M, y: ALT - M, size: 15, font: bold, color: COR_TIT });
     p.drawText(limpar(`${rotuloCompetencia(competencia)} · ${escopo}`), { x: M, y: ALT - M - 15, size: 9, font, color: COR_LAB });
@@ -180,75 +182,111 @@ export async function GET(req: Request) {
     page.drawText("Nenhum cartão lançado neste mês.", { x: M, y: y - 10, size: 10, font, color: COR_LAB });
   }
 
-  const resumo: { grupo: string; porOp: Record<OperadoraVT, number>; total: number; saldo: number; carga: number }[] = [];
+  type LinhaResumo = { grupo: string; porOp: Record<OperadoraVT, number>; total: number; saldo: number; carga: number; unidades: { nome: string; porOp: Record<OperadoraVT, number>; total: number; saldo: number; carga: number }[] };
+  const resumo: LinhaResumo[] = [];
   const pontos: string[] = [];
 
   for (const g of grupos) {
     const ops = porGrupo.get(g)!;
-    garantir(16 + 14 + 16 * 4);
-    page.drawRectangle({ x: M, y: y - 18, width: UTIL, height: 18, color: rgb(0.17, 0.15, 0.13) });
-    page.drawText(limpar(g), { x: M + 6, y: y - 13, size: 10.5, font: bold, color: rgb(1, 1, 1) });
-    y -= 26;
+
+    // unidades da empresa (só separa se houver mais de uma)
+    const nomesUnidade = Array.from(new Set(Array.from(ops.values()).flat().map((i) => i.uni))).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const dividir = separar && nomesUnidade.length > 1;
+    const blocos: (string | null)[] = dividir ? nomesUnidade : [null];
+
+    if (!dividir) {
+      garantir(16 + 14 + 16 * 4);
+      page.drawRectangle({ x: M, y: y - 18, width: UTIL, height: 18, color: rgb(0.17, 0.15, 0.13) });
+      page.drawText(limpar(g), { x: M + 6, y: y - 13, size: 10.5, font: bold, color: rgb(1, 1, 1) });
+      y -= 26;
+    }
 
     const todas: LinhaVT[] = [];
     const porOp = { BHBUS: 0, SEMPARAR: 0, OTIMO: 0, CAJU: 0 } as Record<OperadoraVT, number>;
+    const doGrupoUnidades: LinhaResumo["unidades"] = [];
 
     const opsBase = OPERADORAS_DA_EMPRESA[g] ?? [...OPERADORAS];
     const ordemOps = [...opsBase, ...OPERADORAS.filter((o) => !opsBase.includes(o))];
-    for (const op of ordemOps) {
-      const itens = (ops.get(op) ?? []).sort((a, b) => a.unidade.localeCompare(b.unidade, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR"));
-      if (itens.length === 0) continue;
-      const caju = op === "CAJU";
-      const cols = caju ? COLS_CAJU : COLS_BASE;
 
-      garantir(14 + 16 + 16 * 2);
-      page.drawText(limpar(`${ROTULO_OPERADORA[op]} · ${itens.length} cartão(ões)`), { x: M, y: y - 9, size: 9.5, font: bold, color: COR_TIT });
-      y -= 14;
-      linhaTabela(cols, cols.map((c) => ({ t: c.t, b: true, cor: COR_LAB })), 16, COR_CAB);
+    for (const bloco of blocos) {
+      const todasUn: LinhaVT[] = [];
+      const porOpUn = { BHBUS: 0, SEMPARAR: 0, OTIMO: 0, CAJU: 0 } as Record<OperadoraVT, number>;
+      if (bloco !== null) {
+        // cada unidade começa numa página nova, para poder ser entregue separada
+        if (y < ALT - M - 36) novaPagina();
+        page.drawRectangle({ x: M, y: y - 18, width: UTIL, height: 18, color: rgb(0.17, 0.15, 0.13) });
+        page.drawText(limpar(`${g} · ${bloco}`), { x: M + 6, y: y - 13, size: 10.5, font: bold, color: rgb(1, 1, 1) });
+        y -= 26;
+      }
+      for (const op of ordemOps) {
+        const itens = (ops.get(op) ?? [])
+          .filter((i) => bloco === null || i.uni === bloco)
+          .sort((a, b) => a.unidade.localeCompare(b.unidade, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR"));
+        if (itens.length === 0) continue;
+        const caju = op === "CAJU";
+        const cols = caju ? COLS_CAJU : COLS_BASE;
+        const rotuloGrupo = bloco === null ? g : `${g} · ${bloco}`;
 
-      for (const { nome, unidade, l, repetido } of itens) {
-        if (y - 34 < M + 16) {
-          novaPagina();
-          linhaTabela(cols, cols.map((c) => ({ t: c.t, b: true, cor: COR_LAB })), 16, COR_CAB);
+        garantir(14 + 16 + 16 * 2);
+        page.drawText(limpar(`${ROTULO_OPERADORA[op]} · ${itens.length} cartão(ões)`), { x: M, y: y - 9, size: 9.5, font: bold, color: COR_TIT });
+        y -= 14;
+        linhaTabela(cols, cols.map((c) => ({ t: c.t, b: true, cor: COR_LAB })), 16, COR_CAB);
+
+        for (const { nome, unidade, l, repetido } of itens) {
+          if (y - 34 < M + 16) {
+            novaPagina();
+            linhaTabela(cols, cols.map((c) => ({ t: c.t, b: true, cor: COR_LAB })), 16, COR_CAB);
+          }
+          const semCartao = !(l.cartao ?? "").trim();
+          const semDias = l.dias_uteis === 0;
+          if (semCartao) pontos.push(`${rotuloGrupo} · ${ROTULO_OPERADORA[op]} · ${nome}: cartão sem número`);
+          if (semDias) pontos.push(`${rotuloGrupo} · ${ROTULO_OPERADORA[op]} · ${nome}: dias úteis zerados`);
+          if (repetido) pontos.push(`${rotuloGrupo} · ${ROTULO_OPERADORA[op]} · ${nome}: número de cartão repetido`);
+          const base: Cel[] = [
+            { t: nome },
+            { t: unidade },
+            semCartao ? { t: "sem número", cor: COR_ALERTA } : { t: `${l.cartao}${repetido ? " (repetido)" : ""}`, cor: repetido ? COR_ALERTA : undefined },
+            { t: numeroVT(l.diaria) },
+            { t: numeroVT(l.valor_unit) },
+            { t: numeroVT(valorDiarioVT(l)) },
+            { t: String(l.dias_uteis), cor: semDias ? COR_ALERTA : undefined },
+          ];
+          const fim: Cel[] = [
+            { t: numeroVT(totalVT(l)), b: true },
+            { t: numeroVT(saldoNaRecargaVT(l)) },
+            { t: numeroVT(cargaVT(l)), b: true, cor: COR_ALERTA },
+          ];
+          linhaTabela(cols, caju ? [...base, { t: numeroVT(l.alimentacao ?? 0) }, { t: numeroVT(l.premio ?? 0) }, { t: numeroVT(l.multi ?? 0) }, ...fim] : [...base, ...fim], 16);
+          page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
         }
-        const semCartao = !(l.cartao ?? "").trim();
-        const semDias = l.dias_uteis === 0;
-        if (semCartao) pontos.push(`${g} · ${ROTULO_OPERADORA[op]} · ${nome}: cartão sem número`);
-        if (semDias) pontos.push(`${g} · ${ROTULO_OPERADORA[op]} · ${nome}: dias úteis zerados`);
-        if (repetido) pontos.push(`${g} · ${ROTULO_OPERADORA[op]} · ${nome}: número de cartão repetido`);
-        const base: Cel[] = [
-          { t: nome },
-          { t: unidade },
-          semCartao ? { t: "sem número", cor: COR_ALERTA } : { t: `${l.cartao}${repetido ? " (repetido)" : ""}`, cor: repetido ? COR_ALERTA : undefined },
-          { t: numeroVT(l.diaria) },
-          { t: numeroVT(l.valor_unit) },
-          { t: numeroVT(valorDiarioVT(l)) },
-          { t: String(l.dias_uteis), cor: semDias ? COR_ALERTA : undefined },
-        ];
-        const fim: Cel[] = [
-          { t: numeroVT(totalVT(l)), b: true },
-          { t: numeroVT(saldoNaRecargaVT(l)) },
-          { t: numeroVT(cargaVT(l)), b: true, cor: COR_ALERTA },
-        ];
-        linhaTabela(cols, caju ? [...base, { t: numeroVT(l.alimentacao ?? 0) }, { t: numeroVT(l.premio ?? 0) }, { t: numeroVT(l.multi ?? 0) }, ...fim] : [...base, ...fim], 16);
-        page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
+
+        const linhasOp = itens.map((i) => i.l);
+        const s = somaVT(linhasOp);
+        porOpUn[op] += s.carga;
+        porOp[op] += s.carga;
+        todasUn.push(...linhasOp);
+        todas.push(...linhasOp);
+        const vazias: Cel[] = cols.map(() => ({ t: "" }));
+        const iTotal = cols.findIndex((c) => c.t === "Total");
+        vazias[iTotal] = { t: numeroVT(s.total), b: true };
+        vazias[iTotal + 1] = { t: numeroVT(s.saldo), b: true };
+        vazias[iTotal + 2] = { t: numeroVT(s.carga), b: true, cor: COR_ALERTA };
+        linhaTabela(cols, vazias, 16, COR_FAIXA, `TOTAL — ${ROTULO_OPERADORA[op]} · ${rotuloGrupo}`);
+        y -= 12;
       }
 
-      const linhasOp = itens.map((i) => i.l);
-      const s = somaVT(linhasOp);
-      porOp[op] = s.carga;
-      todas.push(...linhasOp);
-      const vazias: Cel[] = cols.map(() => ({ t: "" }));
-      const iTotal = cols.findIndex((c) => c.t === "Total");
-      vazias[iTotal] = { t: numeroVT(s.total), b: true };
-      vazias[iTotal + 1] = { t: numeroVT(s.saldo), b: true };
-      vazias[iTotal + 2] = { t: numeroVT(s.carga), b: true, cor: COR_ALERTA };
-      linhaTabela(cols, vazias, 16, COR_FAIXA, `TOTAL — ${ROTULO_OPERADORA[op]} · ${g}`);
-      y -= 12;
+      if (bloco !== null) {
+        const su = somaVT(todasUn);
+        doGrupoUnidades.push({ nome: bloco, porOp: porOpUn, total: su.total, saldo: su.saldo, carga: su.carga });
+        garantir(24);
+        const txtU = `TOTAL DA UNIDADE ${bloco}:   Total ${numeroVT(su.total)}   ·   Saldo ${numeroVT(su.saldo)}   ·   Carga a recarregar ${numeroVT(su.carga)}`;
+        page.drawText(limpar(txtU), { x: M, y: y - 10, size: 9.5, font: bold, color: COR_TIT });
+        y -= 30;
+      }
     }
 
     const sg = somaVT(todas);
-    resumo.push({ grupo: g, porOp, total: sg.total, saldo: sg.saldo, carga: sg.carga });
+    resumo.push({ grupo: g, porOp, total: sg.total, saldo: sg.saldo, carga: sg.carga, unidades: doGrupoUnidades });
     garantir(24);
     const txt = `TOTAL DA EMPRESA ${g}:   Total ${numeroVT(sg.total)}   ·   Saldo ${numeroVT(sg.saldo)}   ·   Carga a recarregar ${numeroVT(sg.carga)}`;
     page.drawText(limpar(txt), { x: M, y: y - 10, size: 9.5, font: bold, color: COR_TIT });
@@ -290,6 +328,24 @@ export async function GET(req: Request) {
         16
       );
       page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
+      for (const u of r.unidades) {
+        garantir(18);
+        linhaTabela(
+          colsRes,
+          [
+            { t: `    ${u.nome}`, cor: COR_LAB },
+            { t: numeroVT(u.porOp.BHBUS), cor: COR_LAB },
+            { t: numeroVT(u.porOp.SEMPARAR), cor: COR_LAB },
+            { t: numeroVT(u.porOp.OTIMO), cor: COR_LAB },
+            { t: numeroVT(u.porOp.CAJU), cor: COR_LAB },
+            { t: numeroVT(u.total), cor: COR_LAB },
+            { t: numeroVT(u.saldo), cor: COR_LAB },
+            { t: numeroVT(u.carga), cor: COR_LAB },
+          ],
+          16
+        );
+        page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
+      }
       tt += r.total; ts += r.saldo; tc += r.carga;
       for (const op of OPERADORAS) topOp[op] += r.porOp[op];
     }
@@ -340,7 +396,7 @@ export async function GET(req: Request) {
 
   const bytes = await pdf.save();
   const nome = empresaFiltro
-    ? `vale-transporte-${competencia}-${empresaFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`
+    ? `vale-transporte-${competencia}-${empresaFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}${separar ? "-por-unidade" : ""}.pdf`
     : `vale-transporte-${competencia}-todas-as-empresas.pdf`;
   return new NextResponse(Buffer.from(bytes), {
     headers: {
