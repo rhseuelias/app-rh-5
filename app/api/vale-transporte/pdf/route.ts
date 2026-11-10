@@ -18,7 +18,9 @@ import {
   totalVT,
   valorDiarioVT,
   type LinhaVT,
+  type AjusteVT,
   type OperadoraVT,
+  dividirIgualVT,
 } from "@/lib/vale-transporte";
 
 export const dynamic = "force-dynamic";
@@ -110,6 +112,15 @@ export async function GET(req: Request) {
   const colabPorId = new Map(((colRes.data ?? []) as Colaborador[]).map((c) => [c.id, c]));
   const lancamentos = ((lancRes.data ?? []) as LinhaVT[]).filter((l) => opsSel.includes(l.operadora));
 
+  // Desconto de cargas não realizadas e taxa administrativa (BHBUS, ÓTIMO e SEMPARAR): um valor por empresa, mês e concessionária.
+  // Se a tabela ainda não existe no banco, o relatório sai sem esses valores.
+  const ajRes = await supabase.from("vt_ajustes_operadora").select("empresa, operadora, desconto, taxa").eq("competencia", competencia);
+  const ajustes: AjusteVT[] = ajRes.error
+    ? []
+    : ((ajRes.data ?? []) as { empresa: string; operadora: OperadoraVT; desconto: number | string; taxa: number | string }[])
+        .map((a) => ({ empresa: a.empresa, operadora: a.operadora, desconto: Number(a.desconto) || 0, taxa: Number(a.taxa) || 0 }))
+        .filter((a) => opsSel.includes(a.operadora) && a.operadora !== "CAJU");
+
   // empresa -> operadora -> linhas
   type Item = { nome: string; unidade: string; uni: string; l: LinhaVT; repetido: boolean };
   const donos = new Map<string, Set<string>>();
@@ -188,37 +199,57 @@ export async function GET(req: Request) {
     page.drawText("Nenhum cartão lançado neste mês.", { x: M, y: y - 10, size: 10, font, color: COR_LAB });
   }
 
-  type LinhaResumo = { grupo: string; porOp: Record<OperadoraVT, number>; total: number; saldo: number; carga: number; unidades: { nome: string; porOp: Record<OperadoraVT, number>; total: number; saldo: number; carga: number }[] };
-  const resumo: LinhaResumo[] = [];
   const pontos: string[] = [];
+  const porNome = (a: string, b: string) => a.localeCompare(b, "pt-BR");
 
-  // Só o resumo: calcula os totais sem desenhar as tabelas de cartões
-  if (somenteResumo) {
-    for (const g of grupos) {
-      const ops = porGrupo.get(g)!;
-      const nomesU = Array.from(new Set(Array.from(ops.values()).flat().map((i) => i.uni))).sort((a, b) => a.localeCompare(b, "pt-BR"));
-      const somaOps = (filtro: (i: Item) => boolean) => {
-        const porOp = { BHBUS: 0, SEMPARAR: 0, OTIMO: 0, CAJU: 0 } as Record<OperadoraVT, number>;
-        const todas: LinhaVT[] = [];
-        for (const op of OPERADORAS) {
-          const ls = (ops.get(op) ?? []).filter(filtro).map((i) => i.l);
-          porOp[op] = somaVT(ls).carga;
-          todas.push(...ls);
-        }
-        const t = somaVT(todas);
-        return { porOp, total: t.total, saldo: t.saldo, carga: t.carga };
-      };
-      const unidades = separar && nomesU.length > 1 ? nomesU.map((n) => ({ nome: n, ...somaOps((i) => i.uni === n) })) : [];
-      resumo.push({ grupo: g, ...somaOps(() => true), unidades });
+  // ---- Valores por empresa e por unidade (usados no resumo e nos totais do relatório)
+  type ValOp = { n: number; carga: number; desc: number; taxa: number };
+  type Parte = { ops: Record<OperadoraVT, ValOp>; total: number; saldo: number; carga: number; desc: number; taxa: number; pagar: number };
+  type LinhaResumo = { grupo: string } & Parte & { unidades: ({ nome: string } & Parte)[] };
+  const unidadesDaOp = (g: string, op: OperadoraVT) => Array.from(new Set((porGrupo.get(g)?.get(op) ?? []).map((i) => i.uni))).sort(porNome);
+  /** Desconto e taxa da empresa; por unidade, o valor é dividido igualmente entre as unidades que têm cartão da concessionária. */
+  const ajusteOp = (g: string, op: OperadoraVT, un: string | null) => {
+    const a = ajustes.find((x) => x.empresa === g && x.operadora === op);
+    if (!a || op === "CAJU") return { desc: 0, taxa: 0 };
+    if (un === null) return { desc: a.desconto, taxa: a.taxa };
+    const lista = unidadesDaOp(g, op);
+    const i = lista.indexOf(un);
+    if (i < 0) return { desc: 0, taxa: 0 };
+    return { desc: dividirIgualVT(a.desconto, lista.length)[i], taxa: dividirIgualVT(a.taxa, lista.length)[i] };
+  };
+  const parte = (g: string, un: string | null): Parte => {
+    const ops = {} as Record<OperadoraVT, ValOp>;
+    const todas: LinhaVT[] = [];
+    let desc = 0, taxa = 0;
+    for (const op of OPERADORAS) {
+      const ls = (porGrupo.get(g)?.get(op) ?? []).filter((i) => un === null || i.uni === un).map((i) => i.l);
+      const aj = ajusteOp(g, op, un);
+      ops[op] = { n: ls.length, carga: somaVT(ls).carga, desc: aj.desc, taxa: aj.taxa };
+      desc += aj.desc; taxa += aj.taxa;
+      todas.push(...ls);
     }
+    const t = somaVT(todas);
+    return { ops, total: t.total, saldo: t.saldo, carga: t.carga, desc, taxa, pagar: Math.round((t.carga - desc + taxa) * 100) / 100 };
+  };
+  const resumo: LinhaResumo[] = [];
+  for (const g of grupos) {
+    const nomes = Array.from(new Set(Array.from(porGrupo.get(g)!.values()).flat().map((i) => i.uni))).sort(porNome);
+    resumo.push({ grupo: g, ...parte(g, null), unidades: separar && nomes.length > 1 ? nomes.map((n) => ({ nome: n, ...parte(g, n) })) : [] });
   }
+  const mais = (n: number) => `${n < 0 ? "-" : "+"}${numeroVT(Math.abs(n))}`;
+  const textoTotal = (rot: string, p: Parte, completo: boolean) =>
+    `${rot}:   ` +
+    (completo ? `Total ${numeroVT(p.total)}   ·   Saldo ${numeroVT(p.saldo)}   ·   ` : "") +
+    `Carga a recarregar ${numeroVT(p.carga)}` +
+    (p.desc || p.taxa ? `   ·   Descontos ${mais(-p.desc)}   ·   Taxa adm. ${mais(p.taxa)}   ·   A pagar ${numeroVT(p.pagar)}` : "");
 
   for (const g of somenteResumo ? [] : grupos) {
     const ops = porGrupo.get(g)!;
+    const rg = resumo.find((r) => r.grupo === g)!;
 
     // unidades da empresa (só separa se houver mais de uma)
-    const nomesUnidade = Array.from(new Set(Array.from(ops.values()).flat().map((i) => i.uni))).sort((a, b) => a.localeCompare(b, "pt-BR"));
-    const dividir = separar && nomesUnidade.length > 1;
+    const nomesUnidade = rg.unidades.map((u) => u.nome);
+    const dividir = nomesUnidade.length > 1;
     const blocos: (string | null)[] = dividir ? nomesUnidade : [null];
 
     if (!dividir) {
@@ -228,16 +259,10 @@ export async function GET(req: Request) {
       y -= 26;
     }
 
-    const todas: LinhaVT[] = [];
-    const porOp = { BHBUS: 0, SEMPARAR: 0, OTIMO: 0, CAJU: 0 } as Record<OperadoraVT, number>;
-    const doGrupoUnidades: LinhaResumo["unidades"] = [];
-
     const opsBase = OPERADORAS_DA_EMPRESA[g] ?? [...OPERADORAS];
     const ordemOps = [...opsBase, ...OPERADORAS.filter((o) => !opsBase.includes(o))];
 
     for (const bloco of blocos) {
-      const todasUn: LinhaVT[] = [];
-      const porOpUn = { BHBUS: 0, SEMPARAR: 0, OTIMO: 0, CAJU: 0 } as Record<OperadoraVT, number>;
       if (bloco !== null) {
         // cada unidade começa numa página nova, para poder ser entregue separada
         if (y < ALT - M - 36) novaPagina();
@@ -287,79 +312,123 @@ export async function GET(req: Request) {
           page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
         }
 
-        const linhasOp = itens.map((i) => i.l);
-        const s = somaVT(linhasOp);
-        porOpUn[op] += s.carga;
-        porOp[op] += s.carga;
-        todasUn.push(...linhasOp);
-        todas.push(...linhasOp);
+        const s = somaVT(itens.map((i) => i.l));
         const vazias: Cel[] = cols.map(() => ({ t: "" }));
         const iTotal = cols.findIndex((c) => c.t === "Total");
         vazias[iTotal] = { t: numeroVT(s.total), b: true };
         vazias[iTotal + 1] = { t: numeroVT(s.saldo), b: true };
         vazias[iTotal + 2] = { t: numeroVT(s.carga), b: true, cor: COR_ALERTA };
         linhaTabela(cols, vazias, 16, COR_FAIXA, `TOTAL — ${ROTULO_OPERADORA[op]} · ${rotuloGrupo}`);
+
+        // desconto de cargas não realizadas e taxa administrativa (BHBUS, ÓTIMO, SEMPARAR)
+        const aj = ajusteOp(g, op, bloco);
+        if (aj.desc || aj.taxa) {
+          const n = nomesUnidade.length > 1 && bloco !== null ? unidadesDaOp(g, op).length : 0;
+          const parteTxt = (v: number) => (n > 1 ? ` · 1/${n} de ${numeroVT(Math.abs(v) === 0 ? 0 : v)}` : "");
+          const full = ajustes.find((x) => x.empresa === g && x.operadora === op);
+          const linhaAj = (rot: string, valor: string, cor?: RGB, b?: boolean, fundo?: RGB) => {
+            const v: Cel[] = cols.map(() => ({ t: "" }));
+            v[iTotal + 2] = { t: valor, b, cor };
+            linhaTabela(cols, v, 16, fundo, rot);
+          };
+          if (aj.desc) linhaAj(`(-) Desconto de cargas não realizadas${parteTxt(full?.desconto ?? 0)}`, mais(-aj.desc));
+          if (aj.taxa) linhaAj(`(+) Taxa administrativa${parteTxt(full?.taxa ?? 0)}`, mais(aj.taxa));
+          const pagar = Math.round((s.carga - aj.desc + aj.taxa) * 100) / 100;
+          linhaAj(`VALOR A PAGAR — ${ROTULO_OPERADORA[op]} · ${rotuloGrupo}`, numeroVT(pagar), COR_ALERTA, true, COR_FAIXA);
+        }
         y -= 12;
       }
 
       if (bloco !== null) {
-        const su = somaVT(todasUn);
-        doGrupoUnidades.push({ nome: bloco, porOp: porOpUn, total: su.total, saldo: su.saldo, carga: su.carga });
+        const su = rg.unidades.find((u) => u.nome === bloco)!;
         garantir(24);
-        const txtU = `TOTAL DA UNIDADE ${bloco}:   Total ${numeroVT(su.total)}   ·   Saldo ${numeroVT(su.saldo)}   ·   Carga a recarregar ${numeroVT(su.carga)}`;
-        page.drawText(limpar(txtU), { x: M, y: y - 10, size: 9.5, font: bold, color: COR_TIT });
+        page.drawText(limpar(textoTotal(`TOTAL DA UNIDADE ${bloco}`, su, true)), { x: M, y: y - 10, size: 9, font: bold, color: COR_TIT });
         y -= 30;
       }
     }
 
-    const sg = somaVT(todas);
-    resumo.push({ grupo: g, porOp, total: sg.total, saldo: sg.saldo, carga: sg.carga, unidades: doGrupoUnidades });
     garantir(24);
-    const txt = `TOTAL DA EMPRESA ${g}:   Total ${numeroVT(sg.total)}   ·   Saldo ${numeroVT(sg.saldo)}   ·   Carga a recarregar ${numeroVT(sg.carga)}`;
-    page.drawText(limpar(txt), { x: M, y: y - 10, size: 9.5, font: bold, color: COR_TIT });
+    page.drawText(limpar(textoTotal(`TOTAL DA EMPRESA ${g}`, rg, true)), { x: M, y: y - 10, size: 9, font: bold, color: COR_TIT });
     y -= 30;
   }
 
-  // ---- Resumo geral (carga por unidade e operadora) + pontos de atenção
+  // ---- Resumo: cada concessionária com carga, desconto, taxa e valor a pagar (+ pontos de atenção)
   if (resumo.length > 0) {
     if (!somenteResumo) novaPagina();
     page.drawText("Resumo — carga a recarregar", { x: M, y: y - 4, size: 12, font: bold, color: COR_TIT });
-    y -= 22;
-    const larg = 0.44 / opsSel.length;
-    const colsRes: Col[] = [
-      { t: "Empresa", w: 0.28, a: "l" },
-      ...opsSel.map((o) => ({ t: ROTULO_OPERADORA[o], w: larg, a: "r" as const })),
-      { t: "Total", w: 0.09, a: "r" },
-      { t: "Saldo", w: 0.09, a: "r" },
-      { t: "Carga", w: 0.1, a: "r" },
+    y -= 26;
+
+    const colsOp: Col[] = [
+      { t: "Empresa / unidade", w: 0.34, a: "l" },
+      { t: "Carga", w: 0.16, a: "r" },
+      { t: "(-) Desc. cargas não realizadas", w: 0.22, a: "r" },
+      { t: "(+) Taxa adm.", w: 0.14, a: "r" },
+      { t: "A pagar", w: 0.14, a: "r" },
     ];
-    linhaTabela(colsRes, colsRes.map((c) => ({ t: c.t, b: true, cor: COR_LAB })), 16, COR_CAB);
-    let tt = 0, ts = 0, tc = 0;
-    const topOp = { BHBUS: 0, SEMPARAR: 0, OTIMO: 0, CAJU: 0 } as Record<OperadoraVT, number>;
-    const celulas = (nome: string, porOp: Record<OperadoraVT, number>, total: number, saldo: number, carga: number, cinza: boolean, negrito: boolean): Cel[] => {
-      const cor = cinza ? COR_LAB : undefined;
-      return [
-        { t: nome, cor, b: negrito },
-        ...opsSel.map((o) => ({ t: numeroVT(porOp[o]), cor, b: negrito })),
-        { t: numeroVT(total), cor, b: negrito },
-        { t: numeroVT(saldo), cor, b: negrito },
-        { t: numeroVT(carga), cor: cinza ? COR_LAB : COR_ALERTA, b: !cinza },
-      ];
+    const colsCaju: Col[] = [
+      { t: "Empresa / unidade", w: 0.5, a: "l" },
+      { t: "Carga", w: 0.25, a: "r" },
+      { t: "A pagar", w: 0.25, a: "r" },
+    ];
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const faixa = (txt: string, cor = rgb(0.17, 0.15, 0.13)) => {
+      garantir(18 + 16 * 3);
+      page.drawRectangle({ x: M, y: y - 18, width: UTIL, height: 18, color: cor });
+      page.drawText(limpar(txt), { x: M + 6, y: y - 13, size: 10, font: bold, color: rgb(1, 1, 1) });
+      y -= 18;
     };
+
+    for (const op of opsSel) {
+      const caju = op === "CAJU";
+      const cols = caju ? colsCaju : colsOp;
+      const doOp = resumo.filter((r) => r.ops[op].n > 0 || r.ops[op].desc || r.ops[op].taxa);
+      if (doOp.length === 0) continue;
+      faixa(ROTULO_OPERADORA[op] + (caju ? " (sem desconto nem taxa)" : ""));
+      linhaTabela(cols, cols.map((c) => ({ t: c.t, b: true, cor: COR_LAB })), 16, COR_CAB);
+      const celulasOp = (nome: string, v: ValOp, cinza: boolean): Cel[] => {
+        const pagar = r2(v.carga - v.desc + v.taxa);
+        const cor = cinza ? COR_LAB : undefined;
+        return caju
+          ? [{ t: nome, b: !cinza, cor }, { t: numeroVT(v.carga), cor }, { t: numeroVT(pagar), b: !cinza, cor: cinza ? COR_LAB : COR_ALERTA }]
+          : [
+              { t: nome, b: !cinza, cor },
+              { t: numeroVT(v.carga), cor },
+              { t: v.desc ? mais(-v.desc) : numeroVT(0), cor },
+              { t: v.taxa ? mais(v.taxa) : numeroVT(0), cor },
+              { t: numeroVT(pagar), b: !cinza, cor: cinza ? COR_LAB : COR_ALERTA },
+            ];
+      };
+      for (const r of doOp) {
+        garantir(18);
+        linhaTabela(cols, celulasOp(r.grupo, r.ops[op], false), 16);
+        page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
+        for (const u of r.unidades.filter((x) => x.ops[op].n > 0)) {
+          garantir(18);
+          linhaTabela(cols, celulasOp(`    ${u.nome}`, u.ops[op], true), 16);
+          page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
+        }
+      }
+      y -= 10;
+    }
+
+    faixa("TOTAL GERAL — todas as concessionárias", rgb(0.06, 0.36, 0.33));
+    const colsTot: Col[] = [
+      { t: "Empresa", w: 0.34, a: "l" },
+      { t: "Carga", w: 0.16, a: "r" },
+      { t: "(-) Descontos", w: 0.22, a: "r" },
+      { t: "(+) Taxas", w: 0.14, a: "r" },
+      { t: "A pagar", w: 0.14, a: "r" },
+    ];
+    linhaTabela(colsTot, colsTot.map((c) => ({ t: c.t, b: true, cor: COR_LAB })), 16, COR_CAB);
+    let tc = 0, td = 0, tx = 0, tp = 0;
     for (const r of resumo) {
       garantir(18);
-      linhaTabela(colsRes, celulas(r.grupo, r.porOp, r.total, r.saldo, r.carga, false, false), 16);
+      linhaTabela(colsTot, [{ t: r.grupo }, { t: numeroVT(r.carga) }, { t: r.desc ? mais(-r.desc) : numeroVT(0) }, { t: r.taxa ? mais(r.taxa) : numeroVT(0) }, { t: numeroVT(r.pagar), b: true, cor: COR_ALERTA }], 16);
       page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
-      for (const u of r.unidades) {
-        garantir(18);
-        linhaTabela(colsRes, celulas(`    ${u.nome}`, u.porOp, u.total, u.saldo, u.carga, true, false), 16);
-        page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
-      }
-      tt += r.total; ts += r.saldo; tc += r.carga;
-      for (const op of OPERADORAS) topOp[op] += r.porOp[op];
+      tc += r.carga; td += r.desc; tx += r.taxa; tp += r.pagar;
     }
     garantir(20);
-    linhaTabela(colsRes, celulas("TOTAL GERAL", topOp, tt, ts, tc, false, true), 18, COR_FAIXA);
+    linhaTabela(colsTot, [{ t: "TOTAL GERAL", b: true }, { t: numeroVT(tc), b: true }, { t: td ? mais(-td) : numeroVT(0), b: true }, { t: tx ? mais(tx) : numeroVT(0), b: true }, { t: numeroVT(r2(tp)), b: true, cor: COR_ALERTA }], 18, COR_FAIXA);
     y -= 20;
 
     if (pontos.length > 0) {

@@ -187,3 +187,20 @@ export function empresaVT(
 export function elegivelVT(c: Colaborador): boolean {
   return c.tipo !== "PJ" && (c.status === "ativo" || c.status === "experiencia");
 }
+
+/** Desconto de cargas não realizadas e taxa administrativa lançados na concessionária (BHBUS, ÓTIMO, SEMPARAR), por empresa e mês. */
+export interface AjusteVT {
+  empresa: string;
+  operadora: OperadoraVT;
+  desconto: number;
+  taxa: number;
+}
+
+/** Divide um valor em n partes iguais, em centavos; os centavos que sobram vão para as primeiras partes. */
+export function dividirIgualVT(valor: number, n: number): number[] {
+  if (n <= 1) return [arred(valor)];
+  const cent = Math.round(valor * 100);
+  const base = Math.floor(cent / n);
+  const sobra = cent - base * n;
+  return Array.from({ length: n }, (_, i) => (base + (i < sobra ? 1 : 0)) / 100);
+}

@@ -205,3 +205,37 @@ export async function salvarMatriculaVT(colaboradorId: string, operadora: string
   revalidatePath(CAMINHO);
   return { ok: true };
 }
+
+/** Salva o desconto de cargas não realizadas e a taxa administrativa de uma concessionária (por empresa e mês). */
+export async function salvarAjusteOperadoraVT(
+  competencia: string,
+  empresa: string,
+  operadora: string,
+  desconto: number,
+  taxa: number
+): Promise<RespostaVT> {
+  if (!(await logado())) return { ok: false, erro: "Entre no sistema para fazer isso." };
+  if (!competenciaValida(competencia)) return { ok: false, erro: "Mês inválido." };
+  if (!empresa || empresa.length > 60) return { ok: false, erro: "Empresa inválida." };
+  if (!(OPERADORAS as readonly string[]).includes(operadora) || operadora === "CAJU") {
+    return { ok: false, erro: "Desconto e taxa valem só para BHBUS, ÓTIMO e SEMPARAR." };
+  }
+  if (!numeroValido(desconto, 10000000) || !numeroValido(taxa, 10000000)) {
+    return { ok: false, erro: "Confira os valores de desconto e taxa." };
+  }
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("vt_ajustes_operadora")
+    .upsert(
+      { competencia, empresa, operadora, desconto, taxa, updated_at: new Date().toISOString() },
+      { onConflict: "competencia,empresa,operadora" }
+    );
+  if (error) {
+    if (/does not exist|schema cache/i.test(error.message)) {
+      return { ok: false, erro: "Falta criar a tabela no banco. Rode o arquivo migration_055_vt_ajustes_operadora.sql no Supabase (SQL Editor)." };
+    }
+    return { ok: false, erro: mensagem(error.message) };
+  }
+  revalidatePath(CAMINHO);
+  return { ok: true };
+}

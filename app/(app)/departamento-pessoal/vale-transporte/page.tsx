@@ -9,7 +9,9 @@ import {
   empresaVT,
   EMPRESAS_VT,
   grupoVT,
+  type AjusteVT,
   type LinhaVT,
+  type OperadoraVT,
 } from "@/lib/vale-transporte";
 import { copiaAutomaticaVT } from "@/lib/vt-copia-mes-anterior";
 import ValeTransporteTela, { type LinhaTela, type OpcaoColaborador } from "@/components/vale-transporte/ValeTransporteTela";
@@ -50,6 +52,17 @@ export default async function ValeTransportePage({
     supabase.from("vt_lancamentos").select("*").eq("competencia", competencia),
     supabase.from("vt_lancamentos").select("id", { count: "exact", head: true }).eq("competencia", anterior),
   ]);
+
+  // Desconto de cargas não realizadas e taxa administrativa (se a tabela ainda não existe, fica vazio).
+  const ajRes = await supabase.from("vt_ajustes_operadora").select("empresa, operadora, desconto, taxa").eq("competencia", competencia);
+  const ajustes: AjusteVT[] = ajRes.error
+    ? []
+    : ((ajRes.data ?? []) as { empresa: string; operadora: OperadoraVT; desconto: number | string; taxa: number | string }[]).map((a) => ({
+        empresa: a.empresa,
+        operadora: a.operadora,
+        desconto: Number(a.desconto) || 0,
+        taxa: Number(a.taxa) || 0,
+      }));
 
   // Dias úteis do mês: o que foi salvo neste mês; senão o do mês anterior; senão 26.
   const [cfgAtual, cfgAnterior] = await Promise.all([
@@ -188,6 +201,7 @@ export default async function ValeTransportePage({
         diasMesInicial={diasMes}
         linkCsvBhbus={`/api/vale-transporte/csv?competencia=${competencia}`}
         avisoCopia={avisoCopia}
+        ajustes={ajustes}
       />
     </div>
   );

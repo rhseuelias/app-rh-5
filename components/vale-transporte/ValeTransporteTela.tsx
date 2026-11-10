@@ -23,10 +23,12 @@ import {
   totalVT,
   transporteVT,
   valorDiarioVT,
+  type AjusteVT,
   type LinhaVT,
   type OperadoraVT,
 } from "@/lib/vale-transporte";
 import NomeColaborador from "@/components/NomeColaborador";
+import AjustesOperadoraVT from "@/components/vale-transporte/AjustesOperadoraVT";
 
 export interface LinhaTela extends LinhaVT {
   nome: string;
@@ -56,6 +58,8 @@ interface Props {
   linkCsvBhbus: string;
   /** Mensagem "veio do mês anterior" (vazio se não houver). */
   avisoCopia: string;
+  /** Desconto de cargas não realizadas e taxa administrativa lançados no mês (BHBUS, ÓTIMO, SEMPARAR). */
+  ajustes?: AjusteVT[];
 }
 
 const campo =
@@ -104,7 +108,7 @@ function valorOrdem(l: LinhaTela, c: ColunaOrdem): string | number {
 }
 
 export default function ValeTransporteTela({
-  competencia, rotuloMes, linhas, colaboradores, empresas, empresaInicial, temMesAnterior, diasMesInicial, linkCsvBhbus, avisoCopia,
+  competencia, rotuloMes, linhas, colaboradores, empresas, empresaInicial, temMesAnterior, diasMesInicial, linkCsvBhbus, avisoCopia, ajustes = [],
 }: Props) {
   const [empresa, setEmpresa] = useState(empresaInicial);
   const [ativaEscolhida, setAtivaEscolhida] = useState<OperadoraVT | "">("");
@@ -359,6 +363,20 @@ export default function ValeTransporteTela({
           );
         })}
       </div>
+
+      {/* Desconto de cargas não realizadas e taxa administrativa (não vale para o CAJU) */}
+      {ativa !== "CAJU" && (
+        <AjustesOperadoraVT
+          key={`${competencia}|${empresa}|${ativa}`}
+          competencia={competencia}
+          rotuloMes={rotuloMes}
+          empresa={empresa}
+          operadora={ativa}
+          carga={soma.carga}
+          descontoInicial={ajustes.find((a) => a.empresa === empresa && a.operadora === ativa)?.desconto ?? 0}
+          taxaInicial={ajustes.find((a) => a.empresa === empresa && a.operadora === ativa)?.taxa ?? 0}
+        />
+      )}
 
       {/* Filtro + incluir colaborador */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-3">
