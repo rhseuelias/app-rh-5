@@ -90,6 +90,12 @@ export async function GET(req: Request) {
   const empresaFiltro = sp.get("empresa") || "";
   // separar=1: dentro de cada empresa com mais de uma unidade, uma parte (e uma página) para cada unidade
   const separar = sp.get("separar") === "1";
+  // resumo=1: só a página de resumo (carga a recarregar), sem as tabelas de cartões
+  const somenteResumo = sp.get("resumo") === "1";
+  // ops=CAJU,BHBUS: só as concessionárias escolhidas (sem o parâmetro, todas)
+  const opsParam = sp.get("ops");
+  const opsSel: OperadoraVT[] = opsParam ? OPERADORAS.filter((o) => opsParam.split(",").includes(o)) : [...OPERADORAS];
+  if (opsSel.length === 0) return NextResponse.json({ error: "escolha ao menos uma concessionária" }, { status: 400 });
 
   const [empRes, uniRes, colRes, lancRes] = await Promise.all([
     supabase.from("empresas").select("*"),
@@ -102,7 +108,7 @@ export async function GET(req: Request) {
   const empresaPorId = new Map(((empRes.data ?? []) as Empresa[]).map((e) => [e.id, e]));
   const unidadePorId = new Map(((uniRes.data ?? []) as Unidade[]).map((u) => [u.id, u]));
   const colabPorId = new Map(((colRes.data ?? []) as Colaborador[]).map((c) => [c.id, c]));
-  const lancamentos = (lancRes.data ?? []) as LinhaVT[];
+  const lancamentos = ((lancRes.data ?? []) as LinhaVT[]).filter((l) => opsSel.includes(l.operadora));
 
   // empresa -> operadora -> linhas
   type Item = { nome: string; unidade: string; uni: string; l: LinhaVT; repetido: boolean };
@@ -141,9 +147,9 @@ export async function GET(req: Request) {
   paginas.push(page);
   let y = ALT - M - 36;
 
-  const escopo = (empresaFiltro ? `Empresa: ${empresaFiltro}` : "Todas as empresas") + (separar ? " · separado por unidade" : "");
+  const escopo = (empresaFiltro ? `Empresa: ${empresaFiltro}` : "Todas as empresas") + (separar ? " · separado por unidade" : "") + (opsSel.length < OPERADORAS.length ? ` · ${opsSel.map((o) => ROTULO_OPERADORA[o]).join(", ")}` : "");
   const cabecalhoPagina = (p: PDFPage) => {
-    p.drawText("Vale Transporte — relatório para conferência", { x: M, y: ALT - M, size: 15, font: bold, color: COR_TIT });
+    p.drawText(somenteResumo ? "Vale Transporte — resumo da carga a recarregar" : "Vale Transporte — relatório para conferência", { x: M, y: ALT - M, size: 15, font: bold, color: COR_TIT });
     p.drawText(limpar(`${rotuloCompetencia(competencia)} · ${escopo}`), { x: M, y: ALT - M - 15, size: 9, font, color: COR_LAB });
   };
   cabecalhoPagina(page);
@@ -186,7 +192,28 @@ export async function GET(req: Request) {
   const resumo: LinhaResumo[] = [];
   const pontos: string[] = [];
 
-  for (const g of grupos) {
+  // Só o resumo: calcula os totais sem desenhar as tabelas de cartões
+  if (somenteResumo) {
+    for (const g of grupos) {
+      const ops = porGrupo.get(g)!;
+      const nomesU = Array.from(new Set(Array.from(ops.values()).flat().map((i) => i.uni))).sort((a, b) => a.localeCompare(b, "pt-BR"));
+      const somaOps = (filtro: (i: Item) => boolean) => {
+        const porOp = { BHBUS: 0, SEMPARAR: 0, OTIMO: 0, CAJU: 0 } as Record<OperadoraVT, number>;
+        const todas: LinhaVT[] = [];
+        for (const op of OPERADORAS) {
+          const ls = (ops.get(op) ?? []).filter(filtro).map((i) => i.l);
+          porOp[op] = somaVT(ls).carga;
+          todas.push(...ls);
+        }
+        const t = somaVT(todas);
+        return { porOp, total: t.total, saldo: t.saldo, carga: t.carga };
+      };
+      const unidades = separar && nomesU.length > 1 ? nomesU.map((n) => ({ nome: n, ...somaOps((i) => i.uni === n) })) : [];
+      resumo.push({ grupo: g, ...somaOps(() => true), unidades });
+    }
+  }
+
+  for (const g of somenteResumo ? [] : grupos) {
     const ops = porGrupo.get(g)!;
 
     // unidades da empresa (só separa se houver mais de uma)
@@ -295,15 +322,13 @@ export async function GET(req: Request) {
 
   // ---- Resumo geral (carga por unidade e operadora) + pontos de atenção
   if (resumo.length > 0) {
-    novaPagina();
+    if (!somenteResumo) novaPagina();
     page.drawText("Resumo — carga a recarregar", { x: M, y: y - 4, size: 12, font: bold, color: COR_TIT });
     y -= 22;
+    const larg = 0.44 / opsSel.length;
     const colsRes: Col[] = [
       { t: "Empresa", w: 0.28, a: "l" },
-      { t: "BHBUS", w: 0.11, a: "r" },
-      { t: "SEMPARAR", w: 0.11, a: "r" },
-      { t: "ÓTIMO", w: 0.11, a: "r" },
-      { t: "CAJU", w: 0.11, a: "r" },
+      ...opsSel.map((o) => ({ t: ROTULO_OPERADORA[o], w: larg, a: "r" as const })),
       { t: "Total", w: 0.09, a: "r" },
       { t: "Saldo", w: 0.09, a: "r" },
       { t: "Carga", w: 0.1, a: "r" },
@@ -311,60 +336,30 @@ export async function GET(req: Request) {
     linhaTabela(colsRes, colsRes.map((c) => ({ t: c.t, b: true, cor: COR_LAB })), 16, COR_CAB);
     let tt = 0, ts = 0, tc = 0;
     const topOp = { BHBUS: 0, SEMPARAR: 0, OTIMO: 0, CAJU: 0 } as Record<OperadoraVT, number>;
+    const celulas = (nome: string, porOp: Record<OperadoraVT, number>, total: number, saldo: number, carga: number, cinza: boolean, negrito: boolean): Cel[] => {
+      const cor = cinza ? COR_LAB : undefined;
+      return [
+        { t: nome, cor, b: negrito },
+        ...opsSel.map((o) => ({ t: numeroVT(porOp[o]), cor, b: negrito })),
+        { t: numeroVT(total), cor, b: negrito },
+        { t: numeroVT(saldo), cor, b: negrito },
+        { t: numeroVT(carga), cor: cinza ? COR_LAB : COR_ALERTA, b: !cinza },
+      ];
+    };
     for (const r of resumo) {
       garantir(18);
-      linhaTabela(
-        colsRes,
-        [
-          { t: r.grupo },
-          { t: numeroVT(r.porOp.BHBUS) },
-          { t: numeroVT(r.porOp.SEMPARAR) },
-          { t: numeroVT(r.porOp.OTIMO) },
-          { t: numeroVT(r.porOp.CAJU) },
-          { t: numeroVT(r.total) },
-          { t: numeroVT(r.saldo) },
-          { t: numeroVT(r.carga), b: true, cor: COR_ALERTA },
-        ],
-        16
-      );
+      linhaTabela(colsRes, celulas(r.grupo, r.porOp, r.total, r.saldo, r.carga, false, false), 16);
       page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
       for (const u of r.unidades) {
         garantir(18);
-        linhaTabela(
-          colsRes,
-          [
-            { t: `    ${u.nome}`, cor: COR_LAB },
-            { t: numeroVT(u.porOp.BHBUS), cor: COR_LAB },
-            { t: numeroVT(u.porOp.SEMPARAR), cor: COR_LAB },
-            { t: numeroVT(u.porOp.OTIMO), cor: COR_LAB },
-            { t: numeroVT(u.porOp.CAJU), cor: COR_LAB },
-            { t: numeroVT(u.total), cor: COR_LAB },
-            { t: numeroVT(u.saldo), cor: COR_LAB },
-            { t: numeroVT(u.carga), cor: COR_LAB },
-          ],
-          16
-        );
+        linhaTabela(colsRes, celulas(`    ${u.nome}`, u.porOp, u.total, u.saldo, u.carga, true, false), 16);
         page.drawLine({ start: { x: M, y }, end: { x: M + UTIL, y }, thickness: 0.4, color: COR_LIN });
       }
       tt += r.total; ts += r.saldo; tc += r.carga;
       for (const op of OPERADORAS) topOp[op] += r.porOp[op];
     }
     garantir(20);
-    linhaTabela(
-      colsRes,
-      [
-        { t: "TOTAL GERAL", b: true },
-        { t: numeroVT(topOp.BHBUS), b: true },
-        { t: numeroVT(topOp.SEMPARAR), b: true },
-        { t: numeroVT(topOp.OTIMO), b: true },
-        { t: numeroVT(topOp.CAJU), b: true },
-        { t: numeroVT(tt), b: true },
-        { t: numeroVT(ts), b: true },
-        { t: numeroVT(tc), b: true, cor: COR_ALERTA },
-      ],
-      18,
-      COR_FAIXA
-    );
+    linhaTabela(colsRes, celulas("TOTAL GERAL", topOp, tt, ts, tc, false, true), 18, COR_FAIXA);
     y -= 20;
 
     if (pontos.length > 0) {
@@ -396,7 +391,7 @@ export async function GET(req: Request) {
 
   const bytes = await pdf.save();
   const nome = empresaFiltro
-    ? `vale-transporte-${competencia}-${empresaFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}${separar ? "-por-unidade" : ""}.pdf`
+    ? `vale-transporte-${somenteResumo ? "resumo-" : ""}${competencia}-${empresaFiltro.toLowerCase().replace(/[^a-z0-9]+/g, "-")}${separar ? "-por-unidade" : ""}.pdf`
     : `vale-transporte-${competencia}-todas-as-empresas.pdf`;
   return new NextResponse(Buffer.from(bytes), {
     headers: {
