@@ -5,6 +5,7 @@ import { corDaEmpresa } from "@/lib/empresa-cores";
 import { EMPRESAS_SEL } from "@/lib/entrevistas";
 import { criarCargo, excluirCargo, salvarCargo, type RespostaCargo } from "@/lib/actions-cargos";
 import { cargoCompleto, type CargoDesc } from "@/lib/cargos";
+import ImportarPdfModal from "@/components/cargos/ImportarPdfModal";
 
 const linhas = (t: string) => t.split("\n").map((x) => x.trim()).filter(Boolean);
 const juntar = (a: string[]) => a.join("\n");
@@ -480,6 +481,7 @@ export default function CargosTela({ iniciais }: { iniciais: CargoDesc[] }) {
   const [abertoId, setAbertoId] = useState<string | null>(null);
   const [editando, setEditando] = useState(false);
   const [novo, setNovo] = useState(false);
+  const [importando, setImportando] = useState(false);
   const [confirmaExcluir, setConfirmaExcluir] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -524,9 +526,14 @@ export default function CargosTela({ iniciais }: { iniciais: CargoDesc[] }) {
           <h1 className="text-4xl">Descrição de Cargos</h1>
         </div>
         {!aberto && (
-          <button type="button" className="btn-cta" onClick={() => setNovo(true)}>
-            + Novo cargo
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setImportando(true)}>
+              ⬆ Importar PDF
+            </button>
+            <button type="button" className="btn-cta" onClick={() => setNovo(true)}>
+              + Novo cargo
+            </button>
+          </div>
         )}
       </header>
 
@@ -621,6 +628,19 @@ export default function CargosTela({ iniciais }: { iniciais: CargoDesc[] }) {
             setNovo(false);
             setAbertoId(c.id);
             setEditando(true);
+          }}
+        />
+      )}
+      {importando && (
+        <ImportarPdfModal
+          existentes={cargos}
+          aoFechar={() => setImportando(false)}
+          aoConcluir={(c, substituiu) => {
+            setCargos((p) => (substituiu ? p.map((x) => (x.id === c.id ? c : x)) : [...p, c]));
+            setImportando(false);
+            setAbertoId(c.id);
+            setEditando(false);
+            setAviso(substituiu ? "Cargo substituído com o conteúdo do PDF. Confira o texto e use Editar se precisar ajustar." : "Cargo importado do PDF. Confira o texto e use Editar se precisar ajustar.");
           }}
         />
       )}
