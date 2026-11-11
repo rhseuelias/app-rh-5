@@ -33,6 +33,7 @@ import DesligamentosPorAno, { type RegistroDeslDash } from "@/components/dashboa
 import { montarLinhasIntegracao } from "@/components/dashboard/integracao-dados";
 import { LegendaSemaforo } from "@/components/dashboard/Semaforo";
 import ClimaTreinamento from "@/components/dashboard/ClimaTreinamento";
+import TreinamentoEquipe, { EQUIPES, type LancamentoEquipe } from "@/components/dashboard/TreinamentoEquipe";
 import FolhaModelo4 from "@/components/dashboard/FolhaModelo4";
 import SexoPictograma from "@/components/dashboard/SexoPictograma";
 import {
@@ -98,7 +99,7 @@ export default async function DashboardConteudo({
   searchParams,
   publico = false,
 }: {
-  searchParams?: { empresa?: string; mes?: string; relatorio?: string };
+  searchParams?: { empresa?: string; mes?: string; relatorio?: string; quad?: string };
   publico?: boolean;
 }) {
   const supabase = publico ? createAdminClient() : createClient();
@@ -567,6 +568,27 @@ export default async function DashboardConteudo({
       <ColaboradoresPorAno dados={dadosPorAno} escopo={modoRelatorio || ocultarFinanceiro || empresaSel === "franquias" ? null : empresaSel} tabelaPronta={!erroHistorico} />
     </>
   );
+  // Treinamento da equipe por quadrimestre (lançado à mão; vale para o grupo todo)
+  const quadSel = [1, 2, 3].includes(Number(searchParams?.quad))
+    ? Number(searchParams!.quad)
+    : Math.floor(new Date().getMonth() / 4) + 1;
+  const { data: treinoEqRaw, error: erroTreinoEq } = await supabase
+    .from("treinamento_equipe")
+    .select("equipe, pct, participaram, total")
+    .eq("ano", anoSel)
+    .eq("quadrimestre", quadSel);
+  const treinoEquipe: Record<string, LancamentoEquipe | undefined> = {};
+  for (const r of (treinoEqRaw ?? []) as { equipe: string; pct: number; participaram: number | null; total: number | null }[]) {
+    if (EQUIPES.some((e) => e.slug === r.equipe))
+      treinoEquipe[r.equipe] = { pct: Number(r.pct), participaram: r.participaram, total: r.total };
+  }
+  const linksQuad =
+    publico || modoRelatorio
+      ? null
+      : [1, 2, 3].map((q) => ({
+          q,
+          href: `/dashboard?${new URLSearchParams({ empresa: empresaSel, mes: mesAtualSelecionado, quad: String(q) }).toString()}`,
+        }));
   const blocoMetas = (
     <>
       {/* 2. Metas: clima e treinamento (quadrados) */}
@@ -580,6 +602,16 @@ export default async function DashboardConteudo({
           itens={itensClima}
         />
       </Cartao7>
+
+      <TreinamentoEquipe
+        ano={anoSel}
+        quad={quadSel}
+        meta={META_TREINAMENTO}
+        dados={treinoEquipe}
+        links={linksQuad}
+        podeEditar={!publico && !modoRelatorio && !ocultarFinanceiro}
+        tabelaPronta={!erroTreinoEq}
+      />
 
     </>
   );
