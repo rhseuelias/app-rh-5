@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { timingSafeEqual } from "crypto";
+import { unstable_noStore as noStore } from "next/cache";
 import DashboardConteudo from "@/components/dashboard/DashboardConteudo";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const metadata: Metadata = {
   title: "Painel da Diretoria",
   robots: { index: false, follow: false },
@@ -31,6 +34,7 @@ function tokenConfere(recebido: string): boolean {
 // Página da diretoria: sem login, protegida pelo código secreto no endereço (DIRETORIA_TOKEN).
 // Mostra só totais: total de colaboradores, crescimento por ano, clima e treinamento.
 export default async function DiretoriaPage({ params }: { params: { token: string } }) {
+  noStore(); // sempre números de agora, nunca uma cópia guardada
   if (!tokenConfere(params.token ?? "")) {
     return <Aviso titulo="Link inválido" texto="Peça ao RH o link atualizado do painel da diretoria." />;
   }

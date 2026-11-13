@@ -21,5 +21,7 @@ export function createAdminClient() {
 
   return createSupabaseClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
+    // Sem cache: o Next guarda respostas de fetch no servidor e a página da diretoria mostrava números antigos.
+    global: { fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }) },
   });
 }
