@@ -7,6 +7,7 @@ export default function ContratoPJEmissao({
   assinaturaUrl,
   modeloRotulo,
   comercial = false,
+  assinaturasNoModelo = false,
 }: {
   colaboradorId: string;
   bloqueadoMotivo: string | null;
@@ -15,6 +16,8 @@ export default function ContratoPJEmissao({
   modeloRotulo?: string;
   /** Modelo comercial (BDU): contratante e testemunhas assinam à mão. */
   comercial?: boolean;
+  /** Modelo de São Paulo (Alphaville): assinaturas do Salão e das testemunhas já vêm no modelo. */
+  assinaturasNoModelo?: boolean;
 }) {
   return (
     <div className="space-y-3 pt-3 border-t border-slate-100 mt-3">
@@ -31,6 +34,8 @@ export default function ContratoPJEmissao({
             </a>
             {comercial ? (
               <span className="text-xs text-slate-500">Contratante e testemunhas assinam à mão no papel.</span>
+            ) : assinaturasNoModelo ? (
+              <span className="text-xs text-slate-500">Assinaturas do Salão e das testemunhas já vêm no modelo de São Paulo.</span>
             ) : (
               <Link href="/configuracoes/contrato-pj" className="text-xs text-brand-600 hover:underline">
                 ⚙️ Configurar assinaturas fixas (Salão + testemunhas)
@@ -38,6 +43,7 @@ export default function ContratoPJEmissao({
             )}
           </div>
 
+          {!assinaturasNoModelo && (
           <div className="space-y-2">
             <p className="text-xs text-slate-500">
               Assinatura do próprio profissional — entra automaticamente em todo contrato emitido pra ele:
@@ -66,6 +72,7 @@ export default function ContratoPJEmissao({
               </form>
             </details>
           </div>
+          )}
         </>
       )}
 
