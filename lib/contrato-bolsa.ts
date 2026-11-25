@@ -3,7 +3,7 @@
 // dados do parceiro, dados do Salão-Parceiro (empresa), curso, valor, parcelas, foro e data.
 // Não mexe no Instrumento de Parceria (contrato-pj.ts), que continua como sempre.
 
-import { patchDocument, PatchType, TextRun } from "docx";
+import JSZip from "jszip";
 import { MODELO_BOLSA_BASE64 } from "./contrato-bolsa-modelo";
 
 const BRANCO = "________________";
@@ -196,17 +196,19 @@ export async function gerarContratoBolsaDocx(d: DadosBolsa): Promise<ResultadoBo
     ASS_SALAO_CNPJ: salaoCnpj || BRANCO,
   };
 
-  const patches: Record<string, { type: typeof PatchType.PARAGRAPH; children: TextRun[] }> = {};
-  for (const [chave, valor] of Object.entries(texto)) {
-    patches[chave] = { type: PatchType.PARAGRAPH, children: [new TextRun(valor)] };
+  // Preenche os campos {{...}} direto no XML do Word (mantém a formatação do modelo e não depende da versão da biblioteca docx)
+  const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const zip = await JSZip.loadAsync(Buffer.from(MODELO_BOLSA_BASE64, "base64"));
+  for (const arquivo of ["word/document.xml", "word/footer1.xml"]) {
+    const f = zip.file(arquivo);
+    if (!f) continue;
+    let xml = await f.async("string");
+    for (const [chave, valor] of Object.entries(texto)) {
+      xml = xml.split("{{" + chave + "}}").join(esc(valor));
+    }
+    zip.file(arquivo, xml);
   }
-
-  const buffer = (await patchDocument({
-    outputType: "nodebuffer",
-    data: Buffer.from(MODELO_BOLSA_BASE64, "base64"),
-    patches,
-    keepOriginalStyles: true,
-  })) as Buffer;
+  const buffer = (await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })) as Buffer;
 
   return { ok: true, buffer, nomeArquivo: nomeArquivoSeguro(d.parceiro.nome) };
 }
