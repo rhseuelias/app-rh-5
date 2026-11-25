@@ -161,8 +161,8 @@ function Icone({ nome }: { nome: IconeNome }) {
 type Item = { href: string; label: string; icon: IconeNome; restrito?: boolean };
 type Grupo = { id: string; nome: string; restrito?: boolean; itens: Item[] };
 
-// Menu em 6 blocos. Blocos "restrito" não aparecem para o perfil "assistente" (ex.: Francielle):
-// Departamento Pessoal, Gestão e Custos e Configurações.
+// Menu em 6 blocos. Blocos e itens "restrito" não aparecem para o perfil "assistente" (ex.: Francielle):
+// Gestão e Custos, Configurações e, no Departamento Pessoal, tudo menos o Vale Transporte.
 const GRUPOS: Grupo[] = [
   {
     id: "inicio",
@@ -199,12 +199,11 @@ const GRUPOS: Grupo[] = [
   {
     id: "departamento",
     nome: "Departamento Pessoal",
-    restrito: true,
     itens: [
-      { href: "/departamento-pessoal/lancamentos", label: "Lançamentos da Folha", icon: "relatorio" },
+      { href: "/departamento-pessoal/lancamentos", label: "Lançamentos da Folha", icon: "relatorio", restrito: true },
       { href: "/departamento-pessoal/vale-transporte", label: "Vale Transporte", icon: "departamento" },
-      { href: "/departamento-pessoal/beneficios", label: "Controle de Benefícios", icon: "aniversarios" },
-      { href: "/departamento-pessoal/adiantamentos", label: "Adiantamentos", icon: "custo" },
+      { href: "/departamento-pessoal/beneficios", label: "Controle de Benefícios", icon: "aniversarios", restrito: true },
+      { href: "/departamento-pessoal/adiantamentos", label: "Adiantamentos", icon: "custo", restrito: true },
     ],
   },
   {
